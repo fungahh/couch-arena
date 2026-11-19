@@ -4,27 +4,25 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Wordle Arena — 5-Word Live Multiplayer Marathon</title>
-  <!-- MQTT.js over Secure WebSockets (WSS port 443) for firewall-safe multiplayer -->
-  <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
   <style>
     :root {
-      --bg-app: #0f1115;
-      --bg-panel: #181b22;
-      --bg-card: #20242e;
-      --bg-input: #12141a;
-      --border: #2e3442;
-      --border-light: #434b5e;
-      --text-main: #f3f4f6;
-      --text-muted: #9ca3af;
-      --green: #538d4e;
-      --green-bright: #22c55e;
-      --yellow: #b59f3b;
-      --absent: #3a3a3c;
-      --key-bg: #565758;
+      --bg-app: #0b0f17;
+      --bg-panel: #131926;
+      --bg-card: #1a2234;
+      --bg-input: #0e131f;
+      --border: #273248;
+      --border-light: #3b4a68;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --green: #22c55e;
+      --green-dark: #16a34a;
+      --yellow: #eab308;
+      --yellow-dark: #ca8a04;
+      --absent: #334155;
+      --key-bg: #475569;
       --accent: #3b82f6;
       --accent-hover: #2563eb;
       --danger: #ef4444;
-      --radius: 12px;
     }
 
     * {
@@ -60,7 +58,7 @@
       gap: 10px;
       position: sticky;
       top: 0;
-      z-index: 20;
+      z-index: 30;
     }
 
     .brand {
@@ -68,7 +66,7 @@
       align-items: center;
       gap: 10px;
       font-weight: 800;
-      font-size: 1.15rem;
+      font-size: 1.12rem;
       letter-spacing: 0.04em;
       cursor: pointer;
     }
@@ -81,7 +79,7 @@
     .brand-tiles span {
       width: 22px;
       height: 22px;
-      border-radius: 4px;
+      border-radius: 5px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -102,7 +100,7 @@
       border: 1px solid var(--border);
       border-radius: 999px;
       padding: 5px 12px;
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       font-weight: 700;
       display: inline-flex;
       align-items: center;
@@ -117,18 +115,19 @@
 
     .pill-btn:hover {
       border-color: var(--border-light);
-      background: #282d3a;
+      background: #232d44;
     }
 
     .status-dot {
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: var(--green-bright);
+      background: var(--green);
+      flex-shrink: 0;
     }
 
     .status-dot.warn {
-      background: #f59e0b;
+      background: var(--yellow);
     }
 
     .status-dot.err {
@@ -141,17 +140,19 @@
       top: 68px;
       left: 50%;
       transform: translateX(-50%);
-      background: #f9fafb;
-      color: #111827;
+      background: #f8fafc;
+      color: #0f172a;
       font-weight: 700;
       font-size: 0.88rem;
       padding: 10px 18px;
-      border-radius: 8px;
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.55);
+      border-radius: 10px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
       z-index: 100;
       pointer-events: none;
       opacity: 0;
       transition: opacity 0.2s ease;
+      text-align: center;
+      max-width: 90vw;
     }
 
     #toast.show {
@@ -169,12 +170,12 @@
 
     .lobby-card {
       width: 100%;
-      max-width: 460px;
+      max-width: 470px;
       background: var(--bg-panel);
       border: 1px solid var(--border);
       border-radius: 16px;
       padding: 28px;
-      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.45);
+      box-shadow: 0 22px 50px rgba(0, 0, 0, 0.5);
     }
 
     .lobby-title {
@@ -187,7 +188,7 @@
     .lobby-sub {
       text-align: center;
       color: var(--text-muted);
-      font-size: 0.9rem;
+      font-size: 0.88rem;
       margin-bottom: 22px;
     }
 
@@ -197,7 +198,7 @@
 
     .field-label {
       display: block;
-      font-size: 0.78rem;
+      font-size: 0.76rem;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.05em;
@@ -212,7 +213,7 @@
       border-radius: 10px;
       padding: 12px 14px;
       color: var(--text-main);
-      font-size: 0.98rem;
+      font-size: 0.96rem;
       font-weight: 600;
       outline: none;
       transition: border-color 0.15s;
@@ -235,14 +236,14 @@
       padding: 11px;
       border-radius: 10px;
       font-weight: 700;
-      font-size: 0.92rem;
+      font-size: 0.9rem;
       cursor: pointer;
       transition: all 0.15s;
     }
 
     .lang-btn.active {
       border-color: var(--green);
-      background: rgba(83, 141, 78, 0.2);
+      background: rgba(34, 197, 94, 0.16);
       color: #fff;
     }
 
@@ -252,7 +253,7 @@
       border-radius: 10px;
       border: none;
       font-weight: 700;
-      font-size: 0.95rem;
+      font-size: 0.94rem;
       cursor: pointer;
       transition: background 0.15s, transform 0.05s;
       display: inline-flex;
@@ -271,12 +272,12 @@
     }
 
     .btn-primary {
-      background: var(--green);
+      background: var(--green-dark);
       color: #fff;
     }
 
     .btn-primary:hover:not(:disabled) {
-      background: #467a42;
+      background: #15803d;
     }
 
     .btn-secondary {
@@ -295,7 +296,7 @@
     }
 
     .btn-ghost:hover:not(:disabled) {
-      background: #282d3a;
+      background: #232d44;
     }
 
     .divider {
@@ -303,7 +304,7 @@
       align-items: center;
       text-align: center;
       color: var(--text-muted);
-      font-size: 0.78rem;
+      font-size: 0.75rem;
       font-weight: 700;
       margin: 16px 0;
     }
@@ -333,24 +334,35 @@
 
     .join-row .btn {
       width: auto;
-      padding: 0 20px;
+      padding: 0 22px;
       white-space: nowrap;
+    }
+
+    .firewall-note {
+      margin-top: 16px;
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px solid rgba(59, 130, 246, 0.28);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      text-align: center;
     }
 
     /* Arena Layout */
     .arena-layout {
       flex: 1;
       display: grid;
-      grid-template-columns: minmax(320px, 470px) 1fr;
-      gap: 20px;
-      max-width: 1320px;
+      grid-template-columns: minmax(320px, 475px) 1fr;
+      gap: 18px;
+      max-width: 1360px;
       width: 100%;
       margin: 0 auto;
       padding: 18px 20px;
       align-items: start;
     }
 
-    @media (max-width: 900px) {
+    @media (max-width: 920px) {
       .arena-layout {
         grid-template-columns: 1fr;
         padding: 12px;
@@ -369,7 +381,7 @@
       display: grid;
       grid-template-columns: repeat(5, 1fr);
       gap: 6px;
-      margin-bottom: 14px;
+      margin-bottom: 12px;
     }
 
     .step-pill {
@@ -378,7 +390,7 @@
       border-radius: 8px;
       padding: 6px 4px;
       text-align: center;
-      font-size: 0.75rem;
+      font-size: 0.74rem;
       font-weight: 800;
       color: var(--text-muted);
     }
@@ -386,12 +398,12 @@
     .step-pill.active {
       border-color: var(--accent);
       color: #fff;
-      background: rgba(59, 130, 246, 0.18);
+      background: rgba(59, 130, 246, 0.2);
     }
 
     .step-pill.solved {
       border-color: var(--green);
-      background: var(--green);
+      background: var(--green-dark);
       color: #fff;
     }
 
@@ -413,12 +425,12 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
       gap: 6px;
-      min-height: 310px;
-      max-height: 380px;
+      min-height: 290px;
+      max-height: 360px;
       overflow-y: auto;
-      padding: 6px;
+      padding: 8px 4px;
       margin-bottom: 14px;
     }
 
@@ -430,7 +442,7 @@
 
     @media (max-width: 420px) {
       .board-row {
-        grid-template-columns: repeat(5, 46px);
+        grid-template-columns: repeat(5, 45px);
         gap: 5px;
       }
     }
@@ -453,24 +465,24 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1.55rem;
+      font-size: 1.5rem;
       font-weight: 800;
       text-transform: uppercase;
       user-select: none;
       background: var(--bg-input);
-      transition: transform 0.12s ease, background-color 0.2s ease, border-color 0.2s ease;
+      transition: transform 0.12s ease, background-color 0.25s ease, border-color 0.25s ease;
     }
 
     @media (max-width: 420px) {
       .tile {
-        width: 46px;
-        height: 46px;
-        font-size: 1.35rem;
+        width: 45px;
+        height: 45px;
+        font-size: 1.3rem;
       }
     }
 
     .tile.filled {
-      border-color: #6b7280;
+      border-color: #94a3b8;
       transform: scale(1.03);
     }
 
@@ -478,18 +490,26 @@
       background: var(--green);
       border-color: var(--green);
       color: #fff;
+      animation: flipReveal 0.32s ease;
     }
 
     .tile.present {
       background: var(--yellow);
       border-color: var(--yellow);
       color: #fff;
+      animation: flipReveal 0.32s ease;
     }
 
     .tile.absent {
       background: var(--absent);
       border-color: var(--absent);
       color: #fff;
+      animation: flipReveal 0.32s ease;
+    }
+
+    @keyframes flipReveal {
+      0% { transform: scaleY(0.2); }
+      100% { transform: scaleY(1); }
     }
 
     /* On-Screen Keyboard */
@@ -509,13 +529,13 @@
     .key {
       flex: 1;
       max-width: 42px;
-      height: 48px;
+      height: 46px;
       border-radius: 7px;
       border: none;
       background: var(--key-bg);
       color: #fff;
       font-weight: 700;
-      font-size: 0.88rem;
+      font-size: 0.86rem;
       cursor: pointer;
       display: flex;
       align-items: center;
@@ -524,13 +544,13 @@
     }
 
     .key:active {
-      transform: scale(0.95);
+      transform: scale(0.94);
     }
 
     .key.wide {
       max-width: 66px;
       flex: 1.5;
-      font-size: 0.74rem;
+      font-size: 0.72rem;
     }
 
     .key.correct {
@@ -542,8 +562,8 @@
     }
 
     .key.absent {
-      background: #27292e;
-      color: #6b7280;
+      background: #1e293b;
+      color: #64748b;
     }
 
     /* Live Multiplayer Slots Panel */
@@ -563,7 +583,7 @@
 
     .players-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(235px, 1fr));
       gap: 12px;
     }
 
@@ -611,7 +631,7 @@
     }
 
     .slot-badge.done {
-      background: rgba(83, 141, 78, 0.25);
+      background: rgba(34, 197, 94, 0.2);
       border-color: var(--green);
       color: #86efac;
     }
@@ -624,7 +644,30 @@
       font-weight: 600;
     }
 
-    /* Mini Live Color Grid (No letters shown!) */
+    /* Compact History Strips for Previous Words */
+    .history-strips {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+
+    .hist-chip {
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 5px;
+      background: rgba(34, 197, 94, 0.16);
+      border: 1px solid rgba(34, 197, 94, 0.4);
+      color: #86efac;
+    }
+
+    .hist-chip.pending {
+      background: var(--bg-input);
+      border-color: var(--border);
+      color: var(--text-muted);
+    }
+
+    /* Mini Live Color Grid (Gray/Yellow/Green ONLY - no letters!) */
     .mini-grid {
       background: var(--bg-input);
       border: 1px solid var(--border);
@@ -676,7 +719,7 @@
     .modal-backdrop {
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.78);
+      background: rgba(0, 0, 0, 0.8);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -689,7 +732,7 @@
       border: 1px solid var(--border);
       border-radius: 16px;
       width: 100%;
-      max-width: 480px;
+      max-width: 490px;
       padding: 24px;
       box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
     }
@@ -704,7 +747,7 @@
     .modal-sub {
       text-align: center;
       color: var(--text-muted);
-      font-size: 0.88rem;
+      font-size: 0.86rem;
       margin-bottom: 18px;
     }
 
@@ -726,12 +769,13 @@
       border-radius: 10px;
       padding: 10px 14px;
       font-weight: 700;
-      font-size: 0.9rem;
+      font-size: 0.88rem;
+      gap: 8px;
     }
 
     .podium-item.rank-1 {
       border-color: var(--yellow);
-      background: rgba(181, 159, 59, 0.16);
+      background: rgba(234, 179, 8, 0.15);
     }
 
     .word-reveal {
@@ -760,7 +804,7 @@
 
   <!-- Header -->
   <header>
-    <div class="brand" onclick="returnToLobby()" title="Back to Lobby">
+    <div class="brand" onclick="returnToLobby()" title="Return to Start Screen">
       <div class="brand-tiles">
         <span style="background: var(--green);">W</span>
         <span style="background: var(--yellow);">O</span>
@@ -772,14 +816,14 @@
     </div>
 
     <div id="header-controls" class="header-meta hidden">
-      <button id="conn-pill" class="pill pill-btn" onclick="manualReconnect()" title="Click to reconnect">
+      <button id="conn-pill" class="pill pill-btn" onclick="manualRetrySync()" title="Click to retry HTTPS sync">
         <span id="conn-dot" class="status-dot"></span>
-        <span id="conn-text">Connected</span>
+        <span id="conn-text">HTTPS Sync: Ready</span>
       </button>
       <span id="lang-pill" class="pill">EN</span>
       <button id="invite-pill" class="pill pill-btn" onclick="copyInviteLink()">
-        <span>Room: <strong id="room-code-display">-----</strong></span>
-        <span>Copy Invite</span>
+        <span>Room: <strong id="room-code-display">------</strong></span>
+        <span>Copy Invite Link</span>
       </button>
       <button class="pill pill-btn" onclick="openResultsModal()">Standings</button>
     </div>
@@ -792,39 +836,43 @@
   <main id="lobby-view" class="lobby-wrap">
     <div class="lobby-card">
       <h1 class="lobby-title">5-Word Live Marathon</h1>
-      <p class="lobby-sub">Race your colleagues through 5 words with 25 total tries. See everyone's live color grids in real time.</p>
+      <p class="lobby-sub">Compete live with colleagues across 5 secret words with 25 total guesses. Watch everyone's colored tiles update in real time.</p>
 
       <div class="field-group">
-        <label class="field-label" for="nickname-input">Your Nickname</label>
+        <label class="field-label" for="nickname-input">Your Display Name</label>
         <input type="text" id="nickname-input" maxlength="18" placeholder="Enter your name..." />
       </div>
 
       <div class="field-group">
-        <label class="field-label">Dictionary & Keyboard Language</label>
+        <label class="field-label">Language (Word Bank & Keyboard)</label>
         <div class="lang-toggle">
           <button type="button" id="btn-lang-en" class="lang-btn active" onclick="setLanguage('en')">English (A-Z)</button>
           <button type="button" id="btn-lang-sv" class="lang-btn" onclick="setLanguage('sv')">Svenska (ÅÄÖ)</button>
         </div>
       </div>
 
-      <button type="button" id="host-btn" class="btn btn-primary" onclick="hostRoom()">
-        Host Multiplayer Room
+      <button type="button" id="host-btn" class="btn btn-primary" onclick="createMultiplayerRoom()">
+        Create Multiplayer Room
       </button>
 
-      <div class="divider"><span>OR JOIN A COLLEAGUE</span></div>
+      <div class="divider"><span>OR JOIN COLLEAGUE'S ROOM</span></div>
 
       <div class="field-group" style="margin-bottom: 14px;">
         <div class="join-row">
-          <input type="text" id="join-code-input" maxlength="5" placeholder="CODE" />
-          <button type="button" id="join-btn" class="btn btn-secondary" onclick="joinRoom()">Join</button>
+          <input type="text" id="join-code-input" maxlength="6" placeholder="ROOM CODE" />
+          <button type="button" id="join-btn" class="btn btn-secondary" onclick="joinMultiplayerRoom()">Join Room</button>
         </div>
       </div>
 
-      <div class="divider"><span>OR PRACTICE SOLO</span></div>
+      <div class="divider"><span>OR PLAY SOLO</span></div>
 
       <button type="button" class="btn btn-ghost" onclick="startSoloPractice()">
-        Solo Practice vs 2 Bots
+        Solo Practice (vs 2 Bots)
       </button>
+
+      <div class="firewall-note">
+        Uses standard HTTPS port 443 polling (no WebSockets) + instant browser-tab sync.
+      </div>
     </div>
   </main>
 
@@ -835,7 +883,7 @@
       <div id="word-stepper" class="word-stepper"></div>
 
       <div class="stats-strip">
-        <span id="word-progress-label">Word 1 / 5</span>
+        <span id="word-progress-label">Word 1 of 5</span>
         <span id="tries-counter-label">Tries: 0 / 25</span>
       </div>
 
@@ -844,12 +892,12 @@
       <div id="keyboard" class="keyboard"></div>
     </section>
 
-    <!-- Right Panel: Dynamic Live Player Slots -->
+    <!-- Right Panel: Live Colleague Slots -->
     <section class="panel">
       <div class="players-header">
-        <h2>Live Players (<span id="player-count">1</span>)</h2>
-        <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 600;">
-          New slots open automatically as colleagues join
+        <h2>Live Colleague Slots (<span id="player-count">1</span>)</h2>
+        <span style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">
+          New slots open automatically when colleagues join
         </span>
       </div>
 
@@ -860,8 +908,8 @@
   <!-- END OF MATCH PODIUM MODAL -->
   <div id="results-modal" class="modal-backdrop hidden">
     <div class="modal-card">
-      <h2 class="modal-title" id="modal-heading">Match Standings</h2>
-      <p class="modal-sub" id="modal-subtext">Ranked by most words solved, then fewest tries used.</p>
+      <h2 class="modal-title" id="modal-heading">Live Standings</h2>
+      <p class="modal-sub" id="modal-subtext">Ranked by Words Solved (0–5), then Fewest Tries Used.</p>
 
       <div id="podium-list" class="podium-list"></div>
 
@@ -869,7 +917,7 @@
 
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" onclick="closeResultsModal()">Close</button>
-        <button type="button" id="play-again-btn" class="btn btn-primary" onclick="playAgain()">Play Again</button>
+        <button type="button" id="play-again-btn" class="btn btn-primary" onclick="playAgain()">New 5-Word Round</button>
       </div>
     </div>
   </div>
@@ -878,7 +926,7 @@
     /**********************************************************************
      * 1. CURATED 5-LETTER WORD BANKS (ENGLISH & SWEDISH)
      **********************************************************************/
-    const WORD_BANKS = {
+    const RAW_BANKS = {
       en: [
         "ABOUT","ABOVE","ACTOR","ACUTE","ADMIT","ADOPT","ADULT","AFTER","AGAIN","AGENT",
         "AGREE","AHEAD","ALARM","ALBUM","ALERT","ALIKE","ALIVE","ALLOW","ALONE","ALONG",
@@ -969,12 +1017,13 @@
         "VÄCKA","VÄDER","VÄGEN","VÄLJA","VÄNDA","VÄNTA","VÄRDE","VÄRLD","VÄRME","VÄXA",
         "YNGRE","YTTER","ÅKARE","ÅLDER","ÅNGER","ÅSIKT","ÄLSKA","ÄNDRA","ÄNGEL","ÄPPLE",
         "ÄRVA","ÖKAD","ÖNSKA","ÖPPEN"
-      ].filter(w => w.length === 5)
+      ]
     };
 
-    // Deduplicate & sanitize 5-letter lists
-    WORD_BANKS.en = [...new Set(WORD_BANKS.en.map(w => w.trim().toUpperCase()).filter(w => w.length === 5))];
-    WORD_BANKS.sv = [...new Set(WORD_BANKS.sv.map(w => w.trim().toUpperCase()).filter(w => w.length === 5))];
+    const WORD_BANKS = {
+      en: [...new Set(RAW_BANKS.en.map(w => w.trim().toUpperCase()).filter(w => w.length === 5))],
+      sv: [...new Set(RAW_BANKS.sv.map(w => w.trim().toUpperCase()).filter(w => w.length === 5))]
+    };
 
     const KEYBOARDS = {
       en: [
@@ -989,13 +1038,9 @@
       ]
     };
 
-    const WSS_BROKERS = [
-      'wss://broker.emqx.io:8084/mqtt',
-      'wss://broker.hivemq.com:8884/mqtt'
-    ];
-
     const TOTAL_WORDS = 5;
     const MAX_TRIES = 25;
+    const NTFY_BASE = 'https://ntfy.sh';
 
     /**********************************************************************
      * 2. APPLICATION STATE
@@ -1004,31 +1049,35 @@
       mode: 'solo',        // 'solo' | 'host' | 'guest'
       language: 'en',      // 'en' | 'sv'
       roomCode: '',
-      myId: 'u-' + Math.random().toString(36).substring(2, 10),
+      myId: 'p_' + Math.random().toString(36).substring(2, 10),
       myName: 'Player',
       secretWords: [],
       roundId: 1,
 
-      // Personal Marathon Progress
+      // Personal 5-Word / 25-Try Marathon State
       currentWordIdx: 0,   // 0..4
       triesUsed: 0,        // 0..25
       solvedCount: 0,      // 0..5
       wordStatuses: ['active', 'pending', 'pending', 'pending', 'pending'],
+      wordHistory: [],     // [{ wordIdx, guessesCount, solved }]
       currentGuesses: [],  // [{ word, colors: ['correct'|'present'|'absent'] }]
       currentInput: '',
       keyColors: {},       // letter -> 'correct'|'present'|'absent'
       isFinished: false,
 
-      // Multiplayer MQTT State
-      mqtt: null,
-      brokerIdx: 0,
-      topicPrefix: '',
+      // HTTPS Polling + BroadcastChannel State
+      pollTimer: null,
+      heartbeatTimer: null,
+      lastMsgId: 'all',
+      seenEventIds: new Set(),
+      bc: null,
+      consecutiveErrors: 0,
       players: {},
       botTimers: []
     };
 
     /**********************************************************************
-     * 3. INITIALIZATION & LOBBY CONTROLS
+     * 3. INITIALIZATION & URL INVITE PARSING
      **********************************************************************/
     window.addEventListener('DOMContentLoaded', () => {
       const savedName = localStorage.getItem('wa_nickname');
@@ -1038,9 +1087,16 @@
 
       const params = new URLSearchParams(window.location.search);
       const roomParam = params.get('room');
+      const langParam = params.get('lang');
+
+      if (langParam === 'sv' || langParam === 'en') {
+        setLanguage(langParam);
+      }
+
       if (roomParam) {
-        document.getElementById('join-code-input').value = roomParam.trim().toUpperCase();
-        showToast(`Room ${roomParam.trim().toUpperCase()} ready! Enter your name and click Join.`);
+        const cleanCode = roomParam.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+        document.getElementById('join-code-input').value = cleanCode;
+        showToast(`Invite loaded for Room ${cleanCode}! Enter your name and click Join Room.`);
       }
 
       window.addEventListener('keydown', handlePhysicalKey);
@@ -1062,7 +1118,7 @@
     function generateRoomCode() {
       const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
       let code = '';
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < 6; i++) {
         code += chars[Math.floor(Math.random() * chars.length)];
       }
       return code;
@@ -1083,152 +1139,186 @@
       el.textContent = msg;
       el.classList.add('show');
       clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+      toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
     }
 
     /**********************************************************************
-     * 4. MQTT OVER WSS (PORT 443) MULTIPLAYER ENGINE
+     * 4. FIREWALL-SAFE HTTPS POLLING (NTFY.SH) + BROADCAST CHANNEL SYNC
      **********************************************************************/
-    function setConnIndicator(status, text) {
+    function getTopicName(roomCode) {
+      return `wordle_arena_v1_${roomCode}`;
+    }
+
+    function setHttpsStatus(status, label) {
       const dot = document.getElementById('conn-dot');
-      const label = document.getElementById('conn-text');
+      const text = document.getElementById('conn-text');
       dot.className = 'status-dot' + (status === 'warn' ? ' warn' : status === 'err' ? ' err' : '');
-      label.textContent = text;
+      text.textContent = label;
     }
 
-    function disconnectMqtt() {
-      if (state.mqtt) {
-        try { state.mqtt.end(true); } catch (e) {}
-        state.mqtt = null;
+    function stopNetworkSync() {
+      if (state.pollTimer) {
+        clearInterval(state.pollTimer);
+        state.pollTimer = null;
+      }
+      if (state.heartbeatTimer) {
+        clearInterval(state.heartbeatTimer);
+        state.heartbeatTimer = null;
+      }
+      if (state.bc) {
+        try { state.bc.close(); } catch (e) {}
+        state.bc = null;
       }
     }
 
-    function connectMqttRoom({ onReady, onFail }) {
-      disconnectMqtt();
-      state.topicPrefix = `wordle-arena/v2/${state.roomCode}`;
-      const brokerUrl = WSS_BROKERS[state.brokerIdx % WSS_BROKERS.length];
+    function initChannelSync(roomCode) {
+      stopNetworkSync();
+      state.lastMsgId = 'all';
+      state.seenEventIds.clear();
+      state.consecutiveErrors = 0;
 
-      setConnIndicator('warn', 'Connecting...');
-
-      if (typeof mqtt === 'undefined') {
-        setConnIndicator('err', 'Offline');
-        if (onFail) onFail('MQTT client script could not load. Check your internet.');
-        return;
+      // 1. Local same-browser BroadcastChannel for instant multi-tab sync
+      if ('BroadcastChannel' in window) {
+        state.bc = new BroadcastChannel(`wordle_arena_bc_${roomCode}`);
+        state.bc.onmessage = (ev) => {
+          if (ev.data) processIncomingEvent(ev.data);
+        };
       }
 
-      let settled = false;
-      const client = mqtt.connect(brokerUrl, {
-        clientId: `wa_${state.myId}_${Math.floor(Math.random() * 9999)}`,
-        clean: true,
-        connectTimeout: 8000,
-        reconnectPeriod: 3000,
-        keepalive: 25
-      });
+      // 2. HTTPS GET polling on port 443 via ntfy.sh
+      setHttpsStatus('warn', 'Syncing...');
+      pollNtfyMessages();
+      state.pollTimer = setInterval(pollNtfyMessages, 1500);
 
-      state.mqtt = client;
-
-      const timeoutId = setTimeout(() => {
-        if (!settled) {
-          settled = true;
-          if (state.brokerIdx + 1 < WSS_BROKERS.length) {
-            state.brokerIdx++;
-            connectMqttRoom({ onReady, onFail });
-          } else {
-            setConnIndicator('err', 'Retry');
-            if (onFail) onFail('Could not reach multiplayer relay over WSS (443).');
-          }
+      // 3. Periodic state broadcast so late joiners always get room/player state
+      state.heartbeatTimer = setInterval(() => {
+        if (state.mode === 'host') {
+          publishEvent({
+            type: 'ROOM_INIT',
+            roomCode: state.roomCode,
+            hostId: state.myId,
+            language: state.language,
+            secretWords: state.secretWords,
+            roundId: state.roundId,
+            ts: Date.now()
+          });
         }
-      }, 8500);
-
-      client.on('connect', () => {
-        clearTimeout(timeoutId);
-        setConnIndicator('ok', 'Connected');
-        client.subscribe(`${state.topicPrefix}/#`, { qos: 1 }, (err) => {
-          if (err && !settled) {
-            settled = true;
-            if (onFail) onFail('Failed to subscribe to room topic.');
-            return;
-          }
-          if (!settled) {
-            settled = true;
-            if (onReady) onReady();
-          }
-        });
-      });
-
-      client.on('reconnect', () => setConnIndicator('warn', 'Reconnecting...'));
-      client.on('offline', () => setConnIndicator('err', 'Offline'));
-
-      client.on('message', (topic, payload) => {
-        try {
-          const data = JSON.parse(payload.toString());
-          handleMqttMessage(topic, data);
-        } catch (e) {}
-      });
+        broadcastMyProgress();
+      }, 6000);
     }
 
-    function manualReconnect() {
+    async function publishEvent(payloadObj) {
+      const enriched = {
+        ...payloadObj,
+        eventId: `${state.myId}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        senderId: state.myId
+      };
+      state.seenEventIds.add(enriched.eventId);
+
+      // Instant local BroadcastChannel dispatch
+      if (state.bc) {
+        try { state.bc.postMessage(enriched); } catch (e) {}
+      }
+
+      if (state.mode === 'solo' || !state.roomCode) return;
+
+      // Standard HTTPS POST on port 443 with no custom CORS-triggering headers
+      const url = `${NTFY_BASE}/${getTopicName(state.roomCode)}`;
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          body: JSON.stringify(enriched)
+        });
+        if (res.ok) {
+          state.consecutiveErrors = 0;
+          setHttpsStatus('ok', 'HTTPS Sync: Ready');
+        } else {
+          handleSyncError();
+        }
+      } catch (err) {
+        handleSyncError();
+      }
+    }
+
+    async function pollNtfyMessages() {
+      if (state.mode === 'solo' || !state.roomCode) return;
+      const topic = getTopicName(state.roomCode);
+      const url = `${NTFY_BASE}/${topic}/json?poll=1&since=${encodeURIComponent(state.lastMsgId)}`;
+
+      try {
+        const res = await fetch(url, { method: 'GET' });
+        if (!res.ok) {
+          handleSyncError();
+          return;
+        }
+
+        const rawText = await res.text();
+        state.consecutiveErrors = 0;
+        setHttpsStatus('ok', 'HTTPS Sync: Ready');
+
+        if (!rawText.trim()) return;
+
+        // ntfy returns newline-delimited JSON objects
+        const lines = rawText.trim().split('\n');
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const envelope = JSON.parse(line);
+            if (envelope.id) {
+              state.lastMsgId = envelope.id;
+            }
+            if (envelope.event === 'message' && envelope.message) {
+              const payload = JSON.parse(envelope.message);
+              processIncomingEvent(payload);
+            }
+          } catch (parseErr) {}
+        }
+      } catch (netErr) {
+        handleSyncError();
+      }
+    }
+
+    function handleSyncError() {
+      state.consecutiveErrors += 1;
+      if (state.consecutiveErrors >= 2) {
+        setHttpsStatus('err', 'Offline / Retry');
+      }
+    }
+
+    function manualRetrySync() {
       if (state.mode === 'solo') {
-        showToast('Solo Practice mode does not use network sync.');
+        showToast('Solo Practice runs offline with no network calls.');
         return;
       }
-      state.brokerIdx = (state.brokerIdx + 1) % WSS_BROKERS.length;
-      showToast('Reconnecting to room ' + state.roomCode + '...');
-      connectMqttRoom({
-        onReady: () => {
-          showToast('Reconnected!');
-          if (state.mode === 'host') publishRoomState();
-          publishPlayerSnapshot();
-        },
-        onFail: (err) => showToast(err)
-      });
-    }
-
-    function publishRoomState() {
-      if (!state.mqtt || !state.mqtt.connected || state.mode !== 'host') return;
-      const roomPayload = {
-        roomCode: state.roomCode,
-        hostId: state.myId,
-        language: state.language,
-        secretWords: state.secretWords,
-        roundId: state.roundId,
-        updatedAt: Date.now()
-      };
-      state.mqtt.publish(`${state.topicPrefix}/state`, JSON.stringify(roomPayload), { qos: 1, retain: true });
-    }
-
-    function publishPlayerSnapshot() {
-      const snap = {
-        id: state.myId,
-        name: state.myName,
-        isHost: state.mode === 'host' || state.mode === 'solo',
-        isBot: false,
-        currentWordIdx: state.currentWordIdx,
-        triesUsed: state.triesUsed,
-        solvedCount: state.solvedCount,
-        isFinished: state.isFinished,
-        liveRows: state.currentGuesses.map(g => g.colors),
-        updatedAt: Date.now()
-      };
-
-      state.players[state.myId] = snap;
-
-      if (state.mqtt && state.mqtt.connected && state.mode !== 'solo') {
-        state.mqtt.publish(`${state.topicPrefix}/players/${state.myId}`, JSON.stringify(snap), { qos: 1, retain: true });
+      setHttpsStatus('warn', 'Syncing...');
+      showToast('Retrying HTTPS sync for Room ' + state.roomCode + '...');
+      pollNtfyMessages();
+      if (state.mode === 'host') {
+        publishEvent({
+          type: 'ROOM_INIT',
+          roomCode: state.roomCode,
+          hostId: state.myId,
+          language: state.language,
+          secretWords: state.secretWords,
+          roundId: state.roundId,
+          ts: Date.now()
+        });
       }
+      broadcastMyProgress();
     }
 
-    function handleMqttMessage(topic, data) {
-      if (!data) return;
+    function processIncomingEvent(data) {
+      if (!data || !data.type) return;
+      if (data.eventId && state.seenEventIds.has(data.eventId)) return;
+      if (data.eventId) state.seenEventIds.add(data.eventId);
 
-      // Room state topic: wordle-arena/v2/{code}/state
-      if (topic.endsWith('/state')) {
-        const roundChanged = data.roundId && data.roundId !== state.roundId;
-        state.language = data.language || 'en';
+      if (data.type === 'ROOM_INIT') {
+        const isNewRound = data.roundId && data.roundId !== state.roundId;
+        state.language = data.language || state.language;
         state.secretWords = data.secretWords || [];
         state.roundId = data.roundId || 1;
 
-        if (state.mode === 'guest' && roundChanged && state.secretWords.length === TOTAL_WORDS) {
+        if (state.mode === 'guest' && isNewRound && state.secretWords.length === TOTAL_WORDS) {
           showToast('Host started a new 5-word round!');
           closeResultsModal();
           resetPlayerMarathon();
@@ -1236,14 +1326,30 @@
         return;
       }
 
-      // Player snapshot topic: wordle-arena/v2/{code}/players/{id}
-      if (topic.includes('/players/') && data.id) {
-        const isNew = !state.players[data.id];
-        state.players[data.id] = data;
+      if (data.type === 'PLAYER_PING' && data.senderId !== state.myId) {
+        if (state.mode === 'host') {
+          publishEvent({
+            type: 'ROOM_INIT',
+            roomCode: state.roomCode,
+            hostId: state.myId,
+            language: state.language,
+            secretWords: state.secretWords,
+            roundId: state.roundId,
+            ts: Date.now()
+          });
+        }
+        broadcastMyProgress();
+        return;
+      }
 
-        if (isNew && data.id !== state.myId) {
-          showToast(`${data.name} joined the room!`);
-          publishPlayerSnapshot();
+      if (data.type === 'PLAYER_STATE' && data.player && data.player.id) {
+        const p = data.player;
+        const isNewPlayer = !state.players[p.id];
+        state.players[p.id] = p;
+
+        if (isNewPlayer && p.id !== state.myId) {
+          showToast(`${p.name} joined the room!`);
+          broadcastMyProgress();
         }
 
         renderPlayersGrid();
@@ -1253,10 +1359,35 @@
       }
     }
 
+    function broadcastMyProgress() {
+      const snapshot = {
+        id: state.myId,
+        name: state.myName,
+        isHost: state.mode === 'host' || state.mode === 'solo',
+        isBot: false,
+        currentWordIdx: state.currentWordIdx,
+        triesUsed: state.triesUsed,
+        solvedCount: state.solvedCount,
+        isFinished: state.isFinished,
+        wordHistory: [...state.wordHistory],
+        liveRows: state.currentGuesses.map(g => g.colors),
+        updatedAt: Date.now()
+      };
+
+      state.players[state.myId] = snapshot;
+
+      if (state.mode !== 'solo') {
+        publishEvent({
+          type: 'PLAYER_STATE',
+          player: snapshot
+        });
+      }
+    }
+
     /**********************************************************************
-     * 5. LAUNCH MODES (HOST / JOIN / SOLO)
+     * 5. LAUNCH MODES (CREATE ROOM / JOIN ROOM / SOLO PRACTICE)
      **********************************************************************/
-    function hostRoom() {
+    async function createMultiplayerRoom() {
       const btn = document.getElementById('host-btn');
       btn.disabled = true;
       btn.textContent = 'Creating Room...';
@@ -1268,36 +1399,38 @@
       state.roundId = 1;
       state.players = {};
 
-      // Update URL with ?room=CODE for easy sharing
-      const newUrl = `${window.location.pathname}?room=${state.roomCode}`;
+      const newUrl = `${window.location.pathname}?room=${state.roomCode}&lang=${state.language}`;
       window.history.replaceState({}, '', newUrl);
 
-      connectMqttRoom({
-        onReady: () => {
-          btn.disabled = false;
-          btn.textContent = 'Host Multiplayer Room';
-          publishRoomState();
-          enterArena();
-          showToast(`Room ${state.roomCode} created! Share invite link with colleagues.`);
-        },
-        onFail: (err) => {
-          btn.disabled = false;
-          btn.textContent = 'Host Multiplayer Room';
-          showToast(err);
-        }
+      initChannelSync(state.roomCode);
+
+      await publishEvent({
+        type: 'ROOM_INIT',
+        roomCode: state.roomCode,
+        hostId: state.myId,
+        language: state.language,
+        secretWords: state.secretWords,
+        roundId: state.roundId,
+        ts: Date.now()
       });
+
+      btn.disabled = false;
+      btn.textContent = 'Create Multiplayer Room';
+
+      enterArena();
+      showToast(`Room ${state.roomCode} created! Click "Copy Invite Link" to share.`);
     }
 
-    function joinRoom() {
-      const code = document.getElementById('join-code-input').value.trim().toUpperCase();
+    async function joinMultiplayerRoom() {
+      const code = document.getElementById('join-code-input').value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
       if (code.length < 4) {
-        showToast('Enter a valid 5-character room code.');
+        showToast('Please enter a valid 6-character Room Code.');
         return;
       }
 
       const btn = document.getElementById('join-btn');
       btn.disabled = true;
-      btn.textContent = '...';
+      btn.textContent = 'Joining...';
 
       state.mode = 'guest';
       state.myName = getNickname();
@@ -1305,41 +1438,40 @@
       state.secretWords = [];
       state.players = {};
 
-      let joined = false;
+      initChannelSync(state.roomCode);
 
-      connectMqttRoom({
-        onReady: () => {
-          const poll = setInterval(() => {
-            if (state.secretWords.length === TOTAL_WORDS) {
-              clearInterval(poll);
-              joined = true;
-              btn.disabled = false;
-              btn.textContent = 'Join';
-              enterArena();
-              showToast(`Joined room ${state.roomCode}!`);
-            }
-          }, 200);
-
-          setTimeout(() => {
-            clearInterval(poll);
-            if (!joined) {
-              btn.disabled = false;
-              btn.textContent = 'Join';
-              disconnectMqtt();
-              showToast(`Room "${code}" not found. Check the code with the host.`);
-            }
-          }, 4500);
-        },
-        onFail: (err) => {
-          btn.disabled = false;
-          btn.textContent = 'Join';
-          showToast(err);
-        }
+      // Ping the room so the host immediately re-broadcasts ROOM_INIT
+      await publishEvent({
+        type: 'PLAYER_PING',
+        name: state.myName,
+        ts: Date.now()
       });
+
+      let joined = false;
+      const checkInterval = setInterval(() => {
+        if (state.secretWords.length === TOTAL_WORDS) {
+          clearInterval(checkInterval);
+          joined = true;
+          btn.disabled = false;
+          btn.textContent = 'Join Room';
+          enterArena();
+          showToast(`Joined Room ${state.roomCode}!`);
+        }
+      }, 250);
+
+      setTimeout(() => {
+        clearInterval(checkInterval);
+        if (!joined) {
+          btn.disabled = false;
+          btn.textContent = 'Join Room';
+          stopNetworkSync();
+          showToast(`Could not find active Room "${code}". Ask the host to verify the code or check firewall status.`);
+        }
+      }, 6500);
     }
 
     function startSoloPractice() {
-      disconnectMqtt();
+      stopNetworkSync();
       state.mode = 'solo';
       state.myName = getNickname();
       state.roomCode = 'SOLO';
@@ -1347,10 +1479,10 @@
       state.roundId = 1;
       state.players = {};
 
-      setConnIndicator('ok', 'Solo Mode');
+      setHttpsStatus('ok', 'Offline Solo');
       enterArena();
       spawnSoloBots();
-      showToast('Solo Marathon started against 2 simulated colleagues!');
+      showToast('Solo Practice started vs 2 simulated colleagues!');
     }
 
     function enterArena() {
@@ -1370,7 +1502,7 @@
       if (!document.getElementById('lobby-view').classList.contains('hidden')) return;
       state.botTimers.forEach(clearInterval);
       state.botTimers = [];
-      disconnectMqtt();
+      stopNetworkSync();
       closeResultsModal();
 
       document.getElementById('arena-view').classList.add('hidden');
@@ -1379,7 +1511,7 @@
     }
 
     function copyInviteLink() {
-      const url = `${window.location.origin}${window.location.pathname}?room=${state.roomCode}`;
+      const url = `${window.location.origin}${window.location.pathname}?room=${state.roomCode}&lang=${state.language}`;
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(url).then(() => {
           showToast(`Invite link copied for Room ${state.roomCode}!`);
@@ -1392,7 +1524,10 @@
     function fallbackCopy(text) {
       const temp = document.createElement('textarea');
       temp.value = text;
+      temp.style.position = 'fixed';
+      temp.style.opacity = '0';
       document.body.appendChild(temp);
+      temp.focus();
       temp.select();
       document.execCommand('copy');
       document.body.removeChild(temp);
@@ -1407,12 +1542,13 @@
       state.triesUsed = 0;
       state.solvedCount = 0;
       state.wordStatuses = ['active', 'pending', 'pending', 'pending', 'pending'];
+      state.wordHistory = [];
       state.currentGuesses = [];
       state.currentInput = '';
       state.keyColors = {};
       state.isFinished = false;
 
-      publishPlayerSnapshot();
+      broadcastMyProgress();
       renderAll();
     }
 
@@ -1430,7 +1566,7 @@
         }
       }
 
-      // Pass 2: Yellow present matches (respecting letter counts)
+      // Pass 2: Yellow present matches
       for (let i = 0; i < 5; i++) {
         if (res[i] === 'correct') continue;
         for (let j = 0; j < 5; j++) {
@@ -1499,7 +1635,7 @@
       const validWordPattern = state.language === 'sv' ? /^[A-ZÅÄÖ]{5}$/ : /^[A-Z]{5}$/;
       if (!validWordPattern.test(state.currentInput)) {
         triggerRowShake();
-        showToast(state.language === 'sv' ? 'Endast bokstäver A-Ö' : 'Letters A-Z only');
+        showToast(state.language === 'sv' ? 'Endast bokstäver A–Ö' : 'Letters A–Z only');
         return;
       }
 
@@ -1526,13 +1662,18 @@
       if (solved) {
         state.solvedCount += 1;
         state.wordStatuses[state.currentWordIdx] = 'solved';
-        publishPlayerSnapshot();
+        state.wordHistory.push({
+          wordIdx: state.currentWordIdx,
+          guessesCount: state.currentGuesses.length,
+          solved: true
+        });
+        broadcastMyProgress();
         renderAll();
 
         if (state.currentWordIdx + 1 < TOTAL_WORDS && state.triesUsed < MAX_TRIES) {
           showToast(state.language === 'sv'
-            ? `Rätt! Nästa ord (${state.currentWordIdx + 2}/5)...`
-            : `Solved! Advancing to Word ${state.currentWordIdx + 2}/5...`);
+            ? `Rätt! Nästa ord (${state.currentWordIdx + 2} av 5)...`
+            : `Solved! Moving to Word ${state.currentWordIdx + 2} of 5...`);
 
           setTimeout(() => {
             state.currentWordIdx += 1;
@@ -1540,31 +1681,31 @@
             state.currentGuesses = [];
             state.currentInput = '';
             state.keyColors = {};
-            publishPlayerSnapshot();
+            broadcastMyProgress();
             renderAll();
           }, 700);
         } else {
           finishMarathon(true);
         }
       } else if (state.triesUsed >= MAX_TRIES) {
-        publishPlayerSnapshot();
+        broadcastMyProgress();
         renderAll();
         finishMarathon(false);
       } else {
-        publishPlayerSnapshot();
+        broadcastMyProgress();
         renderAll();
       }
     }
 
     function finishMarathon(wonAll) {
       state.isFinished = true;
-      publishPlayerSnapshot();
+      broadcastMyProgress();
       renderAll();
 
       if (wonAll && state.solvedCount === TOTAL_WORDS) {
         showToast(`Champion! All 5 words solved in ${state.triesUsed} tries!`);
       } else {
-        showToast(`Marathon complete! Solved ${state.solvedCount}/5 words.`);
+        showToast(`Marathon finished! Solved ${state.solvedCount}/5 words.`);
       }
 
       setTimeout(() => openResultsModal(), 650);
@@ -1587,8 +1728,8 @@
       state.botTimers = [];
 
       const bots = [
-        { id: 'bot-1', name: 'Astrid (Bot)' },
-        { id: 'bot-2', name: 'Johan (Bot)' }
+        { id: 'bot_1', name: 'Astrid (Bot)' },
+        { id: 'bot_2', name: 'Johan (Bot)' }
       ];
 
       bots.forEach(b => {
@@ -1601,6 +1742,7 @@
           triesUsed: 0,
           solvedCount: 0,
           isFinished: false,
+          wordHistory: [],
           liveRows: []
         };
 
@@ -1623,6 +1765,11 @@
 
           if (colors.every(c => c === 'correct')) {
             bot.solvedCount += 1;
+            bot.wordHistory.push({
+              wordIdx: bot.currentWordIdx,
+              guessesCount: bot.liveRows.length,
+              solved: true
+            });
             if (bot.currentWordIdx + 1 < TOTAL_WORDS && bot.triesUsed < MAX_TRIES) {
               setTimeout(() => {
                 if (!state.players[b.id]) return;
@@ -1671,7 +1818,7 @@
       }
 
       document.getElementById('word-progress-label').textContent =
-        state.isFinished ? `Finished (${state.solvedCount}/5 Solved)` : `Word ${state.currentWordIdx + 1} / ${TOTAL_WORDS}`;
+        state.isFinished ? `Finished (${state.solvedCount}/5 Solved)` : `Word ${state.currentWordIdx + 1} of ${TOTAL_WORDS}`;
       document.getElementById('tries-counter-label').textContent = `Tries: ${state.triesUsed} / ${MAX_TRIES}`;
     }
 
@@ -1738,7 +1885,7 @@
       const grid = document.getElementById('players-grid');
       const allPlayers = Object.values(state.players);
 
-      // Put self first, then sort by solvedCount desc, triesUsed asc
+      // Put local player first, then rank by solvedCount desc, triesUsed asc
       allPlayers.sort((a, b) => {
         if (a.id === state.myId) return -1;
         if (b.id === state.myId) return 1;
@@ -1756,7 +1903,20 @@
 
         const badgeText = p.isFinished
           ? `DONE (${p.solvedCount}/5)`
-          : `Word ${Math.min(p.currentWordIdx + 1, TOTAL_WORDS)}/5`;
+          : `${p.solvedCount}/5 Solved`;
+
+        // Build compact history strip of previous words (W1..W5)
+        let historyHtml = '<div class="history-strips">';
+        const histMap = {};
+        (p.wordHistory || []).forEach(h => { histMap[h.wordIdx] = h; });
+        for (let w = 0; w < TOTAL_WORDS; w++) {
+          if (histMap[w]) {
+            historyHtml += `<span class="hist-chip">W${w + 1}: ${histMap[w].guessesCount}✓</span>`;
+          } else {
+            historyHtml += `<span class="hist-chip pending">W${w + 1}</span>`;
+          }
+        }
+        historyHtml += '</div>';
 
         card.innerHTML = `
           <div class="slot-top">
@@ -1764,18 +1924,20 @@
             <span class="slot-badge${p.isFinished ? ' done' : ''}">${badgeText}</span>
           </div>
           <div class="slot-sub">
-            <span>Solved: ${p.solvedCount}/${TOTAL_WORDS}</span>
+            <span>On Word ${Math.min(p.currentWordIdx + 1, TOTAL_WORDS)}/5</span>
             <span>Tries: ${p.triesUsed}/${MAX_TRIES}</span>
           </div>
+          ${historyHtml}
         `;
 
+        // Live color-coded tile grid (Gray/Yellow/Green ONLY — letters hidden)
         const miniGrid = document.createElement('div');
         miniGrid.className = 'mini-grid';
 
         if (!p.liveRows || p.liveRows.length === 0) {
           const empty = document.createElement('div');
           empty.className = 'mini-empty';
-          empty.textContent = p.isFinished ? 'Marathon completed!' : 'Typing current word...';
+          empty.textContent = p.isFinished ? 'Marathon completed!' : 'Guessing current word...';
           miniGrid.appendChild(empty);
         } else {
           p.liveRows.forEach(colors => {
@@ -1823,7 +1985,7 @@
       ranked.forEach((p, idx) => {
         const row = document.createElement('div');
         row.className = `podium-item${idx === 0 ? ' rank-1' : ''}`;
-        const statusStr = p.isFinished ? 'Finished' : `On Word ${p.currentWordIdx + 1}/5`;
+        const statusStr = p.isFinished ? 'Finished' : `Word ${p.currentWordIdx + 1}/5`;
         row.innerHTML = `
           <span>#${idx + 1} ${escapeHtml(p.name)} <small style="color:var(--text-muted); font-weight:600;">(${statusStr})</small></span>
           <span>${p.solvedCount}/5 words · ${p.triesUsed} tries</span>
@@ -1832,14 +1994,22 @@
       });
     }
 
-    function playAgain() {
+    async function playAgain() {
       if (state.mode === 'guest') return;
       closeResultsModal();
       state.secretWords = pickFiveWords(state.language);
       state.roundId += 1;
 
       if (state.mode === 'host') {
-        publishRoomState();
+        await publishEvent({
+          type: 'ROOM_INIT',
+          roomCode: state.roomCode,
+          hostId: state.myId,
+          language: state.language,
+          secretWords: state.secretWords,
+          roundId: state.roundId,
+          ts: Date.now()
+        });
       } else if (state.mode === 'solo') {
         state.players = {};
         spawnSoloBots();
