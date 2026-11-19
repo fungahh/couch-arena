@@ -1,0 +1,1712 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Wordle Arena — 5-Word Multiplayer Marathon</title>
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- PeerJS for zero-backend WebRTC multiplayer on GitHub Pages -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <!-- Canvas Confetti for celebrations -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            board: {
+              bg: '#0f1115',
+              surface: '#161920',
+              card: '#1c2029',
+              border: '#2b303d',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    :root {
+      --tile-absent: #3a3a3c;
+      --tile-present: #b59f3b;
+      --tile-correct: #538d4e;
+      --tile-border: #3a3a3c;
+      --tile-active-border: #818384;
+    }
+
+    body.colorblind {
+      --tile-present: #85c0f9;
+      --tile-correct: #f5793a;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: #0b0d11;
+      color: #f3f4f6;
+      font-family: 'Inter', sans-serif;
+      overflow-x: hidden;
+    }
+
+    /* Tile flip & pop animations */
+    @keyframes popIn {
+      0% { transform: scale(0.85); opacity: 0.7; }
+      50% { transform: scale(1.08); }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    @keyframes flipReveal {
+      0% { transform: rotateX(0deg); }
+      50% { transform: rotateX(90deg); }
+      100% { transform: rotateX(0deg); }
+    }
+
+    @keyframes shakeRow {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(83, 141, 78, 0.4); }
+      50% { box-shadow: 0 0 18px 2px rgba(83, 141, 78, 0.25); }
+    }
+
+    .tile-pop {
+      animation: popIn 0.14s ease-out forwards;
+      border-color: var(--tile-active-border) !important;
+    }
+
+    .tile-flip {
+      animation: flipReveal 0.48s ease-in-out forwards;
+    }
+
+    .row-shake {
+      animation: shakeRow 0.35s ease-in-out;
+    }
+
+    .tile-absent {
+      background-color: var(--tile-absent) !important;
+      border-color: var(--tile-absent) !important;
+      color: #ffffff !important;
+    }
+
+    .tile-present {
+      background-color: var(--tile-present) !important;
+      border-color: var(--tile-present) !important;
+      color: #ffffff !important;
+    }
+
+    .tile-correct {
+      background-color: var(--tile-correct) !important;
+      border-color: var(--tile-correct) !important;
+      color: #ffffff !important;
+    }
+
+    /* Mini live opponent tiles */
+    .mini-tile {
+      transition: background-color 0.25s ease, transform 0.25s ease;
+    }
+    .mini-tile.evaluated {
+      animation: popIn 0.25s ease-out;
+    }
+
+    /* Custom subtle scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f1115;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #2b303d;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #3f4659;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-emerald-500/30 selection:text-emerald-200">
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-2 pointer-events-none w-full max-w-sm px-4"></div>
+
+  <!-- Top Navigation Bar -->
+  <header class="w-full border-b border-board-border bg-board-surface/90 backdrop-blur-md sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 h-14 flex items-center justify-between gap-2">
+      <!-- Brand Logo -->
+      <div class="flex items-center gap-2.5 cursor-pointer" onclick="confirmLeaveToHome()">
+        <div class="flex gap-1">
+          <span class="w-6 h-6 rounded bg-[#538d4e] flex items-center justify-center font-extrabold text-xs text-white shadow">W</span>
+          <span class="w-6 h-6 rounded bg-[#b59f3b] flex items-center justify-center font-extrabold text-xs text-white shadow">5</span>
+        </div>
+        <div>
+          <h1 class="font-extrabold text-base sm:text-lg tracking-tight text-white leading-none">WORDLE <span class="text-emerald-400">ARENA</span></h1>
+          <p class="text-[10px] text-gray-400 font-medium tracking-wider uppercase hidden sm:block">5 Words • 25 Tries • Live</p>
+        </div>
+      </div>
+
+      <!-- Active Room Info Pill (Hidden on Landing) -->
+      <div id="header-room-controls" class="hidden items-center gap-2">
+        <span id="header-lang-badge" class="px-2.5 py-1 rounded-full text-xs font-bold bg-board-card border border-board-border text-gray-200">
+          🇬🇧 EN
+        </span>
+        <button id="copy-invite-btn" onclick="copyInviteLink()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold transition cursor-pointer">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+          <span id="header-room-code">ROOM</span>
+        </button>
+      </div>
+
+      <!-- Right Utility Buttons -->
+      <div class="flex items-center gap-1.5 sm:gap-2">
+        <button onclick="toggleColorblind()" id="cb-toggle-btn" title="Toggle High-Contrast Colors" class="p-2 rounded-lg bg-board-card hover:bg-gray-800 border border-board-border text-gray-300 text-xs font-semibold transition flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+          <span class="hidden md:inline">Contrast</span>
+        </button>
+        <button onclick="openRulesModal()" title="How to Play" class="p-2 rounded-lg bg-board-card hover:bg-gray-800 border border-board-border text-gray-300 text-xs font-semibold transition flex items-center gap-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+          <span class="hidden md:inline">Rules</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================================================= -->
+  <!-- VIEW 1: LANDING / ROOM CREATION & JOIN LOBBY              -->
+  <!-- ========================================================= -->
+  <main id="view-landing" class="flex-1 flex items-center justify-center p-4 sm:p-6">
+    <div class="w-full max-w-xl bg-board-surface border border-board-border rounded-2xl p-6 sm:p-8 shadow-2xl">
+      <div class="text-center mb-6">
+        <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-bold uppercase tracking-wider mb-3">
+          Live Office Multiplayer
+        </div>
+        <h2 class="text-2xl sm:text-3xl font-black text-white tracking-tight">5-Word Wordle Marathon</h2>
+        <p class="text-gray-400 text-sm mt-1.5">Race your colleagues through <strong class="text-gray-200">5 secret words</strong> using a shared pool of <strong class="text-gray-200">25 total tries</strong>. Watch everyone's color tiles update live!</p>
+      </div>
+
+      <!-- Player Display Name Input -->
+      <div class="mb-5">
+        <label for="player-name-input" class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">Your Display Name</label>
+        <input id="player-name-input" type="text" maxlength="16" placeholder="e.g. Alex, Astrid, Johan..."
+          class="w-full px-4 py-3 rounded-xl bg-board-bg border border-board-border focus:border-emerald-500 focus:outline-none text-white font-semibold placeholder-gray-600 transition" />
+      </div>
+
+      <!-- Mode Tabs: Host New Room vs Join Existing Room -->
+      <div class="grid grid-cols-2 gap-2 p-1 rounded-xl bg-board-bg border border-board-border mb-5">
+        <button id="tab-host" onclick="switchLandingTab('host')" class="py-2.5 rounded-lg text-sm font-bold transition bg-board-card text-white shadow">
+          Create Room
+        </button>
+        <button id="tab-join" onclick="switchLandingTab('join')" class="py-2.5 rounded-lg text-sm font-bold transition text-gray-400 hover:text-white">
+          Join Room
+        </button>
+      </div>
+
+      <!-- HOST PANEL -->
+      <div id="panel-host" class="space-y-5">
+        <!-- Language Toggle -->
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Dictionary & Keyboard Language</label>
+          <div class="grid grid-cols-2 gap-3">
+            <button type="button" id="lang-btn-en" onclick="selectLanguage('en')"
+              class="flex items-center justify-center gap-2.5 p-3.5 rounded-xl border-2 border-emerald-500 bg-emerald-500/10 text-white font-bold transition cursor-pointer">
+              <span class="text-xl">🇬🇧</span>
+              <div class="text-left">
+                <div class="text-sm font-extrabold leading-tight">English</div>
+                <div class="text-[11px] text-gray-400 font-normal">A–Z Keyboard</div>
+              </div>
+            </button>
+            <button type="button" id="lang-btn-sv" onclick="selectLanguage('sv')"
+              class="flex items-center justify-center gap-2.5 p-3.5 rounded-xl border-2 border-board-border bg-board-bg hover:border-gray-600 text-gray-300 font-bold transition cursor-pointer">
+              <span class="text-xl">🇸🇪</span>
+              <div class="text-left">
+                <div class="text-sm font-extrabold leading-tight">Svenska</div>
+                <div class="text-[11px] text-gray-400 font-normal">Med Å, Ä, Ö</div>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="space-y-2.5 pt-1">
+          <button id="create-room-btn" onclick="createMultiplayerRoom()"
+            class="w-full py-3.5 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-extrabold text-sm sm:text-base shadow-lg shadow-emerald-900/30 transition flex items-center justify-center gap-2 cursor-pointer">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            <span>Host Live Multiplayer Room</span>
+          </button>
+
+          <button onclick="startSoloPractice()"
+            class="w-full py-3 px-5 rounded-xl bg-board-card hover:bg-gray-800 border border-board-border text-gray-200 font-bold text-sm transition flex items-center justify-center gap-2 cursor-pointer">
+            <span>Play Solo Practice (Instant Start)</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- JOIN PANEL -->
+      <div id="panel-join" class="hidden space-y-5">
+        <div>
+          <label for="room-code-input" class="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">Room Code</label>
+          <input id="room-code-input" type="text" maxlength="10" placeholder="e.g. MALMO7"
+            class="w-full px-4 py-3 rounded-xl bg-board-bg border border-board-border focus:border-emerald-500 focus:outline-none text-white font-mono text-lg uppercase tracking-widest placeholder-gray-600 transition" />
+        </div>
+        <button id="join-room-btn" onclick="joinMultiplayerRoom()"
+          class="w-full py-3.5 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-[0.99] text-white font-extrabold text-sm sm:text-base shadow-lg shadow-emerald-900/30 transition flex items-center justify-center gap-2 cursor-pointer">
+          <span>Join Colleagues' Room</span>
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <!-- ========================================================= -->
+  <!-- VIEW 2: MULTIPLAYER WAITING LOBBY                         -->
+  <!-- ========================================================= -->
+  <section id="view-lobby" class="hidden flex-1 flex items-center justify-center p-4 sm:p-6">
+    <div class="w-full max-w-2xl bg-board-surface border border-board-border rounded-2xl p-6 sm:p-8 shadow-2xl">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-board-border">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span class="text-xs font-bold uppercase tracking-wider text-emerald-400">Waiting for players</span>
+          </div>
+          <h2 class="text-2xl font-black text-white mt-1">Room: <span id="lobby-room-code" class="font-mono text-emerald-400">------</span></h2>
+          <p class="text-xs text-gray-400 mt-0.5">Language: <strong id="lobby-lang-label" class="text-gray-200">English</strong> • 5 Words • 25 Max Tries</p>
+        </div>
+
+        <button onclick="copyInviteLink()" class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm shadow transition flex items-center justify-center gap-2 cursor-pointer shrink-0">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+          <span>Copy Invite Link</span>
+        </button>
+      </div>
+
+      <!-- Connected Players Grid -->
+      <div class="my-6">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-xs font-bold uppercase tracking-wider text-gray-400">Connected Players (<span id="lobby-player-count">1</span>)</h3>
+          <button id="add-bot-btn" onclick="addDemoBot()" class="hidden text-xs font-semibold text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-2.5 py-1 rounded-lg transition cursor-pointer">
+            + Add Demo Colleague (Bot)
+          </button>
+        </div>
+        <div id="lobby-players-list" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <!-- Host Start Controls -->
+      <div id="lobby-host-controls" class="hidden pt-2">
+        <button onclick="hostStartMatch()" class="w-full py-3.5 px-6 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-base shadow-lg shadow-emerald-900/30 transition cursor-pointer">
+          Start 5-Word Match Now
+        </button>
+      </div>
+      <div id="lobby-guest-wait" class="hidden text-center py-3 px-4 rounded-xl bg-board-bg border border-board-border text-sm text-gray-400">
+        Waiting for the room host to start the match...
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================= -->
+  <!-- VIEW 3: ACTIVE MULTIPLAYER ARENA                          -->
+  <!-- ========================================================= -->
+  <section id="view-game" class="hidden flex-1 flex flex-col max-w-7xl w-full mx-auto px-2 sm:px-6 py-3 sm:py-5 gap-4">
+
+    <!-- Top Marathon Progress Bar -->
+    <div class="bg-board-surface border border-board-border rounded-2xl p-3 sm:p-4 shadow-lg">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <!-- 5-Word Stepper -->
+        <div class="flex items-center gap-2 sm:gap-3">
+          <span class="text-xs font-bold uppercase tracking-wider text-gray-400 hidden sm:inline">Words:</span>
+          <div id="word-progress-pills" class="flex items-center gap-1.5 sm:gap-2">
+            <!-- 5 badges rendered by JS -->
+          </div>
+        </div>
+
+        <!-- 25-Tries Meter -->
+        <div class="flex items-center gap-3 ml-auto">
+          <div class="text-right">
+            <div class="text-[11px] font-bold uppercase tracking-wider text-gray-400">Tries Remaining</div>
+            <div class="text-sm sm:text-base font-black text-white leading-tight">
+              <span id="tries-remaining-count" class="text-emerald-400">25</span> <span class="text-gray-500 font-semibold">/ 25</span>
+            </div>
+          </div>
+          <div class="w-24 sm:w-32 h-2.5 bg-board-bg rounded-full overflow-hidden border border-board-border">
+            <div id="tries-progress-bar" class="h-full bg-emerald-500 transition-all duration-300" style="width: 100%"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Split Arena: Left = Your Active Board + Keyboard | Right = Live Colleague Slots -->
+    <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-start">
+
+      <!-- LEFT COLUMN: Player's Own Board & Keyboard (7 cols on lg) -->
+      <div class="lg:col-span-7 flex flex-col items-center justify-between bg-board-surface border border-board-border rounded-2xl p-3 sm:p-5 shadow-xl">
+        <!-- Current Word Status Banner -->
+        <div class="w-full flex items-center justify-between mb-3 px-1">
+          <div class="flex items-center gap-2">
+            <span id="current-word-badge" class="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-extrabold">
+              WORD 1 OF 5
+            </span>
+            <span id="word-attempts-note" class="text-xs text-gray-400">Guess the 5-letter word</span>
+          </div>
+          <button id="skip-word-btn" onclick="skipCurrentWord()" title="Skip stuck word (costs 2 tries)" class="text-xs font-semibold text-gray-400 hover:text-amber-400 transition px-2 py-1 rounded hover:bg-board-card cursor-pointer">
+            Skip (-2 tries)
+          </button>
+        </div>
+
+        <!-- Active Wordle Grid (Shows up to 6 visible rows for the current word, scrolling/cycling cleanly) -->
+        <div id="my-board-container" class="my-auto py-1 flex flex-col items-center justify-center w-full">
+          <div id="my-wordle-grid" class="grid grid-rows-6 gap-1.5 sm:gap-2 w-full max-w-[310px] sm:max-w-[340px]">
+            <!-- 6x5 tiles generated via JS -->
+          </div>
+        </div>
+
+        <!-- Finished Personal State Overlay Banner (when player finishes all 5 words or uses 25 tries) -->
+        <div id="my-finished-banner" class="hidden w-full my-4 p-4 rounded-xl bg-board-bg border border-emerald-500/40 text-center">
+          <div id="my-finished-title" class="text-lg font-black text-emerald-400">All 5 Words Solved!</div>
+          <p id="my-finished-desc" class="text-xs sm:text-sm text-gray-300 mt-1">Waiting for other colleagues to finish their 25 tries...</p>
+          <button onclick="openScoreboardModal()" class="mt-3 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer">
+            View Live Standings
+          </button>
+        </div>
+
+        <!-- Interactive On-Screen Keyboard -->
+        <div id="keyboard-container" class="w-full max-w-xl mt-3 sm:mt-4 select-none">
+          <!-- Keyboard rows generated dynamically for EN (26 keys) or SV (29 keys with Å, Ä, Ö) -->
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN: Dynamic Colleagues Live Slots (5 cols on lg) -->
+      <div class="lg:col-span-5 flex flex-col gap-3">
+        <div class="flex items-center justify-between px-1">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+            <h3 class="text-xs font-extrabold uppercase tracking-wider text-gray-300">Live Colleague Boards (<span id="live-slots-count">0</span>)</h3>
+          </div>
+          <button onclick="openScoreboardModal()" class="text-xs font-bold text-emerald-400 hover:text-emerald-300 transition cursor-pointer">
+            Standings →
+          </button>
+        </div>
+
+        <!-- Dynamic Grid of Other Players' Live Wordle Slots -->
+        <div id="colleagues-slots-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-3">
+          <!-- Each joined colleague opens up a new live slot card here -->
+        </div>
+
+        <!-- Empty State if Playing Solo -->
+        <div id="no-colleagues-card" class="bg-board-surface/60 border border-dashed border-board-border rounded-2xl p-6 text-center">
+          <p class="text-sm font-semibold text-gray-300">No colleagues in this room yet</p>
+          <p class="text-xs text-gray-400 mt-1">Share your invite link so colleagues appear here live, or add a simulated colleague to test!</p>
+          <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <button onclick="copyInviteLink()" class="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer">
+              Copy Invite Link
+            </button>
+            <button onclick="addDemoBotInGame()" class="px-3.5 py-2 rounded-lg bg-board-card hover:bg-gray-800 border border-board-border text-amber-300 text-xs font-bold transition cursor-pointer">
+              + Add Demo Colleague
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ========================================================= -->
+  <!-- MODAL: END-OF-MATCH PODIUM & LIVE SCOREBOARD              -->
+  <!-- ========================================================= -->
+  <div id="scoreboard-modal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="w-full max-w-lg bg-board-surface border border-board-border rounded-2xl p-6 shadow-2xl">
+      <div class="flex items-center justify-between pb-4 border-b border-board-border">
+        <div>
+          <span class="text-[11px] font-bold uppercase tracking-wider text-emerald-400">5-Word Marathon</span>
+          <h3 class="text-xl font-black text-white">Live Match Standings</h3>
+        </div>
+        <button onclick="closeScoreboardModal()" class="p-2 rounded-lg bg-board-card hover:bg-gray-800 text-gray-400 hover:text-white transition cursor-pointer">
+          ✕
+        </button>
+      </div>
+
+      <div id="scoreboard-list" class="my-4 space-y-2.5 max-h-80 overflow-y-auto pr-1">
+        <!-- Ranked players list -->
+      </div>
+
+      <!-- Secret Words Reveal (shown once player is done or match ends) -->
+      <div id="secret-words-reveal" class="hidden mt-4 p-3.5 rounded-xl bg-board-bg border border-board-border">
+        <div class="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-2">Match Secret Words</div>
+        <div id="secret-words-chips" class="flex flex-wrap gap-2"></div>
+      </div>
+
+      <div class="mt-5 flex items-center justify-end gap-2.5">
+        <button onclick="closeScoreboardModal()" class="px-4 py-2.5 rounded-xl bg-board-card hover:bg-gray-800 text-gray-200 text-xs font-bold transition cursor-pointer">
+          Close
+        </button>
+        <button id="play-again-btn" onclick="playAgainSameRoom()" class="hidden px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition cursor-pointer">
+          New 5-Word Round
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL: HOW TO PLAY RULES                                  -->
+  <!-- ========================================================= -->
+  <div id="rules-modal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-board-surface border border-board-border rounded-2xl p-6 shadow-2xl">
+      <div class="flex items-center justify-between pb-3 border-b border-board-border">
+        <h3 class="text-lg font-black text-white">How Wordle Arena Works</h3>
+        <button onclick="closeRulesModal()" class="p-1.5 rounded-lg bg-board-card text-gray-400 hover:text-white cursor-pointer">✕</button>
+      </div>
+      <div class="mt-4 space-y-3 text-sm text-gray-300">
+        <p><strong class="text-white">1. 5 Words in a Row:</strong> Every player in the room solves the exact same sequence of <strong class="text-emerald-400">5 secret 5-letter words</strong>.</p>
+        <p><strong class="text-white">2. Shared Pool of 25 Tries:</strong> You have <strong class="text-amber-400">25 total guesses</strong> across all 5 words combined. Solve early words quickly to save tries for tougher words!</p>
+        <p><strong class="text-white">3. Live Colleague Slots:</strong> Every colleague who joins opens a live mini-board showing their green/yellow/gray tile progress in real time—without revealing their letters.</p>
+        <div class="p-3 rounded-xl bg-board-bg border border-board-border space-y-2 text-xs">
+          <div class="flex items-center gap-2"><span class="w-5 h-5 rounded tile-correct inline-block"></span> <span><strong>Green:</strong> Right letter in the right spot.</span></div>
+          <div class="flex items-center gap-2"><span class="w-5 h-5 rounded tile-present inline-block"></span> <span><strong>Yellow:</strong> Letter is in the word, wrong spot.</span></div>
+          <div class="flex items-center gap-2"><span class="w-5 h-5 rounded tile-absent inline-block"></span> <span><strong>Gray:</strong> Letter is not in the word.</span></div>
+        </div>
+      </div>
+      <button onclick="closeRulesModal()" class="mt-5 w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition cursor-pointer">
+        Got It!
+      </button>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- JAVASCRIPT APPLICATION LOGIC                              -->
+  <!-- ========================================================= -->
+  <script>
+    /*************************************************************************
+     * 1. CURATED 5-LETTER DICTIONARIES (ENGLISH & SWEDISH WITH Å, Ä, Ö)
+     *************************************************************************/
+    const DICTIONARIES = {
+      en: [
+        "APPLE","BRAVE","CRANE","DRIVE","EAGLE","FLAME","GRAPE","HOUSE","INPUT","JOKER",
+        "KNIFE","LEMON","MOUSE","NIGHT","OCEAN","PIANO","QUEEN","RIVER","SNAKE","TRAIN",
+        "UNITY","VALUE","WATER","YOUTH","ZEBRA","ACTOR","BEACH","CLOUD","DANCE","EARTH",
+        "FROST","GHOST","HEART","IMAGE","JUDGE","LIGHT","MAGIC","NORTH","OLIVE","POWER",
+        "QUIET","RADIO","STORM","TIGER","URBAN","VOICE","WORLD","ABOVE","ALERT","ARISE",
+        "BASIC","BLIND","BOARD","BRAIN","BREAD","BRICK","BRING","BUILD","CANDY","CHAIR",
+        "CHARM","CHASE","CHEAP","CHECK","CHEST","CHIEF","CHILD","CLEAN","CLEAR","CLIMB",
+        "CLOCK","CLOSE","COACH","COAST","COUNT","COURT","COVER","CRAFT","CRASH","CREAM",
+        "CROWD","CROWN","CURVE","CYCLE","DAILY","DEPTH","DOUBT","DRAFT","DRAIN","DRAMA",
+        "DREAM","DRESS","DRINK","EARLY","EMPTY","ENEMY","ENJOY","ENTER","EQUAL","ERROR",
+        "EVENT","EXACT","EXTRA","FAITH","FALSE","FAULT","FIELD","FIGHT","FINAL","FLOOR",
+        "FOCUS","FORCE","FRAME","FRESH","FRONT","FRUIT","GIANT","GLASS","GLOBE","GLORY",
+        "GRACE","GRADE","GRAIN","GRAND","GRANT","GRASS","GREAT","GREEN","GROUP","GUARD",
+        "GUESS","GUIDE","HAPPY","HEAVY","HORSE","HOTEL","HUMAN","IDEAL","INNER","ISSUE",
+        "JOINT","LABOR","LARGE","LASER","LAUGH","LAYER","LEARN","LEVEL","LIMIT","LOCAL",
+        "LOGIC","LUCKY","LUNCH","MAJOR","MARCH","MATCH","METAL","MODEL","MONEY","MONTH",
+        "MOTOR","MOUNT","MUSIC","NERVE","NEVER","NOISE","NOVEL","NURSE","OFFER","ORDER",
+        "OTHER","OWNER","PANEL","PAPER","PARTY","PEACE","PHASE","PHONE","PHOTO","PIECE",
+        "PILOT","PITCH","PLACE","PLAIN","PLANE","PLANT","PLATE","POINT","POUND","PRESS",
+        "PRICE","PRIDE","PRIME","PRINT","PRIZE","PROOF","PROUD","QUICK","QUITE","RAISE",
+        "RANGE","RAPID","RATIO","REACH","REACT","READY","REPLY","RIGHT","ROUND","ROUTE",
+        "ROYAL","SCALE","SCENE","SCOPE","SCORE","SENSE","SERVE","SHADE","SHAKE","SHAPE",
+        "SHARE","SHARP","SHEET","SHELF","SHELL","SHIFT","SHINE","SHIRT","SHOCK","SHOOT",
+        "SHORT","SIGHT","SINCE","SKILL","SLEEP","SLIDE","SMALL","SMART","SMILE","SMOKE",
+        "SOLID","SOLVE","SOUND","SOUTH","SPACE","SPARE","SPEAK","SPEED","SPEND","SPICE",
+        "SPLIT","SPORT","STAFF","STAGE","STAND","START","STATE","STEAM","STEEL","STICK",
+        "STILL","STOCK","STONE","STORE","STUDY","STYLE","SUGAR","SUPER","SWEET","TABLE",
+        "TASTE","TEACH","THANK","THEME","THICK","THING","THINK","THREE","THROW","TIGHT",
+        "TITLE","TODAY","TOUCH","TOUGH","TOWER","TRACK","TRADE","TRAIL","TREAT","TREND",
+        "TRIAL","TRUST","TRUTH","TWICE","UNDER","UPPER","VALID","VIDEO","VISIT","VITAL",
+        "WATCH","WHEEL","WHERE","WHITE","WHOLE","WOMAN","WRITE","WRONG","YOUNG"
+      ],
+      sv: [
+        "ÄPPLE","BLOMMA","BÄRGA","CYKEL","DRÖMM","FÅGEL","GLÄDJE","HJÄRT","KÄRLE","LÄRKA",
+        "MÅNAD","NÄTTER","PÄRLA","RÄKNA","SKÖLD","SNÖIG","STRÅL","SÄKER","TÄNKA","VÄRLD",
+        "ÅKARE","ÅLDER","ÅNGER","ÅSIKT","ÄLSKA","ÄNDRA","ÄNGEL","ÄPPEL","ÖPPEN","ÖNSKA",
+        "AFTON","AKTIV","ALLTID","ANDAS","ANKAR","ARBET","ARMÉ","AVGAS","BACKE","BADAR",
+        "BAKAR","BANAN","BARKA","BARNS","BILD","BJÖRN","BLAND","BLANK","BLICK","BLIXT",
+        "BLODA","BLUND","BOKEN","BOLAG","BONDE","BORDE","BORST","BOTEN","BRAND","BREDD",
+        "BRING","BROTT","BRUKA","BRYGG","BRÖST","BÄCKA","BÄNKA","BÄSTA","BÖCKER","BÖRJA",
+        "CIRKA","DAGER","DALAR","DAMMA","DANSA","DATOR","DELAR","DJUPA","DOFTA","DRAG",
+        "DRICK","DRIVA","DRÖM","DUGGA","DUMMA","DYKARE","DÄCKA","DÖRR","EFTER","EGEN",
+        "ELAKA","ELDAR","ENKEL","ENSAM","EXTRA","FABEL","FACK","FALLA","FAMN","FARLIG",
+        "FASTA","FATT","FEBER","FEMTE","FESTA","FIEND","FINNA","FISKA","FJÄLL","FLICK",
+        "FLOCK","FLYGA","FLYKT","FLÖDE","FODER","FOLK","FORMA","FORSK","FRAMT","FREDA",
+        "FRISK","FRUKT","FRÅGA","FUKTA","FULLA","FÅNGA","FÄRGA","FÄSTA","FÖLJA","FÖRST",
+        "GAMLA","GATAN","GENOM","GIFTA","GILLA","GJORD","GLADA","GLANS","GLASA","GLIDA",
+        "GLÖMD","GODIS","GOLVA","GRANN","GREPP","GRIPA","GRODA","GRUND","GRUPP","GRÅTA",
+        "GRÄNS","GRÖNA","GULDK","GÅVOR","GÄRNA","GÄSTA","GÖMMA","HAGEL","HALVA","HAMNA",
+        "HANDS","HAVET","HEDER","HELGA","HEMMA","HIMLA","HINDA","HITTA","HJÄLP","HOPPA",
+        "HORIS","HOTELL","HUVUD","HYLLA","HÅLLA","HÄLSA","HÄMTA","HÄNDA","HÄRMA","HÖGER",
+        "HÖRNA","IDROT","INGEN","INNAN","INSJÖ","ISBIT","JAKTA","JORD","JULEN","JÄMNA",
+        "KAFFE","KALLA","KAMPA","KANIN","KARTA","KASTA","KEDJA","KLARA","KLIVA","KLOCK",
+        "KLÄDER","KNAPP","KNYTA","KOKAR","KOMMA","KONST","KORTA","KOSTA","KRAFT","KRANS",
+        "KRETS","KRIGA","KROPP","KRYPA","KULLA","KUNNA","KYRKA","KÄMPA","KÄNNA","KÖK",
+        "LAGEN","LAMPA","LANDA","LARM","LEDIG","LEJON","LEKSA","LEVER","LIGGA","LIKNA",
+        "LINJE","LISTA","LJUDA","LJUSA","LOCKA","LUGNA","LUKTA","LUNGA","LYCKA","LYFTA",
+        "LYSS","LÅNGA","LÅSTA","LÄGGA","LÄMNA","LÄNGE","LÄSA","LÄTTA","LÖPA","LÖSEN",
+        "MAGER","MAKTA","MANGA","MARKA","MASSA","MATTA","MEDAN","MELLA","MINAS","MINNE",
+        "MISSA","MJUKA","MOLN","MORON","MOTIG","MUNN","MUSIK","MYCK","MÅLA","MÅNGA",
+        "MÄRKA","MÄTTA","MÖBEL","MÖJLIG","MÖRKA","MÖTAS","NAGEL","NAMN","NATUR","NEDRE",
+        "NERE","NOGA","NORRA","NYCK","NYHET","NÄRA","NÄSTA","NÖJD","ODLA","OFTA",
+        "OLIKA","ONDA","ORDNA","ORSAK","OSTEN","PACKA","PAPPA","PARAD","PASSA","PEKA",
+        "PENNA","PIANO","PLATS","PLOCK","POJKE","PRATA","PRESS","PRIS","PROVA","PUNKT",
+        "PÅSE","PÄRON","RADIE","RAMLA","RASKA","REDAN","REGEL","REGNA","RENSA","RESA",
+        "RIKTIG","RINGA","ROPA","ROSTA","RULLA","RUNDA","RYGGA","RÅKA","RÄDDA","RÄTT",
+        "RÖDA","RÖRA","RÖSTA","SAKER","SAKTA","SALTA","SAMLA","SAMMA","SAND","SATS",
+        "SEDAN","SEGLA","SEKEL","SENAST","SIDAN","SIFFR","SIGNA","SILVER","SISTA","SITTA",
+        "SJUNG","SJÄLV","SKADA","SKAFF","SKAPA","SKARP","SKATT","SKEDA","SKICK","SKINA",
+        "SKIVA","SKJUT","SKOGA","SKOLA","SKRAT","SKRIK","SKRIV","SKYDD","SKYLL","SKÅL",
+        "SKÄMT","SKÄRP","SKÖNA","SLAG","SLAPP","SLIPA","SLUTA","SLÅSS","SLÄPP","SMAKA",
+        "SMAL","SMARTA","SMIDA","SMYGA","SNABB","SNART","SNÄLL","SOCKA","SOLEN","SOMMAR",
+        "SOVA","SPARA","SPELA","SPETS","SPÅRA","STAD","STARK","START","STAV","STEGA",
+        "STENA","STIGA","STILL","STJÄL","STOCK","STOLT","STORA","STORM","STRID","STRÖM",
+        "STUND","STYRA","STÅL","STÄDA","STÄLL","STÄNG","STÖD","STÖRA","SUKTA","SUNDA",
+        "SVAG","SVARA","SVART","SVENS","SVÄNG","SYFTA","SYND","SYNS","SYSTE","SÅNG",
+        "SÄLJA","SÄNDA","SÄNKA","SÄTTA","SÖDER","SÖKA","SÖMN","SÖTA","TAGEN","TAKET",
+        "TALAR","TANKE","TAVLA","TECKN","TIDIG","TIMME","TITTA","TJOCK","TJUGA","TOPP",
+        "TORKA","TORG","TRAMP","TRAS","TREVL","TRIVS","TROTS","TRYCK","TRYGG","TRÅD",
+        "TRÄD","TRÄFF","TRÄNA","TRÖTT","TUNGA","TUNNA","TVING","TVÅNG","TYCKA","TYDLIG",
+        "TYSTA","TÅGET","TÄCKA","TÄNDA","TÄT","UNDER","UNGA","UPPE","UTAN","VACKER",
+        "VAKNA","VAKTA","VALET","VANLIG","VARM","VATTN","VECKA","VETA","VIKTIG","VILJA",
+        "VILLA","VINDA","VINNA","VINTER","VISA","VISST","VITA","VUXEN","VÅGA","VÅRA",
+        "VÄCKA","VÄDER","VÄGEN","VÄLJA","VÄNDA","VÄNTA","VÄRDE","VÄRME","VÄXA","YNGRE",
+        "YTTER","ÄKTA","ÄLGEN","ÄMNE","ÄNDA","ÄNTLIG","ÄRVA","ÄTA","ÖGON","ÖKAD","ÖVER"
+      ].map(w => w.toUpperCase()).filter(w => w.length === 5)
+    };
+
+    // Ensure every word in both dictionaries is strictly 5 uppercase characters
+    DICTIONARIES.en = [...new Set(DICTIONARIES.en.map(w => w.trim().toUpperCase()).filter(w => w.length === 5))];
+    DICTIONARIES.sv = [...new Set(DICTIONARIES.sv.map(w => w.trim().toUpperCase()).filter(w => w.length === 5))];
+
+    const KEYBOARD_LAYOUTS = {
+      en: [
+        ['Q','W','E','R','T','Y','U','I','O','P'],
+        ['A','S','D','F','G','H','J','K','L'],
+        ['ENTER','Z','X','C','V','B','N','M','BACK']
+      ],
+      sv: [
+        ['Q','W','E','R','T','Y','U','I','O','P','Å'],
+        ['A','S','D','F','G','H','J','K','L','Ö','Ä'],
+        ['ENTER','Z','X','C','V','B','N','M','BACK']
+      ]
+    };
+
+    /*************************************************************************
+     * 2. GLOBAL APPLICATION STATE
+     *************************************************************************/
+    const TOTAL_WORDS = 5;
+    const MAX_TRIES = 25;
+
+    let state = {
+      mode: 'solo', // 'solo' | 'host' | 'guest'
+      language: 'en', // 'en' | 'sv'
+      roomCode: '',
+      myId: 'local-' + Math.random().toString(36).substring(2, 8),
+      myName: 'Player',
+      secretWords: [], // Array of 5 target words for this match
+      matchStarted: false,
+
+      // Personal progress
+      currentWordIndex: 0, // 0..4
+      totalTriesUsed: 0,   // 0..25
+      solvedCount: 0,      // 0..5
+      wordStatuses: ['active', 'locked', 'locked', 'locked', 'locked'], // 'locked' | 'active' | 'solved' | 'skipped'
+      currentWordGuesses: [], // Guesses made on the current word: [{ word, evals: ['correct'|'present'|'absent'] }]
+      currentInput: '',
+      isFinished: false,
+      keyStates: {}, // Map of letter -> 'correct' | 'present' | 'absent'
+
+      // Multiplayer state
+      peer: null,
+      hostConn: null, // For guests
+      guestConns: {}, // For host: peerId -> DataConnection
+      players: {},    // Map of playerId -> PlayerSnapshot
+      botIntervals: [] // Demo bot timers
+    };
+
+    /*************************************************************************
+     * 3. INITIALIZATION & URL INVITE LINK DETECTION
+     *************************************************************************/
+    window.addEventListener('DOMContentLoaded', () => {
+      // Load saved player name if available
+      const savedName = localStorage.getItem('wordle_arena_name');
+      if (savedName) {
+        document.getElementById('player-name-input').value = savedName;
+      }
+
+      // Check URL query parameter ?room=CODE for one-click colleague join
+      const params = new URLSearchParams(window.location.search);
+      const roomParam = params.get('room');
+      if (roomParam) {
+        switchLandingTab('join');
+        document.getElementById('room-code-input').value = roomParam.toUpperCase().trim();
+        showToast(`Invite detected for room ${roomParam.toUpperCase()}! Enter your name and click Join.`);
+      }
+
+      // Physical keyboard listener
+      window.addEventListener('keydown', handlePhysicalKeydown);
+    });
+
+    function switchLandingTab(tab) {
+      const tabHost = document.getElementById('tab-host');
+      const tabJoin = document.getElementById('tab-join');
+      const panelHost = document.getElementById('panel-host');
+      const panelJoin = document.getElementById('panel-join');
+
+      if (tab === 'host') {
+        tabHost.className = 'py-2.5 rounded-lg text-sm font-bold transition bg-board-card text-white shadow';
+        tabJoin.className = 'py-2.5 rounded-lg text-sm font-bold transition text-gray-400 hover:text-white';
+        panelHost.classList.remove('hidden');
+        panelJoin.classList.add('hidden');
+      } else {
+        tabJoin.className = 'py-2.5 rounded-lg text-sm font-bold transition bg-board-card text-white shadow';
+        tabHost.className = 'py-2.5 rounded-lg text-sm font-bold transition text-gray-400 hover:text-white';
+        panelJoin.classList.remove('hidden');
+        panelHost.classList.add('hidden');
+      }
+    }
+
+    function selectLanguage(lang) {
+      state.language = lang;
+      const btnEn = document.getElementById('lang-btn-en');
+      const btnSv = document.getElementById('lang-btn-sv');
+
+      if (lang === 'en') {
+        btnEn.className = 'flex items-center justify-center gap-2.5 p-3.5 rounded-xl border-2 border-emerald-500 bg-emerald-500/10 text-white font-bold transition cursor-pointer';
+        btnSv.className = 'flex items-center justify-center gap-2.5 p-3.5 rounded-xl border-2 border-board-border bg-board-bg hover:border-gray-600 text-gray-300 font-bold transition cursor-pointer';
+      } else {
+        btnSv.className = 'flex items-center justify-center gap-2.5 p-3.5 rounded-xl border-2 border-emerald-500 bg-emerald-500/10 text-white font-bold transition cursor-pointer';
+        btnEn.className = 'flex items-center justify-center gap-2.5 p-3.5 rounded-xl border-2 border-board-border bg-board-bg hover:border-gray-600 text-gray-300 font-bold transition cursor-pointer';
+      }
+    }
+
+    function getSanitizedPlayerName() {
+      const raw = document.getElementById('player-name-input').value.trim();
+      const name = raw || ('Player ' + Math.floor(100 + Math.random() * 900));
+      localStorage.setItem('wordle_arena_name', name);
+      return name;
+    }
+
+    function generateRoomCode() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let code = '';
+      for (let i = 0; i < 6; i++) {
+        code += chars[Math.floor(Math.random() * chars.length)];
+      }
+      return code;
+    }
+
+    function pickSecretWords(lang, count = 5) {
+      const pool = [...DICTIONARIES[lang]];
+      const chosen = [];
+      for (let i = 0; i < count; i++) {
+        const idx = Math.floor(Math.random() * pool.length);
+        chosen.push(pool.splice(idx, 1)[0]);
+      }
+      return chosen;
+    }
+
+    /*************************************************************************
+     * 4. SOLO PRACTICE & MULTIPLAYER ROOM SETUP (PEERJS WEBRTC)
+     *************************************************************************/
+    function startSoloPractice() {
+      state.mode = 'solo';
+      state.myName = getSanitizedPlayerName();
+      state.roomCode = 'SOLO';
+      state.secretWords = pickSecretWords(state.language, TOTAL_WORDS);
+      state.players = {};
+      registerSelfPlayer();
+      beginMatchGameplay();
+    }
+
+    function createMultiplayerRoom() {
+      const btn = document.getElementById('create-room-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<span>Creating Room...</span>';
+
+      state.mode = 'host';
+      state.myName = getSanitizedPlayerName();
+      state.roomCode = generateRoomCode();
+      state.secretWords = pickSecretWords(state.language, TOTAL_WORDS);
+
+      const peerId = 'wordle-arena-' + state.roomCode;
+      state.peer = new Peer(peerId, { debug: 1 });
+
+      state.peer.on('open', (id) => {
+        state.myId = id;
+        state.players = {};
+        registerSelfPlayer();
+        enterLobbyView();
+        btn.disabled = false;
+        btn.innerHTML = '<span>Host Live Multiplayer Room</span>';
+      });
+
+      state.peer.on('connection', (conn) => {
+        setupHostConnectionWithGuest(conn);
+      });
+
+      state.peer.on('error', (err) => {
+        console.error('PeerJS Host Error:', err);
+        showToast('Connection error: ' + err.type + '. Try again.');
+        btn.disabled = false;
+        btn.innerHTML = '<span>Host Live Multiplayer Room</span>';
+      });
+    }
+
+    function setupHostConnectionWithGuest(conn) {
+      conn.on('open', () => {
+        state.guestConns[conn.peer] = conn;
+      });
+
+      conn.on('data', (msg) => {
+        if (!msg || !msg.type) return;
+
+        if (msg.type === 'JOIN_REQUEST') {
+          state.players[msg.player.id] = msg.player;
+          // Send room state & secret words to newly joined guest
+          conn.send({
+            type: 'ROOM_SYNC',
+            language: state.language,
+            roomCode: state.roomCode,
+            secretWords: state.secretWords,
+            matchStarted: state.matchStarted,
+            players: state.players
+          });
+          broadcastToAllGuests({
+            type: 'PLAYERS_UPDATE',
+            players: state.players
+          });
+          renderLobbyPlayers();
+          renderColleagueSlots();
+          showToast(`${msg.player.name} joined the room!`);
+        }
+
+        if (msg.type === 'PLAYER_PROGRESS') {
+          state.players[msg.player.id] = msg.player;
+          broadcastToAllGuests({
+            type: 'PLAYERS_UPDATE',
+            players: state.players
+          });
+          renderColleagueSlots();
+          if (!document.getElementById('scoreboard-modal').classList.contains('hidden')) {
+            renderScoreboard();
+          }
+        }
+      });
+
+      conn.on('close', () => {
+        const leftPlayer = state.players[conn.peer];
+        delete state.guestConns[conn.peer];
+        delete state.players[conn.peer];
+        broadcastToAllGuests({
+          type: 'PLAYERS_UPDATE',
+          players: state.players
+        });
+        renderLobbyPlayers();
+        renderColleagueSlots();
+        if (leftPlayer) showToast(`${leftPlayer.name} disconnected.`);
+      });
+    }
+
+    function broadcastToAllGuests(payload) {
+      Object.values(state.guestConns).forEach(conn => {
+        if (conn && conn.open) {
+          conn.send(payload);
+        }
+      });
+    }
+
+    function joinMultiplayerRoom() {
+      const codeInput = document.getElementById('room-code-input').value.trim().toUpperCase();
+      if (!codeInput) {
+        showToast('Please enter a valid room code.');
+        return;
+      }
+
+      const btn = document.getElementById('join-room-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<span>Connecting to Room...</span>';
+
+      state.mode = 'guest';
+      state.myName = getSanitizedPlayerName();
+      state.roomCode = codeInput;
+
+      state.peer = new Peer({ debug: 1 });
+
+      state.peer.on('open', (id) => {
+        state.myId = id;
+        const hostPeerId = 'wordle-arena-' + state.roomCode;
+        const conn = state.peer.connect(hostPeerId, { reliable: true });
+        state.hostConn = conn;
+
+        conn.on('open', () => {
+          registerSelfPlayer();
+          conn.send({
+            type: 'JOIN_REQUEST',
+            player: state.players[state.myId]
+          });
+        });
+
+        conn.on('data', (msg) => {
+          if (!msg || !msg.type) return;
+
+          if (msg.type === 'ROOM_SYNC') {
+            state.language = msg.language;
+            state.secretWords = msg.secretWords;
+            state.players = msg.players;
+            state.matchStarted = msg.matchStarted;
+            btn.disabled = false;
+            btn.innerHTML = '<span>Join Colleagues\' Room</span>';
+
+            if (state.matchStarted) {
+              beginMatchGameplay();
+            } else {
+              enterLobbyView();
+            }
+          }
+
+          if (msg.type === 'PLAYERS_UPDATE') {
+            state.players = msg.players;
+            renderLobbyPlayers();
+            renderColleagueSlots();
+            if (!document.getElementById('scoreboard-modal').classList.contains('hidden')) {
+              renderScoreboard();
+            }
+          }
+
+          if (msg.type === 'MATCH_START') {
+            state.secretWords = msg.secretWords;
+            state.language = msg.language;
+            beginMatchGameplay();
+          }
+        });
+
+        conn.on('close', () => {
+          showToast('Disconnected from room host.');
+        });
+      });
+
+      state.peer.on('error', (err) => {
+        console.error('PeerJS Guest Error:', err);
+        showToast('Could not find room ' + state.roomCode + '. Check the code!');
+        btn.disabled = false;
+        btn.innerHTML = '<span>Join Colleagues\' Room</span>';
+      });
+    }
+
+    function registerSelfPlayer() {
+      state.players[state.myId] = {
+        id: state.myId,
+        name: state.myName,
+        isHost: state.mode === 'host' || state.mode === 'solo',
+        isBot: false,
+        currentWordIndex: 0,
+        totalTriesUsed: 0,
+        solvedCount: 0,
+        isFinished: false,
+        // Live mini-board rows for current word: array of ['correct'|'present'|'absent']
+        liveRows: []
+      };
+    }
+
+    function syncMyProgressToNetwork() {
+      const snapshot = {
+        id: state.myId,
+        name: state.myName,
+        isHost: state.mode === 'host' || state.mode === 'solo',
+        isBot: false,
+        currentWordIndex: state.currentWordIndex,
+        totalTriesUsed: state.totalTriesUsed,
+        solvedCount: state.solvedCount,
+        isFinished: state.isFinished,
+        liveRows: state.currentWordGuesses.map(g => g.evals)
+      };
+
+      state.players[state.myId] = snapshot;
+
+      if (state.mode === 'host') {
+        broadcastToAllGuests({
+          type: 'PLAYERS_UPDATE',
+          players: state.players
+        });
+      } else if (state.mode === 'guest' && state.hostConn && state.hostConn.open) {
+        state.hostConn.send({
+          type: 'PLAYER_PROGRESS',
+          player: snapshot
+        });
+      }
+    }
+
+    /*************************************************************************
+     * 5. LOBBY VIEW & INVITE LINK SHARING
+     *************************************************************************/
+    function enterLobbyView() {
+      document.getElementById('view-landing').classList.add('hidden');
+      document.getElementById('view-game').classList.add('hidden');
+      document.getElementById('view-lobby').classList.remove('hidden');
+
+      document.getElementById('header-room-controls').classList.remove('hidden');
+      document.getElementById('header-room-controls').classList.add('flex');
+      document.getElementById('header-room-code').textContent = state.roomCode;
+      document.getElementById('header-lang-badge').textContent = state.language === 'sv' ? '🇸🇪 SV' : '🇬🇧 EN';
+
+      document.getElementById('lobby-room-code').textContent = state.roomCode;
+      document.getElementById('lobby-lang-label').textContent = state.language === 'sv' ? 'Svenska (Å, Ä, Ö)' : 'English';
+
+      if (state.mode === 'host') {
+        document.getElementById('lobby-host-controls').classList.remove('hidden');
+        document.getElementById('add-bot-btn').classList.remove('hidden');
+        document.getElementById('lobby-guest-wait').classList.add('hidden');
+      } else {
+        document.getElementById('lobby-host-controls').classList.add('hidden');
+        document.getElementById('add-bot-btn').classList.add('hidden');
+        document.getElementById('lobby-guest-wait').classList.remove('hidden');
+      }
+
+      renderLobbyPlayers();
+    }
+
+    function renderLobbyPlayers() {
+      const list = document.getElementById('lobby-players-list');
+      const playersArr = Object.values(state.players);
+      document.getElementById('lobby-player-count').textContent = playersArr.length;
+
+      list.innerHTML = playersArr.map(p => `
+        <div class="flex items-center justify-between p-3.5 rounded-xl bg-board-bg border border-board-border">
+          <div class="flex items-center gap-2.5">
+            <div class="w-8 h-8 rounded-full bg-emerald-600/25 border border-emerald-500/40 text-emerald-300 font-extrabold text-xs flex items-center justify-center">
+              ${escapeHtml(p.name.substring(0, 2).toUpperCase())}
+            </div>
+            <div>
+              <div class="text-sm font-bold text-white flex items-center gap-1.5">
+                ${escapeHtml(p.name)}
+                ${p.id === state.myId ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-300">YOU</span>' : ''}
+              </div>
+              <div class="text-[11px] text-gray-400">${p.isBot ? 'Simulated Colleague' : (p.isHost ? 'Room Host' : 'Colleague')}</div>
+            </div>
+          </div>
+          <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+        </div>
+      `).join('');
+    }
+
+    function copyInviteLink() {
+      const url = new URL(window.location.href);
+      url.searchParams.set('room', state.roomCode);
+      const shareUrl = url.toString();
+
+      // Reliable fallback clipboard copy for iFrames & GitHub Pages
+      const textArea = document.createElement('textarea');
+      textArea.value = shareUrl;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-9999px';
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        showToast('Invite link copied! Share it with your colleagues.');
+      } catch (err) {
+        showToast('Room Code: ' + state.roomCode);
+      }
+      document.body.removeChild(textArea);
+    }
+
+    function hostStartMatch() {
+      state.matchStarted = true;
+      broadcastToAllGuests({
+        type: 'MATCH_START',
+        secretWords: state.secretWords,
+        language: state.language
+      });
+      beginMatchGameplay();
+    }
+
+    /*************************************************************************
+     * 6. SIMULATED DEMO COLLEAGUES (BOTS) FOR INSTANT TESTING
+     *************************************************************************/
+    const BOT_NAMES = ['Astrid (Design)', 'Johan (Dev)', 'Maja (Product)', 'Erik (QA)', 'Sofia (Data)'];
+
+    function addDemoBot() {
+      const existingCount = Object.values(state.players).filter(p => p.isBot).length;
+      const botName = BOT_NAMES[existingCount % BOT_NAMES.length];
+      const botId = 'bot-' + Math.random().toString(36).substring(2, 7);
+
+      state.players[botId] = {
+        id: botId,
+        name: botName,
+        isHost: false,
+        isBot: true,
+        currentWordIndex: 0,
+        totalTriesUsed: 0,
+        solvedCount: 0,
+        isFinished: false,
+        liveRows: []
+      };
+
+      broadcastToAllGuests({ type: 'PLAYERS_UPDATE', players: state.players });
+      renderLobbyPlayers();
+      renderColleagueSlots();
+      showToast(`${botName} joined the room!`);
+
+      if (state.matchStarted) {
+        startBotSimulation(botId);
+      }
+    }
+
+    function addDemoBotInGame() {
+      addDemoBot();
+    }
+
+    function startAllBots() {
+      Object.values(state.players).forEach(p => {
+        if (p.isBot) startBotSimulation(p.id);
+      });
+    }
+
+    function startBotSimulation(botId) {
+      const interval = setInterval(() => {
+        const bot = state.players[botId];
+        if (!bot || bot.isFinished || !state.matchStarted) {
+          clearInterval(interval);
+          return;
+        }
+
+        const targetWord = state.secretWords[bot.currentWordIndex];
+        const dict = DICTIONARIES[state.language];
+        // Bot makes realistic guesses, getting smarter with more attempts on the word
+        const attemptsOnCurrent = bot.liveRows.length;
+        let guessWord;
+        if (attemptsOnCurrent >= 3 && Math.random() < 0.55) {
+          guessWord = targetWord;
+        } else {
+          guessWord = dict[Math.floor(Math.random() * dict.length)];
+        }
+
+        const evals = evaluateGuess(guessWord, targetWord);
+        bot.totalTriesUsed += 1;
+        bot.liveRows.push(evals);
+
+        const isSolved = evals.every(e => e === 'correct');
+        if (isSolved) {
+          bot.solvedCount += 1;
+          if (bot.currentWordIndex + 1 < TOTAL_WORDS && bot.totalTriesUsed < MAX_TRIES) {
+            setTimeout(() => {
+              if (!state.players[botId]) return;
+              state.players[botId].currentWordIndex += 1;
+              state.players[botId].liveRows = [];
+              broadcastToAllGuests({ type: 'PLAYERS_UPDATE', players: state.players });
+              renderColleagueSlots();
+            }, 900);
+          } else {
+            bot.isFinished = true;
+          }
+        } else if (bot.totalTriesUsed >= MAX_TRIES) {
+          bot.isFinished = true;
+        }
+
+        broadcastToAllGuests({ type: 'PLAYERS_UPDATE', players: state.players });
+        renderColleagueSlots();
+        if (!document.getElementById('scoreboard-modal').classList.contains('hidden')) {
+          renderScoreboard();
+        }
+      }, 2800 + Math.random() * 2200);
+
+      state.botIntervals.push(interval);
+    }
+
+    /*************************************************************************
+     * 7. CORE GAMEPLAY: 5-WORD MARATHON & 25-TRY ENGINE
+     *************************************************************************/
+    function beginMatchGameplay() {
+      // Reset personal match counters
+      state.matchStarted = true;
+      state.currentWordIndex = 0;
+      state.totalTriesUsed = 0;
+      state.solvedCount = 0;
+      state.wordStatuses = ['active', 'locked', 'locked', 'locked', 'locked'];
+      state.currentWordGuesses = [];
+      state.currentInput = '';
+      state.isFinished = false;
+      state.keyStates = {};
+
+      // Reset all players' snapshots for a fresh round
+      Object.values(state.players).forEach(p => {
+        p.currentWordIndex = 0;
+        p.totalTriesUsed = 0;
+        p.solvedCount = 0;
+        p.isFinished = false;
+        p.liveRows = [];
+      });
+
+      // Switch views
+      document.getElementById('view-landing').classList.add('hidden');
+      document.getElementById('view-lobby').classList.add('hidden');
+      document.getElementById('view-game').classList.remove('hidden');
+
+      document.getElementById('header-room-controls').classList.remove('hidden');
+      document.getElementById('header-room-controls').classList.add('flex');
+      document.getElementById('header-room-code').textContent = state.roomCode;
+      document.getElementById('header-lang-badge').textContent = state.language === 'sv' ? '🇸🇪 SV' : '🇬🇧 EN';
+
+      document.getElementById('my-finished-banner').classList.add('hidden');
+      document.getElementById('keyboard-container').classList.remove('hidden');
+      document.getElementById('skip-word-btn').classList.remove('hidden');
+
+      renderMarathonHeader();
+      renderKeyboard();
+      renderMyBoard();
+      renderColleagueSlots();
+      syncMyProgressToNetwork();
+
+      if (state.mode === 'host') {
+        startAllBots();
+      }
+    }
+
+    function renderMarathonHeader() {
+      // 5 Word Badges
+      const pillsContainer = document.getElementById('word-progress-pills');
+      pillsContainer.innerHTML = state.wordStatuses.map((status, idx) => {
+        let cls = 'bg-board-bg border-board-border text-gray-500';
+        let icon = idx + 1;
+        if (status === 'solved') {
+          cls = 'bg-[#538d4e] border-[#538d4e] text-white';
+          icon = '✓';
+        } else if (status === 'skipped') {
+          cls = 'bg-amber-600/30 border-amber-500/50 text-amber-300';
+          icon = '→';
+        } else if (status === 'active') {
+          cls = 'bg-emerald-500/20 border-emerald-400 text-emerald-300 ring-2 ring-emerald-500/20';
+          icon = idx + 1;
+        }
+        return `
+          <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg border ${cls} flex items-center justify-center text-xs font-extrabold transition">
+            ${icon}
+          </div>
+        `;
+      }).join('');
+
+      // Remaining Tries Counter & Progress Bar
+      const remaining = Math.max(0, MAX_TRIES - state.totalTriesUsed);
+      const countEl = document.getElementById('tries-remaining-count');
+      const barEl = document.getElementById('tries-progress-bar');
+
+      countEl.textContent = remaining;
+      const pct = (remaining / MAX_TRIES) * 100;
+      barEl.style.width = `${pct}%`;
+
+      if (remaining <= 5) {
+        countEl.className = 'text-rose-400';
+        barEl.className = 'h-full bg-rose-500 transition-all duration-300';
+      } else if (remaining <= 10) {
+        countEl.className = 'text-amber-400';
+        barEl.className = 'h-full bg-amber-500 transition-all duration-300';
+      } else {
+        countEl.className = 'text-emerald-400';
+        barEl.className = 'h-full bg-emerald-500 transition-all duration-300';
+      }
+
+      document.getElementById('current-word-badge').textContent = `WORD ${Math.min(state.currentWordIndex + 1, TOTAL_WORDS)} OF ${TOTAL_WORDS}`;
+      document.getElementById('word-attempts-note').textContent = `${state.solvedCount}/5 solved`;
+    }
+
+    function renderMyBoard() {
+      const grid = document.getElementById('my-wordle-grid');
+      // Show the most recent 5 submitted guesses + 1 active input row (6 rows visible at once)
+      const visibleGuesses = state.currentWordGuesses.slice(-5);
+      const rows = [];
+
+      for (let r = 0; r < 6; r++) {
+        if (r < visibleGuesses.length) {
+          // Submitted row
+          const guessObj = visibleGuesses[r];
+          for (let c = 0; c < 5; c++) {
+            const evalClass = `tile-${guessObj.evals[c]}`;
+            rows.push(`
+              <div class="aspect-square rounded-lg border-2 ${evalClass} flex items-center justify-center text-xl sm:text-2xl font-black uppercase select-none">
+                ${guessObj.word[c]}
+              </div>
+            `);
+          }
+        } else if (r === visibleGuesses.length && !state.isFinished) {
+          // Active typing row
+          for (let c = 0; c < 5; c++) {
+            const char = state.currentInput[c] || '';
+            const popClass = char ? 'tile-pop border-gray-500 text-white' : 'border-board-border text-white';
+            rows.push(`
+              <div id="active-tile-${c}" class="aspect-square rounded-lg border-2 bg-board-bg ${popClass} flex items-center justify-center text-xl sm:text-2xl font-black uppercase select-none transition-colors">
+                ${char}
+              </div>
+            `);
+          }
+        } else {
+          // Empty future row
+          for (let c = 0; c < 5; c++) {
+            rows.push(`
+              <div class="aspect-square rounded-lg border-2 border-board-border/60 bg-board-bg/40 flex items-center justify-center"></div>
+            `);
+          }
+        }
+      }
+
+      grid.innerHTML = `<div class="grid grid-cols-5 gap-1.5 sm:gap-2 w-full">${rows.join('')}</div>`;
+      // Fix outer grid container class so 30 tiles lay out cleanly in 6 rows x 5 cols
+      grid.className = 'w-full max-w-[300px] sm:max-w-[330px]';
+    }
+
+    function renderKeyboard() {
+      const container = document.getElementById('keyboard-container');
+      const layout = KEYBOARD_LAYOUTS[state.language];
+
+      container.innerHTML = layout.map(row => `
+        <div class="flex justify-center gap-1 sm:gap-1.5 mb-1.5">
+          ${row.map(key => {
+            const isAction = key === 'ENTER' || key === 'BACK';
+            const widthCls = isAction ? 'px-2.5 sm:px-3.5 text-[11px] sm:text-xs font-extrabold' : 'flex-1 max-w-[42px] text-xs sm:text-sm font-bold';
+            const stateCls = state.keyStates[key] ? `tile-${state.keyStates[key]}` : 'bg-[#2c303a] hover:bg-[#3a3f4d] text-white';
+            const label = key === 'BACK'
+              ? '<svg class="w-4 h-4 mx-auto" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M3 12l6.414 6.414a2 2 0 001.414.586H19a2 2 0 002-2V7a2 2 0 00-2-2h-8.172a2 2 0 00-1.414.586L3 12z"/></svg>'
+              : key;
+
+            return `
+              <button type="button" onclick="handleVirtualKey('${key}')"
+                class="h-11 sm:h-12 rounded-lg ${widthCls} ${stateCls} flex items-center justify-center transition active:scale-95 cursor-pointer shadow-sm">
+                ${label}
+              </button>
+            `;
+          }).join('')}
+        </div>
+      `).join('');
+    }
+
+    /*************************************************************************
+     * 8. INPUT HANDLING & GUESS EVALUATION
+     *************************************************************************/
+    function handlePhysicalKeydown(e) {
+      if (document.getElementById('view-game').classList.contains('hidden')) return;
+      if (state.isFinished) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      const key = e.key.toUpperCase();
+      if (key === 'ENTER') {
+        e.preventDefault();
+        submitCurrentGuess();
+      } else if (key === 'BACKSPACE' || key === 'DELETE') {
+        e.preventDefault();
+        deleteLastLetter();
+      } else {
+        const validLetters = state.language === 'sv'
+          ? /^[A-ZÅÄÖ]$/
+          : /^[A-Z]$/;
+        if (validLetters.test(key)) {
+          e.preventDefault();
+          appendLetter(key);
+        }
+      }
+    }
+
+    function handleVirtualKey(key) {
+      if (state.isFinished) return;
+      if (key === 'ENTER') {
+        submitCurrentGuess();
+      } else if (key === 'BACK') {
+        deleteLastLetter();
+      } else {
+        appendLetter(key);
+      }
+    }
+
+    function appendLetter(letter) {
+      if (state.currentInput.length >= 5) return;
+      state.currentInput += letter;
+      renderMyBoard();
+    }
+
+    function deleteLastLetter() {
+      if (state.currentInput.length === 0) return;
+      state.currentInput = state.currentInput.slice(0, -1);
+      renderMyBoard();
+    }
+
+    function submitCurrentGuess() {
+      if (state.isFinished) return;
+
+      if (state.currentInput.length < 5) {
+        shakeActiveRow();
+        showToast(state.language === 'sv' ? 'Ordet måste ha 5 bokstäver' : 'Not enough letters');
+        return;
+      }
+
+      const guess = state.currentInput;
+      const target = state.secretWords[state.currentWordIndex];
+
+      // Evaluate guess using authentic duplicate-safe Wordle rules
+      const evals = evaluateGuess(guess, target);
+
+      state.totalTriesUsed += 1;
+      state.currentWordGuesses.push({ word: guess, evals });
+      state.currentInput = '';
+
+      // Update keyboard key colors (priority: correct > present > absent)
+      const priority = { correct: 3, present: 2, absent: 1 };
+      for (let i = 0; i < 5; i++) {
+        const ch = guess[i];
+        const status = evals[i];
+        const existing = state.keyStates[ch];
+        if (!existing || priority[status] > priority[existing]) {
+          state.keyStates[ch] = status;
+        }
+      }
+
+      renderMarathonHeader();
+      renderMyBoard();
+      renderKeyboard();
+      syncMyProgressToNetwork();
+
+      const isWordSolved = evals.every(e => e === 'correct');
+
+      if (isWordSolved) {
+        state.solvedCount += 1;
+        state.wordStatuses[state.currentWordIndex] = 'solved';
+        triggerMiniConfetti();
+
+        if (state.currentWordIndex + 1 >= TOTAL_WORDS) {
+          // Completed all 5 words!
+          finishPlayerMatch(true);
+        } else if (state.totalTriesUsed >= MAX_TRIES) {
+          // Solved on the 25th try!
+          finishPlayerMatch(true);
+        } else {
+          showToast(`Word ${state.currentWordIndex + 1}/5 solved! Next word...`);
+          // Brief pause to admire the green row before advancing to the next word
+          setTimeout(() => {
+            state.currentWordIndex += 1;
+            state.wordStatuses[state.currentWordIndex] = 'active';
+            state.currentWordGuesses = [];
+            state.keyStates = {};
+            renderMarathonHeader();
+            renderMyBoard();
+            renderKeyboard();
+            syncMyProgressToNetwork();
+          }, 850);
+        }
+      } else if (state.totalTriesUsed >= MAX_TRIES) {
+        // Out of 25 total tries!
+        finishPlayerMatch(false);
+      }
+    }
+
+    function skipCurrentWord() {
+      if (state.isFinished) return;
+      const remaining = MAX_TRIES - state.totalTriesUsed;
+      if (remaining <= 2) {
+        showToast('Not enough tries left to skip!');
+        return;
+      }
+      if (state.currentWordIndex + 1 >= TOTAL_WORDS) {
+        showToast('This is the final word!');
+        return;
+      }
+
+      const skippedWord = state.secretWords[state.currentWordIndex];
+      state.totalTriesUsed += 2;
+      state.wordStatuses[state.currentWordIndex] = 'skipped';
+      state.currentWordIndex += 1;
+      state.wordStatuses[state.currentWordIndex] = 'active';
+      state.currentWordGuesses = [];
+      state.currentInput = '';
+      state.keyStates = {};
+
+      showToast(`Skipped (${skippedWord}) • -2 tries`);
+      renderMarathonHeader();
+      renderMyBoard();
+      renderKeyboard();
+      syncMyProgressToNetwork();
+    }
+
+    function finishPlayerMatch(allSolved) {
+      state.isFinished = true;
+      syncMyProgressToNetwork();
+      renderMarathonHeader();
+
+      const banner = document.getElementById('my-finished-banner');
+      const title = document.getElementById('my-finished-title');
+      const desc = document.getElementById('my-finished-desc');
+
+      banner.classList.remove('hidden');
+      document.getElementById('skip-word-btn').classList.add('hidden');
+
+      if (state.solvedCount === TOTAL_WORDS) {
+        title.textContent = `🏆 All 5 Words Solved in ${state.totalTriesUsed}/25 Tries!`;
+        title.className = 'text-lg font-black text-emerald-400';
+        desc.textContent = 'Incredible run! Check the live standings to see where you rank.';
+        confetti({ particleCount: 90, spread: 70, origin: { y: 0.6 } });
+      } else {
+        title.textContent = `Out of Tries (${state.solvedCount}/5 Words Solved)`;
+        title.className = 'text-lg font-black text-amber-400';
+        desc.textContent = `You used all 25 attempts. Reveal the secret words in the standings!`;
+      }
+
+      setTimeout(() => {
+        openScoreboardModal();
+      }, 900);
+    }
+
+    function evaluateGuess(guess, target) {
+      const result = Array(5).fill('absent');
+      const targetChars = target.split('');
+      const used = Array(5).fill(false);
+
+      // Pass 1: Exact green matches
+      for (let i = 0; i < 5; i++) {
+        if (guess[i] === targetChars[i]) {
+          result[i] = 'correct';
+          used[i] = true;
+        }
+      }
+
+      // Pass 2: Yellow present matches
+      for (let i = 0; i < 5; i++) {
+        if (result[i] === 'correct') continue;
+        for (let j = 0; j < 5; j++) {
+          if (!used[j] && guess[i] === targetChars[j]) {
+            result[i] = 'present';
+            used[j] = true;
+            break;
+          }
+        }
+      }
+
+      return result;
+    }
+
+    function shakeActiveRow() {
+      const grid = document.getElementById('my-wordle-grid');
+      grid.classList.remove('row-shake');
+      void grid.offsetWidth;
+      grid.classList.add('row-shake');
+    }
+
+    /*************************************************************************
+     * 9. DYNAMIC COLLEAGUE LIVE SLOTS RENDERER
+     *************************************************************************/
+    function renderColleagueSlots() {
+      const container = document.getElementById('colleagues-slots-grid');
+      const emptyCard = document.getElementById('no-colleagues-card');
+      const others = Object.values(state.players).filter(p => p.id !== state.myId);
+
+      document.getElementById('live-slots-count').textContent = others.length;
+
+      if (others.length === 0) {
+        container.innerHTML = '';
+        emptyCard.classList.remove('hidden');
+        return;
+      }
+
+      emptyCard.classList.add('hidden');
+
+      container.innerHTML = others.map(player => {
+        const wordNum = Math.min((player.currentWordIndex || 0) + 1, TOTAL_WORDS);
+        const triesUsed = player.totalTriesUsed || 0;
+        const solved = player.solvedCount || 0;
+        const recentRows = (player.liveRows || []).slice(-5); // Show up to 5 latest guess rows on current word
+
+        // Build 5x5 mini color grid (no letters revealed!)
+        let miniTilesHtml = '';
+        for (let r = 0; r < 5; r++) {
+          const rowEvals = recentRows[r];
+          for (let c = 0; c < 5; c++) {
+            if (rowEvals) {
+              miniTilesHtml += `<div class="h-4 sm:h-5 rounded-[4px] tile-${rowEvals[c]} mini-tile evaluated"></div>`;
+            } else {
+              miniTilesHtml += `<div class="h-4 sm:h-5 rounded-[4px] bg-board-bg border border-board-border/70"></div>`;
+            }
+          }
+        }
+
+        const statusBadge = player.isFinished
+          ? (solved === TOTAL_WORDS
+              ? `<span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-extrabold">DONE (${triesUsed}/25)</span>`
+              : `<span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-extrabold">${solved}/5 SOLVED</span>`)
+          : `<span class="px-2 py-0.5 rounded bg-board-bg border border-board-border text-gray-300 text-[10px] font-bold">Word ${wordNum}/5</span>`;
+
+        return `
+          <div class="bg-board-surface border ${player.isFinished ? 'border-emerald-500/40' : 'border-board-border'} rounded-2xl p-3.5 shadow-md transition">
+            <div class="flex items-center justify-between gap-2 mb-2.5">
+              <div class="flex items-center gap-2 min-w-0">
+                <div class="w-6 h-6 rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 text-[10px] font-extrabold flex items-center justify-center shrink-0">
+                  ${escapeHtml(player.name.substring(0, 2).toUpperCase())}
+                </div>
+                <span class="text-xs font-extrabold text-white truncate">${escapeHtml(player.name)}</span>
+              </div>
+              ${statusBadge}
+            </div>
+
+            <!-- Live Gray / Yellow / Green Tiles -->
+            <div class="grid grid-cols-5 gap-1">
+              ${miniTilesHtml}
+            </div>
+
+            <div class="mt-2.5 flex items-center justify-between text-[11px] text-gray-400">
+              <span>Solved: <strong class="text-gray-200">${solved}/5</strong></span>
+              <span>Tries: <strong class="text-gray-200">${triesUsed}/25</strong></span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    /*************************************************************************
+     * 10. SCOREBOARD & MODALS
+     *************************************************************************/
+    function openScoreboardModal() {
+      renderScoreboard();
+      document.getElementById('scoreboard-modal').classList.remove('hidden');
+    }
+
+    function closeScoreboardModal() {
+      document.getElementById('scoreboard-modal').classList.add('hidden');
+    }
+
+    function renderScoreboard() {
+      const listEl = document.getElementById('scoreboard-list');
+      const players = Object.values(state.players);
+
+      // Sort by: 1) Most words solved (desc), 2) Fewest total tries used (asc)
+      players.sort((a, b) => {
+        if (b.solvedCount !== a.solvedCount) return b.solvedCount - a.solvedCount;
+        return a.totalTriesUsed - b.totalTriesUsed;
+      });
+
+      listEl.innerHTML = players.map((p, idx) => {
+        const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`;
+        return `
+          <div class="flex items-center justify-between p-3 rounded-xl bg-board-bg border ${p.id === state.myId ? 'border-emerald-500/50' : 'border-board-border'}">
+            <div class="flex items-center gap-3">
+              <span class="text-base font-black w-6 text-center">${medal}</span>
+              <div>
+                <div class="text-sm font-bold text-white">
+                  ${escapeHtml(p.name)} ${p.id === state.myId ? '<span class="text-[10px] text-emerald-400">(You)</span>' : ''}
+                </div>
+                <div class="text-[11px] text-gray-400">
+                  ${p.isFinished ? 'Finished' : `On Word ${Math.min(p.currentWordIndex + 1, 5)}/5`}
+                </div>
+              </div>
+            </div>
+            <div class="text-right">
+              <div class="text-sm font-black text-emerald-400">${p.solvedCount} / 5 Words</div>
+              <div class="text-[11px] text-gray-400">${p.totalTriesUsed} / 25 tries</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      // Show secret words if current player is finished
+      const revealBox = document.getElementById('secret-words-reveal');
+      const chipsEl = document.getElementById('secret-words-chips');
+      if (state.isFinished) {
+        revealBox.classList.remove('hidden');
+        chipsEl.innerHTML = state.secretWords.map((w, i) => `
+          <span class="px-2.5 py-1 rounded-lg bg-board-card border border-board-border font-mono text-xs font-bold text-white">
+            ${i + 1}. ${w}
+          </span>
+        `).join('');
+      } else {
+        revealBox.classList.add('hidden');
+      }
+
+      // Show "New Round" button for host or solo
+      const playAgainBtn = document.getElementById('play-again-btn');
+      if (state.mode === 'host' || state.mode === 'solo') {
+        playAgainBtn.classList.remove('hidden');
+      } else {
+        playAgainBtn.classList.add('hidden');
+      }
+    }
+
+    function playAgainSameRoom() {
+      closeScoreboardModal();
+      state.secretWords = pickSecretWords(state.language, TOTAL_WORDS);
+      if (state.mode === 'host') {
+        broadcastToAllGuests({
+          type: 'MATCH_START',
+          secretWords: state.secretWords,
+          language: state.language
+        });
+      }
+      beginMatchGameplay();
+    }
+
+    function openRulesModal() {
+      document.getElementById('rules-modal').classList.remove('hidden');
+    }
+
+    function closeRulesModal() {
+      document.getElementById('rules-modal').classList.add('hidden');
+    }
+
+    function toggleColorblind() {
+      document.body.classList.toggle('colorblind');
+      const isCb = document.body.classList.contains('colorblind');
+      showToast(isCb ? 'High-contrast colors enabled (Orange / Blue)' : 'Standard Wordle colors restored');
+    }
+
+    function confirmLeaveToHome() {
+      if (!document.getElementById('view-landing').classList.contains('hidden')) return;
+      state.botIntervals.forEach(clearInterval);
+      state.botIntervals = [];
+      if (state.peer) {
+        state.peer.destroy();
+        state.peer = null;
+      }
+      document.getElementById('view-game').classList.add('hidden');
+      document.getElementById('view-lobby').classList.add('hidden');
+      document.getElementById('header-room-controls').classList.add('hidden');
+      document.getElementById('view-landing').classList.remove('hidden');
+    }
+
+    /*************************************************************************
+     * 11. UTILITIES (TOASTS, CONFETTI, SANITIZATION)
+     *************************************************************************/
+    function showToast(message) {
+      const container = document.getElementById('toast-container');
+      const el = document.createElement('div');
+      el.className = 'px-4 py-2.5 rounded-xl bg-gray-900/95 border border-gray-700 text-white text-xs sm:text-sm font-bold shadow-xl transition-all duration-300 transform translate-y-0 opacity-100 text-center';
+      el.textContent = message;
+      container.appendChild(el);
+
+      setTimeout(() => {
+        el.classList.add('opacity-0', '-translate-y-2');
+        setTimeout(() => el.remove(), 300);
+      }, 2600);
+    }
+
+    function triggerMiniConfetti() {
+      if (typeof confetti === 'function') {
+        confetti({
+          particleCount: 35,
+          spread: 55,
+          origin: { y: 0.7 }
+        });
+      }
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+  </script>
+</body>
+</html>
