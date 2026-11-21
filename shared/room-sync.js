@@ -85,6 +85,7 @@
       this.onMessage = opts.onMessage || (() => {});
       this.onStatusChange = opts.onStatusChange || (() => {});
       this.onRoomFull = opts.onRoomFull || (() => {});
+      this.onKicked = opts.onKicked || (() => {});
 
       this.players = {}; // id -> { id, name, slot, isHost, isLocal, ready }
       this.bc = null;
@@ -92,8 +93,10 @@
       this.conns = {}; // peerId -> DataConnection (host: guest conns; guest: host conn)
       this.hostConn = null;
       this.peerToPlayerId = {}; // remotePeerId -> playerId
+      this.playerToPeerId = {}; // playerId -> remotePeerId
       this.reconnectTimer = null;
       this.retryCount = 0;
+      this.kicked = false;
       this.destroyed = false;
 
       this._onVisibility = () => {
@@ -338,6 +341,45 @@
       this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId });
     }
 
+    kickPlayer(playerId) {
+      if (!this.isHost || !playerId || playerId === this.myId) return;
+      const p = this.players[playerId];
+      if (!p) return;
+
+      if (!p.isLocal) {
+        const remotePeer = this.playerToPeerId[playerId];
+        const conn = remotePeer ? this.conns[remotePeer] : null;
+        if (conn && conn.open) {
+          try { conn.send({ type: 'KICKED', senderId: this.myId }); } catch (e) {}
+          setTimeout(() => {
+            try { conn.close(); } catch (e) {}
+          }, 120);
+        }
+        if (remotePeer) {
+          delete this.conns[remotePeer];
+          delete this.peerToPlayerId[remotePeer];
+        }
+        delete this.playerToPeerId[playerId];
+      }
+
+      delete this.players[playerId];
+      this.emitRoster();
+      this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId });
+    }
+
+    sendToPlayer(playerId, payload) {
+      if (!this.isHost || !playerId) return;
+      const msg = { ...payload, targetId: playerId, senderId: this.myId, ts: Date.now() };
+      if (this.bc) {
+        try { this.bc.postMessage(msg); } catch (e) {}
+      }
+      const remotePeer = this.playerToPeerId[playerId];
+      const conn = remotePeer ? this.conns[remotePeer] : null;
+      if (conn && conn.open) {
+        try { conn.send(msg); } catch (e) {}
+      }
+    }
+
     emitRoster() {
       this.onRosterChange(this.getOrderedPlayers());
     }
@@ -376,15 +418,26 @@
 
     handlePacket(data, fromConn) {
       if (!data || data.senderId === this.myId) return;
+      if (data.targetId && data.targetId !== this.myId) return;
 
       if (data._rt) {
         this.onMessage(data);
         return;
       }
 
+      if (data.type === 'KICKED' && !this.isHost) {
+        this.kicked = true;
+        this.destroy();
+        this.onKicked();
+        return;
+      }
+
       if (data.type === 'JOIN_REQ' && this.isHost) {
         const sender = data.senderId;
-        if (fromConn) this.peerToPlayerId[fromConn.peer] = sender;
+        if (fromConn) {
+          this.peerToPlayerId[fromConn.peer] = sender;
+          this.playerToPeerId[sender] = fromConn.peer;
+        }
 
         if (!this.players[sender]) {
           const used = new Set(Object.values(this.players).map((p) => p.slot));

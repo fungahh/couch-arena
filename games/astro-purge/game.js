@@ -1,6 +1,7 @@
 /* ==========================================================================
-   ASTRO PURGE — 4-Player Room Co-op Space Virus Asteroids
-   1-4P Online Rooms & Couch Co-op | Shared Leveling | Upgrades | Boss / 10 Lv
+   ASTRO PURGE — Old-School Cartoon 4-Player UFO Co-op
+   Follow-Finger iOS Touch | Personal Visual UFO Upgrades | Damage Meter |
+   Multi-Phase Bosses every 10 Levels | Host Kick | PeerJS 4P Rooms
    ========================================================================== */
 
 (function () {
@@ -34,6 +35,7 @@
   const hudBossHint = document.getElementById('hud-boss-hint');
   const hudControllers = document.getElementById('hud-controllers');
   const hudKills = document.getElementById('hud-kills');
+  const damageMeterEl = document.getElementById('damage-meter');
   const playerHudCards = document.getElementById('player-hud-cards');
   const weaponsTray = document.getElementById('weapons-tray');
   const btnHudInvite = document.getElementById('btn-hud-invite');
@@ -53,6 +55,7 @@
   const upgradeOverlay = document.getElementById('upgrade-overlay');
   const pauseOverlay = document.getElementById('pause-overlay');
   const gameoverOverlay = document.getElementById('gameover-overlay');
+  const kickedOverlay = document.getElementById('kicked-overlay');
 
   const lobbyRoomCode = document.getElementById('lobby-room-code');
   const lobbyPlayerName = document.getElementById('lobby-player-name');
@@ -67,6 +70,7 @@
   const draftTitle = document.getElementById('draft-title');
   const draftSub = document.getElementById('draft-sub');
   const upgradeGrid = document.getElementById('upgrade-grid');
+  const draftWaitingEl = document.getElementById('draft-waiting');
 
   const btnResume = document.getElementById('btn-resume');
   const btnRestartPause = document.getElementById('btn-restart-pause');
@@ -75,6 +79,7 @@
   const sumScore = document.getElementById('sum-score');
   const sumBosses = document.getElementById('sum-bosses');
   const gameoverSub = document.getElementById('gameover-sub');
+  const gameoverDamageList = document.getElementById('gameover-damage-list');
 
   // ---- Synthesized Web Audio SFX ----
   const SFX = {
@@ -134,33 +139,18 @@
       const now = performance.now();
       if (now - this.lastShootAt < 55) return;
       this.lastShootAt = now;
-      this.tone(740, 210, 0.065, 'triangle', 0.055);
+      this.tone(740, 210, 0.065, 'triangle', 0.05);
     },
-    rail() {
-      this.tone(1120, 150, 0.2, 'sawtooth', 0.085);
-      this.noise(0.12, 0.05, 1800);
-    },
-    missile() {
-      this.tone(320, 680, 0.11, 'sine', 0.055);
-      this.noise(0.08, 0.035, 1400);
-    },
+    rail() { this.tone(1120, 150, 0.2, 'sawtooth', 0.085); this.noise(0.12, 0.05, 1800); },
+    missile() { this.tone(320, 680, 0.11, 'sine', 0.055); this.noise(0.08, 0.035, 1400); },
     zap() { this.tone(940, 420, 0.085, 'square', 0.055); },
-    nova() {
-      this.tone(260, 52, 0.34, 'sine', 0.13);
-      this.noise(0.24, 0.08, 700);
-    },
+    nova() { this.tone(260, 52, 0.34, 'sine', 0.13); this.noise(0.24, 0.08, 700); },
     hit() { this.tone(210, 80, 0.045, 'square', 0.04); },
-    pop() {
-      this.tone(240, 58, 0.14, 'sawtooth', 0.075);
-      this.noise(0.11, 0.065, 950);
-    },
+    pop() { this.tone(240, 58, 0.14, 'sawtooth', 0.075); this.noise(0.11, 0.065, 950); },
     xp() {
       const now = performance.now();
-      if (now - this.lastXpAt < 450) {
-        this.xpCombo = Math.min(8, this.xpCombo + 1);
-      } else {
-        this.xpCombo = 0;
-      }
+      if (now - this.lastXpAt < 450) this.xpCombo = Math.min(8, this.xpCombo + 1);
+      else this.xpCombo = 0;
       this.lastXpAt = now;
       const scale = [523.25, 587.33, 659.25, 783.99, 880, 1046.5, 1174.66, 1318.5, 1567.98];
       const f = scale[this.xpCombo % scale.length];
@@ -170,14 +160,8 @@
       this.tone(523.25, 659.25, 0.12, 'sine', 0.09);
       setTimeout(() => this.tone(659.25, 1046.5, 0.18, 'sine', 0.09), 70);
     },
-    dash() {
-      this.tone(280, 740, 0.13, 'triangle', 0.08);
-      this.noise(0.1, 0.045, 2200);
-    },
-    hurt() {
-      this.tone(165, 50, 0.22, 'sawtooth', 0.11);
-      this.noise(0.14, 0.07, 600);
-    },
+    dash() { this.tone(280, 740, 0.13, 'triangle', 0.08); this.noise(0.1, 0.045, 2200); },
+    hurt() { this.tone(165, 50, 0.22, 'sawtooth', 0.11); this.noise(0.14, 0.07, 600); },
     levelUp() {
       this.tone(440, 440, 0.12, 'triangle', 0.1);
       setTimeout(() => this.tone(554.37, 554.37, 0.12, 'triangle', 0.1), 85);
@@ -195,152 +179,166 @@
     },
   };
 
-  // Unlock Web Audio on first tap/click/key (required on iOS Safari)
   ['touchstart', 'pointerdown', 'keydown'].forEach((evt) => {
     window.addEventListener(evt, () => SFX.ensure(), { passive: true, once: true });
   });
 
-  // ---- Upgrade Catalog ----
+  // ---- Personal Upgrade Catalog (Each Visually Upgrades Your UFO!) ----
   const UPGRADES = [
     {
       id: 'pulse_cannon',
-      name: 'Pulse Cannons',
+      name: 'Ray Blasters',
       tag: 'Weapon',
       tagClass: 'weapon',
       icon: '⚡',
       maxLevel: 5,
-      describe: (nextLv) => `Upgrade primary blasters to ${nextLv}-way spread with faster fire rate.`,
+      describe: (nextLv) => `Mounts ${nextLv}-barrel ray blasters on your UFO rim with faster fire rate.`,
     },
     {
       id: 'plasma_rail',
-      name: 'Plasma Railgun',
+      name: 'Dome Laser Dish',
       tag: 'Weapon',
       tagClass: 'weapon',
       icon: '💠',
       maxLevel: 5,
       describe: (nextLv) =>
         nextLv === 1
-          ? 'Unlocks a piercing laser beam that fires automatically through lines of viruses.'
-          : `Railgun Lv ${nextLv}: +30% beam damage, wider beam, and faster recharge.`,
+          ? 'Mounts a crystalline laser dish on your UFO dome that zaps piercing beams.'
+          : `Laser Dish Lv ${nextLv}: +30% beam power, thicker beam, faster recharge.`,
     },
     {
       id: 'homing_missiles',
-      name: 'Antibody Missiles',
+      name: 'Retro Rocket Pods',
       tag: 'Weapon',
       tagClass: 'weapon',
       icon: '🚀',
       maxLevel: 5,
       describe: (nextLv) =>
         nextLv === 1
-          ? 'Unlocks heat-seeking micro-missiles that hunt nearby viruses & boss cores.'
-          : `Missiles Lv ${nextLv}: Launches ${nextLv + 1} homing missiles per salvo with higher damage.`,
+          ? 'Bolts twin striped rocket pods onto your UFO that launch homing missiles!'
+          : `Rocket Pods Lv ${nextLv}: Fires ${nextLv + 1} seeking rockets per volley.`,
     },
     {
       id: 'orbital_blades',
-      name: 'Orbital Saw-Orbs',
+      name: 'Star Saw Satellites',
       tag: 'Weapon',
       tagClass: 'weapon',
       icon: '🌀',
       maxLevel: 5,
       describe: (nextLv) =>
         nextLv === 1
-          ? 'Deploys spinning energy satellites around all ships that shred viruses & block shots.'
-          : `Saw-Orbs Lv ${nextLv}: ${nextLv + 1} faster orbiting blades around each ship.`,
+          ? 'Deploys spinning cartoon star-saws around your UFO that slice viruses & block globs.'
+          : `Star Saws Lv ${nextLv}: ${nextLv + 1} faster orbiting saws around your saucer.`,
     },
     {
       id: 'chain_lightning',
-      name: 'Arc Tesla Coil',
+      name: 'Tesla Antennae',
       tag: 'Weapon',
       tagClass: 'weapon',
       icon: '🌩️',
       maxLevel: 5,
       describe: (nextLv) =>
         nextLv === 1
-          ? 'Zaps nearby viruses with chain lightning that arcs across infected clusters.'
-          : `Tesla Coil Lv ${nextLv}: Chains to ${nextLv + 2} targets with higher voltage damage.`,
+          ? 'Adds crackling Tesla coils to your UFO that arc lightning across viruses.'
+          : `Tesla Coils Lv ${nextLv}: Zaps ${nextLv + 2} viruses per chain with higher voltage.`,
     },
     {
       id: 'nova_pulse',
-      name: 'EMP Nova Ring',
+      name: 'Bumper Shock Ring',
       tag: 'Weapon',
       tagClass: 'weapon',
       icon: '💥',
       maxLevel: 5,
       describe: (nextLv) =>
         nextLv === 1
-          ? 'Periodically blasts an expanding shockwave that damages viruses & clears enemy bullets.'
-          : `EMP Nova Lv ${nextLv}: Larger blast radius, stronger knockback, faster cooldown.`,
+          ? 'Installs a glowing bumper ring that periodically blasts viruses & clears red enemy globs.'
+          : `Shock Ring Lv ${nextLv}: Bigger blast radius and quicker recharge.`,
     },
     {
       id: 'hull_plating',
-      name: 'Titanium Hull',
+      name: 'Riveted Saucer Armor',
       tag: 'Defense',
       tagClass: '',
       icon: '🛡️',
       maxLevel: 6,
-      describe: () => '+25 Max Hull HP for all ships and immediately repairs +40 HP.',
+      describe: () => 'Bolts steel armor plates onto your UFO: +30 Max HP & heals +45 HP now.',
     },
     {
       id: 'overclock',
-      name: 'Weapon Overclock',
+      name: 'Turbo Ray Core',
       tag: 'Power',
       tagClass: '',
       icon: '🔥',
       maxLevel: 6,
-      describe: () => '+20% damage for all fleet weapons and +8% Critical Strike chance.',
+      describe: () => '+22% damage for all your UFO weapons and +8% Critical Strike chance.',
     },
     {
       id: 'thrusters',
-      name: 'Ion Thrusters',
+      name: 'Twin Booster Bells',
       tag: 'Mobility',
       tagClass: '',
       icon: '💨',
       maxLevel: 5,
-      describe: () => '+13% ship flight speed and -16% Dash cooldown for snappy dodging.',
+      describe: () => 'Adds oversized cartoon thrusters: +13% flight speed & -16% Dash cooldown.',
     },
     {
       id: 'cryo_rounds',
-      name: 'Cryo-Antibodies',
+      name: 'Frost Crystal Fins',
       tag: 'Utility',
       tagClass: '',
       icon: '❄️',
       maxLevel: 4,
       describe: (nextLv) =>
-        `Shots chill viruses on hit, slowing their movement by ${Math.min(55, 18 + nextLv * 10)}%.`,
+        `Adds icy fins to your saucer — your hits chill & slow viruses by ${Math.min(55, 18 + nextLv * 10)}%.`,
     },
     {
       id: 'magnet_core',
-      name: 'Bio-Core Magnet',
+      name: 'Horseshoe Magnet',
       tag: 'Utility',
       tagClass: '',
       icon: '🧲',
       maxLevel: 5,
-      describe: () => '+45% Bio-Core & Repair pickup radius and +15% bonus Team XP gain.',
+      describe: () => 'Mounts a giant magnet on your UFO: +45% orb pull radius & +15% Team XP.',
     },
     {
       id: 'tether_beam',
-      name: 'Co-op Plasma Tether',
+      name: 'Buddy Plasma Link',
       tag: 'Co-op',
       tagClass: 'coop',
       icon: '🔗',
       maxLevel: 5,
-      describe: (nextLv, isCoop) => {
-        if (isCoop) {
-          return nextLv === 1
-            ? 'Creates a searing plasma beam between nearby teammates, slicing viruses between you!'
-            : `Plasma Tether Lv ${nextLv}: Longer link range and +35% beam slice damage.`;
-        }
-        return nextLv === 1
-          ? 'Deploys an autonomous Wingman Drone that orbits your ship and fires at viruses!'
-          : `Wingman Drone Lv ${nextLv}: Faster drone fire rate and +35% bolt damage.`;
-      },
+      describe: (nextLv, isCoop) =>
+        isCoop
+          ? nextLv === 1
+            ? 'Creates a crackling plasma link between your UFO and nearby teammates!'
+            : `Plasma Link Lv ${nextLv}: Longer tether range and +35% slice damage.`
+          : nextLv === 1
+            ? 'Deploys a cute mini UFO Wingman Drone that orbits and fires at viruses!'
+            : `Wingman Drone Lv ${nextLv}: Faster drone blasts and +35% damage.`,
     },
   ];
+
+  function defaultUpgrades() {
+    return {
+      pulse_cannon: 1,
+      plasma_rail: 0,
+      homing_missiles: 0,
+      orbital_blades: 0,
+      chain_lightning: 0,
+      nova_pulse: 0,
+      hull_plating: 0,
+      overclock: 0,
+      thrusters: 0,
+      cryo_rounds: 0,
+      magnet_core: 0,
+      tether_beam: 0,
+    };
+  }
 
   // ---- Input State ----
   const keys = new Set();
   const prevPadButtons = [{}, {}];
-  const remoteInputs = {}; // playerId -> { mx, my, ax, ay, fire, dash }
+  const remoteInputs = {}; // playerId -> { mx, my, tx, ty, ax, ay, fire, dash }
 
   window.addEventListener('keydown', (e) => {
     if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
@@ -360,7 +358,7 @@
       }
     } else if (state.mode === 'paused') {
       if ((code === 'Escape' || code === 'KeyP') && room.isHost) togglePause();
-    } else if (state.mode === 'upgrade') {
+    } else if (state.mode === 'upgrade' && !state.myDraftPicked) {
       if (code === 'Digit1') requestPickUpgrade(0);
       else if (code === 'Digit2') requestPickUpgrade(1);
       else if (code === 'Digit3') requestPickUpgrade(2);
@@ -383,28 +381,32 @@
     return Array.from(navigator.getGamepads()).filter(Boolean);
   }
 
-  // ---- iOS / Mobile Touch Virtual Thumbstick & Dash Button ----
+  // ---- iOS Safari Follow-the-Finger Touch Controls (Zero Input on Release!) ----
   const touchDashBtn = document.getElementById('touch-dash-btn');
   const touchCtrl = {
     isTouchDevice: ('ontouchstart' in window) || (navigator.maxTouchPoints > 0),
     active: false,
     touchId: null,
-    originX: 0,
-    originY: 0,
-    curX: 0,
-    curY: 0,
-    maxR: 54,
-    mx: 0,
-    my: 0,
+    x: 0,
+    y: 0,
+    tx: null, // normalized 0..1 target X
+    ty: null, // normalized 0..1 target Y
     dash: false,
     dashTouchId: null,
   };
 
-  function resetTouchStick() {
+  function clearTouchSteer() {
     touchCtrl.active = false;
     touchCtrl.touchId = null;
-    touchCtrl.mx = 0;
-    touchCtrl.my = 0;
+    touchCtrl.tx = null;
+    touchCtrl.ty = null;
+  }
+
+  function updateTouchCoords(t) {
+    touchCtrl.x = t.clientX;
+    touchCtrl.y = t.clientY;
+    touchCtrl.tx = clamp(t.clientX / Math.max(1, W), 0, 1);
+    touchCtrl.ty = clamp(t.clientY / Math.max(1, H), 0, 1);
   }
 
   canvas.addEventListener('touchstart', (e) => {
@@ -417,12 +419,7 @@
     if (!t) return;
     touchCtrl.active = true;
     touchCtrl.touchId = t.identifier;
-    touchCtrl.originX = t.clientX;
-    touchCtrl.originY = t.clientY;
-    touchCtrl.curX = t.clientX;
-    touchCtrl.curY = t.clientY;
-    touchCtrl.mx = 0;
-    touchCtrl.my = 0;
+    updateTouchCoords(t);
   }, { passive: false });
 
   canvas.addEventListener('touchmove', (e) => {
@@ -430,42 +427,41 @@
     e.preventDefault();
     for (const t of e.changedTouches) {
       if (t.identifier === touchCtrl.touchId) {
-        const dx = t.clientX - touchCtrl.originX;
-        const dy = t.clientY - touchCtrl.originY;
-        const d = Math.hypot(dx, dy);
-        const clamped = Math.min(d, touchCtrl.maxR);
-        const ang = Math.atan2(dy, dx);
-        touchCtrl.curX = touchCtrl.originX + Math.cos(ang) * clamped;
-        touchCtrl.curY = touchCtrl.originY + Math.sin(ang) * clamped;
-        if (d > 6) {
-          touchCtrl.mx = (Math.cos(ang) * clamped) / touchCtrl.maxR;
-          touchCtrl.my = (Math.sin(ang) * clamped) / touchCtrl.maxR;
-        } else {
-          touchCtrl.mx = 0;
-          touchCtrl.my = 0;
-        }
+        updateTouchCoords(t);
         break;
       }
     }
   }, { passive: false });
 
-  function handleCanvasTouchEnd(e) {
+  function handleCanvasTouchRelease(e) {
     if (!touchCtrl.active) return;
-    for (const t of e.changedTouches) {
-      if (t.identifier === touchCtrl.touchId) {
-        resetTouchStick();
-        break;
+    // Check if our steering touch ended OR if zero touches remain on canvas
+    let stillHeld = false;
+    if (e.touches) {
+      for (const t of e.touches) {
+        if (t.identifier === touchCtrl.touchId) {
+          stillHeld = true;
+          break;
+        }
       }
     }
+    if (!stillHeld) {
+      clearTouchSteer();
+    }
   }
-  canvas.addEventListener('touchend', handleCanvasTouchEnd, { passive: true });
-  canvas.addEventListener('touchcancel', handleCanvasTouchEnd, { passive: true });
+  canvas.addEventListener('touchend', handleCanvasTouchRelease, { passive: true });
+  canvas.addEventListener('touchcancel', handleCanvasTouchRelease, { passive: true });
+  window.addEventListener('blur', () => {
+    clearTouchSteer();
+    touchCtrl.dash = false;
+  });
 
   if (touchDashBtn) {
     touchDashBtn.addEventListener('touchstart', (e) => {
       e.preventDefault();
       e.stopPropagation();
       touchCtrl.isTouchDevice = true;
+      SFX.ensure();
       const t = e.changedTouches[0];
       if (t) touchCtrl.dashTouchId = t.identifier;
       touchCtrl.dash = true;
@@ -473,13 +469,16 @@
     }, { passive: false });
 
     const endDash = (e) => {
-      for (const t of e.changedTouches) {
-        if (t.identifier === touchCtrl.dashTouchId) {
-          touchCtrl.dash = false;
-          touchCtrl.dashTouchId = null;
-          touchDashBtn.classList.remove('active');
-          break;
+      let stillHeld = false;
+      if (e.touches) {
+        for (const t of e.touches) {
+          if (t.identifier === touchCtrl.dashTouchId) { stillHeld = true; break; }
         }
+      }
+      if (!stillHeld) {
+        touchCtrl.dash = false;
+        touchCtrl.dashTouchId = null;
+        touchDashBtn.classList.remove('active');
       }
     };
     touchDashBtn.addEventListener('touchend', endDash, { passive: true });
@@ -490,6 +489,8 @@
     const pad = pads[localSlot] || null;
     let mx = 0;
     let my = 0;
+    let tx = null;
+    let ty = null;
     let ax = 0;
     let ay = 0;
     let fire = false;
@@ -502,17 +503,16 @@
       if (keys.has('KeyD')) mx += 1;
       if (keys.has('Space')) fire = true;
       if (keys.has('ShiftLeft') || keys.has('KeyE')) dash = true;
-      // If there's only 1 local player on this machine, Arrow keys also work!
       if (countLocalPlayers() === 1) {
         if (keys.has('ArrowUp')) my -= 1;
         if (keys.has('ArrowDown')) my += 1;
         if (keys.has('ArrowLeft')) mx -= 1;
         if (keys.has('ArrowRight')) mx += 1;
       }
-      // Touch virtual thumbstick & Dash button
-      if (touchCtrl.active && (touchCtrl.mx || touchCtrl.my)) {
-        mx = touchCtrl.mx;
-        my = touchCtrl.my;
+      // Follow-the-finger touch input ONLY while finger is actively pressed down
+      if (touchCtrl.active && touchCtrl.tx !== null && touchCtrl.ty !== null) {
+        tx = touchCtrl.tx;
+        ty = touchCtrl.ty;
       }
       if (touchCtrl.dash) dash = true;
     } else {
@@ -528,10 +528,7 @@
       const dead = 0.2;
       const lx = Math.abs(pad.axes[0] || 0) > dead ? pad.axes[0] : 0;
       const ly = Math.abs(pad.axes[1] || 0) > dead ? pad.axes[1] : 0;
-      if (lx || ly) {
-        mx = lx;
-        my = ly;
-      }
+      if (lx || ly) { mx = lx; my = ly; }
       if (pad.buttons[12] && pad.buttons[12].pressed) my = -1;
       if (pad.buttons[13] && pad.buttons[13].pressed) my = 1;
       if (pad.buttons[14] && pad.buttons[14].pressed) mx = -1;
@@ -539,34 +536,24 @@
 
       const rx = Math.abs(pad.axes[2] || 0) > 0.25 ? pad.axes[2] : 0;
       const ry = Math.abs(pad.axes[3] || 0) > 0.25 ? pad.axes[3] : 0;
-      if (rx || ry) {
-        ax = rx;
-        ay = ry;
-      }
+      if (rx || ry) { ax = rx; ay = ry; }
 
       if (
         (pad.buttons[0] && pad.buttons[0].pressed) ||
         (pad.buttons[7] && pad.buttons[7].pressed) ||
         (pad.buttons[5] && pad.buttons[5].pressed)
-      ) {
-        fire = true;
-      }
+      ) fire = true;
       if (
         (pad.buttons[1] && pad.buttons[1].pressed) ||
         (pad.buttons[2] && pad.buttons[2].pressed) ||
         (pad.buttons[4] && pad.buttons[4].pressed) ||
         (pad.buttons[6] && pad.buttons[6].pressed)
-      ) {
-        dash = true;
-      }
+      ) dash = true;
     }
 
     const mag = Math.hypot(mx, my);
-    if (mag > 1) {
-      mx /= mag;
-      my /= mag;
-    }
-    return { mx, my, ax, ay, fire, dash };
+    if (mag > 1) { mx /= mag; my /= mag; }
+    return { mx, my, tx, ty, ax, ay, fire, dash };
   }
 
   function countLocalPlayers() {
@@ -574,21 +561,28 @@
     return room.getOrderedPlayers().filter((p) => p.isLocal).length;
   }
 
-  // ---- Background Starfield ----
+  // ---- Vintage Cartoon Background (Twinkling 4-point Stars + Pastel Nebula Clouds) ----
   const stars = [];
-  for (let i = 0; i < 150; i++) {
+  for (let i = 0; i < 110; i++) {
     stars.push({
       x: Math.random(),
       y: Math.random(),
-      r: Math.random() < 0.15 ? 2.1 : Math.random() * 1.3 + 0.5,
-      speed: 4 + Math.random() * 14,
-      alpha: 0.25 + Math.random() * 0.65,
+      r: Math.random() < 0.2 ? 3.2 : Math.random() * 1.4 + 0.7,
+      sparkle: Math.random() < 0.22,
+      phase: Math.random() * Math.PI * 2,
+      speed: 5 + Math.random() * 14,
+      color: Math.random() < 0.25 ? '#fef08a' : Math.random() < 0.5 ? '#bae6fd' : '#f8fafc',
     });
   }
+  const clouds = [
+    { x: 0.18, y: 0.22, r: 160, color: 'rgba(56, 189, 248, 0.05)' },
+    { x: 0.82, y: 0.30, r: 190, color: 'rgba(251, 191, 36, 0.045)' },
+    { x: 0.50, y: 0.78, r: 210, color: 'rgba(45, 212, 191, 0.045)' },
+  ];
 
   // ---- Game State ----
   const state = {
-    mode: 'title', // title | playing | upgrade | paused | gameover
+    mode: 'title', // title | playing | upgrade | paused | gameover | kicked
     autoFire: true,
     time: 0,
     score: 0,
@@ -596,17 +590,21 @@
     bossesDefeated: 0,
     level: 1,
     xp: 0,
-    xpNeeded: 70,
+    xpNeeded: 75,
     shake: 0,
     spawnTimer: 0,
     bossActive: false,
     bossWarningTimer: 0,
     pendingBossLevel: null,
     pendingDrafts: [],
+    // Personal draft tracking
+    activeDraftMap: {}, // playerId -> { choices: [Upgrade], picked: bool, isBoss: bool }
+    localDraftQueue: [], // local playerIds needing to pick sequentially on host screen
+    activeLocalDraftId: null,
     draftChoices: [],
     draftFocus: 0,
     draftIsBoss: false,
-    fleet: {},
+    myDraftPicked: false,
     players: [],
     enemies: [],
     bullets: [],
@@ -618,26 +616,8 @@
     floatTexts: [],
   };
 
-  function defaultFleet() {
-    return {
-      pulse_cannon: 1,
-      plasma_rail: 0,
-      homing_missiles: 0,
-      orbital_blades: 0,
-      chain_lightning: 0,
-      nova_pulse: 0,
-      hull_plating: 0,
-      overclock: 0,
-      thrusters: 0,
-      cryo_rounds: 0,
-      magnet_core: 0,
-      tether_beam: 0,
-    };
-  }
-
   function createPlayerFromRoster(rp, localIndex) {
     const pal = PLAYER_COLORS[rp.slot % PLAYER_COLORS.length];
-    const maxHp = 100 + (state.fleet.hull_plating || 0) * 25;
     const offsets = [
       [0.42, 0.52],
       [0.58, 0.52],
@@ -658,9 +638,11 @@
       vx: 0,
       vy: 0,
       angle: -Math.PI / 2,
-      radius: 16,
-      hp: maxHp,
-      maxHp,
+      radius: 19,
+      hp: 100,
+      maxHp: 100,
+      damage: 0,
+      upgrades: defaultUpgrades(),
       downed: false,
       reviveProgress: 0,
       invuln: 1.5,
@@ -675,10 +657,11 @@
       droneFireTimer: 0.4,
       orbitAngle: rp.slot * (Math.PI / 2),
       thrusting: false,
+      blinkTimer: rand(1.5, 4.0),
     };
   }
 
-  // ---- Room Setup (Auto-Create or Join via ?room=) ----
+  // ---- Room Setup ----
   const urlParams = new URLSearchParams(window.location.search);
   const initialRoomParam = urlParams.get('room');
   const explicitHost = urlParams.get('host') === '1';
@@ -687,15 +670,21 @@
   const room = new RoomSync({
     gameId: 'astro_purge',
     maxPlayers: 4,
-    enableRtc: true,
     roomCode: initialRoomParam || '',
     isHost: isHostStart,
     playerName: getSavedPlayerName(),
     onRosterChange: (roster) => {
       renderLobbyRoster(roster);
-      // Allow mid-game drop-in if host is currently playing
       if (room.isHost && state.mode === 'playing') {
         syncMidGamePlayers(roster);
+      }
+      if (room.isHost && state.mode === 'upgrade') {
+        // If a remote player left mid-draft, don't hang waiting for them
+        const liveIds = new Set(roster.map((r) => r.id));
+        for (const pid of Object.keys(state.activeDraftMap)) {
+          if (!liveIds.has(pid)) state.activeDraftMap[pid].picked = true;
+        }
+        checkAllDraftsPicked();
       }
     },
     onStatusChange: (status, label) => {
@@ -707,13 +696,20 @@
       titlePadHint.textContent = 'This room already has 4 players. Return to the Hub to create a new room.';
       btnLaunch.disabled = true;
     },
+    onKicked: () => {
+      state.mode = 'kicked';
+      hudEl.classList.add('hidden');
+      titleOverlay.classList.add('hidden');
+      upgradeOverlay.classList.add('hidden');
+      pauseOverlay.classList.add('hidden');
+      gameoverOverlay.classList.add('hidden');
+      kickedOverlay.classList.remove('hidden');
+    },
     onMessage: handleRoomMessage,
   });
 
   lobbyPlayerName.value = room.myName;
-  lobbyPlayerName.addEventListener('input', () => {
-    room.setPlayerName(lobbyPlayerName.value);
-  });
+  lobbyPlayerName.addEventListener('input', () => room.setPlayerName(lobbyPlayerName.value));
 
   room.connect().then(() => {
     lobbyRoomCode.textContent = `ROOM ${room.roomCode}`;
@@ -732,9 +728,7 @@
       navigator.clipboard.writeText(url).catch(() => {});
     }
     btnEl.textContent = 'Invite Link Copied!';
-    setTimeout(() => {
-      btnEl.textContent = prev;
-    }, 1800);
+    setTimeout(() => { btnEl.textContent = prev; }, 1800);
   }
 
   btnCopyInvite.addEventListener('click', () => copyInviteLink(btnCopyInvite));
@@ -757,9 +751,7 @@
   function renderLobbyRoster(roster) {
     lobbyRosterGrid.innerHTML = '';
     const bySlot = {};
-    roster.forEach((p) => {
-      bySlot[p.slot] = p;
-    });
+    roster.forEach((p) => { bySlot[p.slot] = p; });
 
     for (let s = 0; s < 4; s++) {
       const p = bySlot[s];
@@ -768,18 +760,19 @@
       if (p) {
         card.className = 'slot-card';
         card.style.borderTop = `3px solid ${pal.hex}`;
-        const canRemove = room.isHost && p.isLocal && p.id !== room.myId;
+        const canKick = room.isHost && p.id !== room.myId;
+        const kickLabel = p.isLocal ? 'Remove' : 'Kick';
         card.innerHTML = `
           <div class="slot-head">
             <span style="color:${pal.hex}">P${s + 1} · ${pal.name}</span>
-            ${canRemove ? `<button type="button" class="slot-remove" data-rm="${p.id}">Remove</button>` : `<span>${p.isHost ? 'HOST' : p.isLocal ? 'LOCAL' : 'ONLINE'}</span>`}
+            ${canKick ? `<button type="button" class="slot-remove" data-kick="${p.id}">${kickLabel}</button>` : `<span>${p.isHost ? 'HOST' : p.isLocal ? 'LOCAL' : 'ONLINE'}</span>`}
           </div>
           <div class="slot-name">${escapeHtml(p.name)}</div>
           <div class="slot-sub">${p.id === room.myId ? 'You' : p.isLocal ? 'Same Screen' : 'Connected'}</div>
         `;
-        if (canRemove) {
+        if (canKick) {
           card.querySelector('.slot-remove').addEventListener('click', () => {
-            room.removeLocalPlayer(p.id);
+            room.kickPlayer(p.id);
           });
         }
       } else {
@@ -799,13 +792,17 @@
   }
 
   function syncMidGamePlayers(roster) {
+    const liveIds = new Set(roster.map((r) => r.id));
+    // Remove kicked/disconnected remote players cleanly
+    state.players = state.players.filter((p) => p.isLocal || liveIds.has(p.id));
+
     const existingIds = new Set(state.players.map((p) => p.id));
     let localCounter = state.players.filter((p) => p.isLocal).length;
     for (const rp of roster) {
       if (!existingIds.has(rp.id)) {
         const np = createPlayerFromRoster(rp, rp.isLocal ? localCounter++ : -1);
         state.players.push(np);
-        spawnFloatText(np.x, np.y - 26, `${np.name} JOINED!`, np.glow);
+        spawnFloatText(np.x, np.y - 30, `${np.name} JOINED!`, np.glow);
         SFX.levelUp();
       }
     }
@@ -813,11 +810,7 @@
 
   function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, (m) => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;',
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
     }[m]));
   }
 
@@ -828,8 +821,8 @@
     if (room.isHost) {
       if (msg.type === 'INPUT' && msg.senderId) {
         remoteInputs[msg.senderId] = msg.input;
-      } else if (msg.type === 'DRAFT_PICK' && state.mode === 'upgrade') {
-        pickUpgrade(msg.idx);
+      } else if (msg.type === 'PERSONAL_PICK' && state.mode === 'upgrade' && msg.senderId) {
+        applyPlayerDraftPick(msg.senderId, msg.idx);
       }
       return;
     }
@@ -837,6 +830,7 @@
     // Guest handlers
     if (msg.type === 'GAME_START') {
       state.mode = 'playing';
+      clearTouchSteer();
       titleOverlay.classList.add('hidden');
       upgradeOverlay.classList.add('hidden');
       pauseOverlay.classList.add('hidden');
@@ -851,23 +845,33 @@
       bossWarningEl.classList.remove('hidden');
       SFX.bossWarn();
       setTimeout(() => bossWarningEl.classList.add('hidden'), 2600);
-    } else if (msg.type === 'DRAFT_OPEN') {
+    } else if (msg.type === 'PERSONAL_DRAFT') {
+      clearTouchSteer();
       state.mode = 'upgrade';
+      state.myDraftPicked = false;
       state.draftIsBoss = msg.isBoss;
       state.draftFocus = 0;
       state.draftChoices = msg.choiceIds
         .map((id) => UPGRADES.find((u) => u.id === id))
         .filter(Boolean);
-      state.fleet = msg.fleet || state.fleet;
+      const me = state.players.find((p) => p.id === room.myId);
+      if (me && msg.myUpgrades) me.upgrades = msg.myUpgrades;
       draftEyebrow.textContent = msg.eyebrow;
       draftTitle.textContent = msg.title;
       draftSub.textContent = msg.sub;
-      renderDraftCards();
+      draftWaitingEl.classList.add('hidden');
+      renderDraftCards(msg.myUpgrades || defaultUpgrades());
       upgradeOverlay.classList.remove('hidden');
       SFX.levelUp();
-    } else if (msg.type === 'DRAFT_CLOSE') {
-      state.fleet = msg.fleet || state.fleet;
+    } else if (msg.type === 'DRAFT_STATUS') {
+      if (state.myDraftPicked) {
+        draftWaitingEl.textContent = `Upgrade locked in! Waiting for teammates (${msg.ready}/${msg.total} ready)...`;
+        draftWaitingEl.classList.remove('hidden');
+      }
+    } else if (msg.type === 'DRAFT_DONE') {
       upgradeOverlay.classList.add('hidden');
+      draftWaitingEl.classList.add('hidden');
+      state.myDraftPicked = false;
       state.mode = 'playing';
       SFX.xp();
       renderHud();
@@ -879,7 +883,7 @@
       state.score = msg.score;
       state.bossesDefeated = msg.bosses;
       state.kills = msg.kills;
-      showGameOverUI();
+      showGameOverUI(msg.dmgSummary || []);
     } else if (msg.type === 'RETURN_LOBBY') {
       returnToLobbyUI();
     }
@@ -896,9 +900,9 @@
       xp: Math.round(state.xp),
       xn: state.xpNeeded,
       ba: state.bossActive ? 1 : 0,
-      fl: state.fleet,
-      b: boss ? { n: boss.name, h: Math.ceil(boss.hp), m: boss.maxHp } : null,
+      b: boss ? { n: boss.name, h: Math.ceil(boss.hp), m: boss.maxHp, ph: boss.phase || 1 } : null,
       p: state.players.map((p) => [
+        p.id,
         p.slot,
         nx(p.x),
         ny(p.y),
@@ -911,8 +915,10 @@
         p.name,
         Math.round(p.orbitAngle * 100) / 100,
         Math.round(p.dashCooldown * 10) / 10,
+        Math.round(p.damage),
+        p.upgrades,
       ]),
-      e: state.enemies.slice(0, 40).map((e) => [
+      e: state.enemies.slice(0, 44).map((e) => [
         e.type,
         nx(e.x),
         ny(e.y),
@@ -921,10 +927,11 @@
         e.color,
         e.hitFlash > 0 ? 1 : 0,
         e.chillTimer > 0 ? 1 : 0,
+        e.phase || 1,
       ]),
-      bl: state.bullets.slice(0, 60).map((b) => [nx(b.x), ny(b.y), Math.round(b.radius), b.color]),
-      eb: state.enemyBullets.slice(0, 50).map((b) => [nx(b.x), ny(b.y), Math.round(b.radius), b.color]),
-      pk: state.pickups.slice(0, 40).map((pk) => [pk.kind === 'xp' ? 0 : 1, nx(pk.x), ny(pk.y)]),
+      bl: state.bullets.slice(0, 65).map((b) => [nx(b.x), ny(b.y), Math.round(b.radius), b.color, b.kind === 'missile' ? 1 : 0]),
+      eb: state.enemyBullets.slice(0, 60).map((b) => [nx(b.x), ny(b.y), Math.round(b.radius), b.color]),
+      pk: state.pickups.slice(0, 45).map((pk) => [pk.kind === 'xp' ? 0 : 1, nx(pk.x), ny(pk.y), pk.pulling ? 1 : 0]),
     };
   }
 
@@ -933,7 +940,7 @@
     if (s.xp > state.xp) SFX.xp();
     if (s.kl > state.kills) SFX.pop();
     const prevHpSum = state.players.reduce((acc, p) => acc + (p.hp || 0), 0);
-    const nextHpSum = (s.p || []).reduce((acc, arr) => acc + (arr[4] || 0), 0);
+    const nextHpSum = (s.p || []).reduce((acc, arr) => acc + (arr[5] || 0), 0);
     if (prevHpSum > 0 && nextHpSum < prevHpSum) SFX.hurt();
 
     state.level = s.lv;
@@ -942,28 +949,30 @@
     state.xp = s.xp;
     state.xpNeeded = s.xn;
     state.bossActive = Boolean(s.ba);
-    if (s.fl) state.fleet = s.fl;
 
     state.players = s.p.map((arr) => {
-      const pal = PLAYER_COLORS[arr[0] % PLAYER_COLORS.length];
+      const pal = PLAYER_COLORS[arr[1] % PLAYER_COLORS.length];
       return {
-        slot: arr[0],
+        id: arr[0],
+        slot: arr[1],
         color: pal.hex,
         glow: pal.glow,
-        x: arr[1] * W,
-        y: arr[2] * H,
-        angle: arr[3],
-        hp: arr[4],
-        maxHp: arr[5],
-        downed: Boolean(arr[6]),
-        reviveProgress: arr[7],
-        thrusting: Boolean(arr[8]),
-        name: arr[9],
-        orbitAngle: arr[10],
-        dashCooldown: arr[11],
+        x: arr[2] * W,
+        y: arr[3] * H,
+        angle: arr[4],
+        hp: arr[5],
+        maxHp: arr[6],
+        downed: Boolean(arr[7]),
+        reviveProgress: arr[8],
+        thrusting: Boolean(arr[9]),
+        name: arr[10],
+        orbitAngle: arr[11],
+        dashCooldown: arr[12],
+        damage: arr[13] || 0,
+        upgrades: arr[14] || defaultUpgrades(),
         invuln: 0,
         dashTimer: 0,
-        droneAngle: arr[10],
+        droneAngle: arr[11],
       };
     });
 
@@ -975,9 +984,10 @@
       radius: arr[3],
       rot: arr[4],
       color: arr[5],
-      veinColor: '#22c55e',
+      veinColor: '#a3e635',
       hitFlash: arr[6] ? 0.08 : 0,
       chillTimer: arr[7] ? 1 : 0,
+      phase: arr[8] || 1,
       shape: arr[0].startsWith('asteroid') ? getCachedRockShape(arr[3]) : null,
     }));
 
@@ -986,6 +996,7 @@
       y: arr[1] * H,
       radius: arr[2],
       color: arr[3],
+      kind: arr[4] ? 'missile' : 'pulse',
     }));
 
     state.enemyBullets = s.eb.map((arr) => ({
@@ -999,10 +1010,13 @@
       kind: arr[0] === 0 ? 'xp' : 'heal',
       x: arr[1] * W,
       y: arr[2] * H,
+      pulling: Boolean(arr[3]),
+      vx: 0,
+      vy: 0,
     }));
 
     if (s.b) {
-      bossNameEl.textContent = `LV ${state.level} · ${s.b.n}`;
+      bossNameEl.textContent = `LV ${state.level} · ${s.b.n}${s.b.ph >= 2 ? ' [ENRAGED]' : ''}`;
       bossBarWrap.classList.remove('hidden');
       const pct = clamp((s.b.h / s.b.m) * 100, 0, 100);
       bossHpFill.style.width = pct.toFixed(1) + '%';
@@ -1020,7 +1034,7 @@
       const pts = [];
       for (let i = 0; i < 9; i++) {
         const a = (i / 9) * Math.PI * 2;
-        const rad = r * (i % 2 === 0 ? 1.06 : 0.84);
+        const rad = r * (i % 2 === 0 ? 1.08 : 0.82);
         pts.push({ x: Math.cos(a) * rad, y: Math.sin(a) * rad });
       }
       rockShapeCache[r] = pts;
@@ -1033,16 +1047,20 @@
   function rand(lo, hi) { return lo + Math.random() * (hi - lo); }
   function dist(ax, ay, bx, by) { return Math.hypot(bx - ax, by - ay); }
 
-  function damageMultiplier() { return 1 + (state.fleet.overclock || 0) * 0.2; }
-  function critChance() { return (state.fleet.overclock || 0) * 0.08; }
+  function formatDmg(n) {
+    if (n >= 10000) return (n / 1000).toFixed(1) + 'k';
+    return Math.round(n).toLocaleString();
+  }
 
-  function rollDamage(base) {
-    const isCrit = Math.random() < critChance();
-    const dmg = Math.round(base * damageMultiplier() * (isCrit ? 1.8 : 1));
+  function rollPlayerDamage(p, base) {
+    const oc = p ? (p.upgrades.overclock || 0) : 0;
+    const mult = 1 + oc * 0.22;
+    const isCrit = Math.random() < oc * 0.08;
+    const dmg = Math.round(base * mult * (isCrit ? 1.8 : 1));
     return { dmg, isCrit };
   }
 
-  function spawnParticles(x, y, color, count = 10, speed = 160, size = 3) {
+  function spawnParticles(x, y, color, count = 10, speed = 160, size = 3.5) {
     for (let i = 0; i < count; i++) {
       const a = Math.random() * Math.PI * 2;
       const sp = rand(speed * 0.25, speed);
@@ -1050,16 +1068,16 @@
         x, y,
         vx: Math.cos(a) * sp,
         vy: Math.sin(a) * sp,
-        life: rand(0.25, 0.6),
-        maxLife: 0.6,
+        life: rand(0.25, 0.58),
+        maxLife: 0.58,
         color,
-        size: rand(size * 0.6, size * 1.4),
+        size: rand(size * 0.65, size * 1.45),
       });
     }
   }
 
   function spawnFloatText(x, y, text, color = '#f8fafc') {
-    state.floatTexts.push({ x, y, vy: -38, text, color, life: 0.85, maxLife: 0.85 });
+    state.floatTexts.push({ x, y, vy: -42, text, color, life: 0.85, maxLife: 0.85 });
   }
 
   // ---- Start / Reset (Host Authoritative) ----
@@ -1068,6 +1086,7 @@
     const roster = room.getOrderedPlayers();
     if (roster.length === 0) return;
 
+    clearTouchSteer();
     state.mode = 'playing';
     state.time = 0;
     state.score = 0;
@@ -1075,14 +1094,16 @@
     state.bossesDefeated = 0;
     state.level = 1;
     state.xp = 0;
-    state.xpNeeded = 65;
+    state.xpNeeded = 75;
     state.shake = 0;
-    state.spawnTimer = 0.5;
+    state.spawnTimer = 0.4;
     state.bossActive = false;
     state.bossWarningTimer = 0;
     state.pendingBossLevel = null;
     state.pendingDrafts = [];
-    state.fleet = defaultFleet();
+    state.activeDraftMap = {};
+    state.localDraftQueue = [];
+    state.myDraftPicked = false;
     state.enemies = [];
     state.bullets = [];
     state.enemyBullets = [];
@@ -1097,14 +1118,15 @@
 
     titleOverlay.classList.add('hidden');
     upgradeOverlay.classList.add('hidden');
+    draftWaitingEl.classList.add('hidden');
     pauseOverlay.classList.add('hidden');
     gameoverOverlay.classList.add('hidden');
     bossWarningEl.classList.add('hidden');
     bossBarWrap.classList.add('hidden');
     hudEl.classList.remove('hidden');
 
-    for (let i = 0; i < 4; i++) spawnEnemy('asteroid_lg');
-    for (let i = 0; i < 3; i++) spawnEnemy('corona');
+    for (let i = 0; i < 5; i++) spawnEnemy('asteroid_lg');
+    for (let i = 0; i < 4; i++) spawnEnemy('corona');
 
     room.sendSignal({ type: 'GAME_START' });
     SFX.levelUp();
@@ -1112,6 +1134,7 @@
   }
 
   function returnToLobbyUI() {
+    clearTouchSteer();
     state.mode = 'title';
     hudEl.classList.add('hidden');
     pauseOverlay.classList.add('hidden');
@@ -1122,8 +1145,8 @@
     titleOverlay.classList.remove('hidden');
   }
 
-  // ---- Enemy Spawning ----
-  function edgeSpawnPos(pad = 42) {
+  // ---- Enemy Spawning (Tuned Harder!) ----
+  function edgeSpawnPos(pad = 44) {
     const side = Math.floor(Math.random() * 4);
     if (side === 0) return { x: rand(0, W), y: -pad };
     if (side === 1) return { x: W + pad, y: rand(0, H) };
@@ -1135,7 +1158,7 @@
     const pts = [];
     for (let i = 0; i < 9; i++) {
       const a = (i / 9) * Math.PI * 2;
-      const rad = r * rand(0.74, 1.16);
+      const rad = r * rand(0.76, 1.15);
       pts.push({ x: Math.cos(a) * rad, y: Math.sin(a) * rad });
     }
     return pts;
@@ -1144,15 +1167,15 @@
   function spawnEnemy(type, customPos = null) {
     const pos = customPos || edgeSpawnPos();
     const lv = state.level;
-    const coopHp = 1 + Math.max(0, state.players.length - 1) * 0.28;
-    const hpScale = (1 + (lv - 1) * 0.22) * coopHp;
-    const speedScale = 1 + Math.min(1.1, (lv - 1) * 0.035);
+    const coopHp = 1 + Math.max(0, state.players.length - 1) * 0.45;
+    const hpScale = (1 + (lv - 1) * 0.34 + Math.pow(lv - 1, 1.25) * 0.05) * coopHp;
+    const speedScale = 1 + Math.min(1.25, (lv - 1) * 0.045);
     const angleToCenter = Math.atan2(H * 0.5 - pos.y, W * 0.5 - pos.x) + rand(-0.45, 0.45);
 
     if (type === 'asteroid_lg' || type === 'asteroid_md' || type === 'asteroid_sm') {
-      const r = type === 'asteroid_lg' ? 34 : type === 'asteroid_md' ? 22 : 13;
-      const baseHp = type === 'asteroid_lg' ? 46 : type === 'asteroid_md' ? 24 : 12;
-      const sp = (type === 'asteroid_lg' ? 48 : type === 'asteroid_md' ? 76 : 108) * speedScale;
+      const r = type === 'asteroid_lg' ? 35 : type === 'asteroid_md' ? 23 : 14;
+      const baseHp = type === 'asteroid_lg' ? 58 : type === 'asteroid_md' ? 30 : 15;
+      const sp = (type === 'asteroid_lg' ? 54 : type === 'asteroid_md' ? 84 : 118) * speedScale;
       state.enemies.push({
         type, x: pos.x, y: pos.y,
         vx: Math.cos(angleToCenter) * sp,
@@ -1165,9 +1188,9 @@
         shape: makeAsteroidShape(r),
         xp: type === 'asteroid_lg' ? 14 : type === 'asteroid_md' ? 9 : 6,
         score: type === 'asteroid_lg' ? 40 : type === 'asteroid_md' ? 25 : 15,
-        damage: type === 'asteroid_lg' ? 20 : 14,
+        damage: type === 'asteroid_lg' ? 22 : 16,
         color: '#64748b',
-        veinColor: '#22c55e',
+        veinColor: '#a3e635',
         hitFlash: 0,
         chillTimer: 0,
       });
@@ -1175,11 +1198,11 @@
     }
 
     const defs = {
-      corona: { r: 17, hp: 28, sp: 78, rotSp: 1.1, xp: 12, sc: 35, dmg: 16, col: '#f43f5e' },
-      mitosis: { r: 21, hp: 42, sp: 62, rotSp: 0.9, xp: 16, sc: 50, dmg: 18, col: '#84cc16' },
-      microbe: { r: 11, hp: 14, sp: 132, rotSp: 2.5, xp: 7, sc: 20, dmg: 11, col: '#a3e635' },
-      shooter: { r: 19, hp: 38, sp: 68, rotSp: -1.4, xp: 18, sc: 65, dmg: 16, col: '#f59e0b' },
-      capsid: { r: 27, hp: 95, sp: 48, rotSp: 0.5, xp: 28, sc: 110, dmg: 24, col: '#38bdf8' },
+      corona: { r: 18, hp: 36, sp: 88, rotSp: 1.1, xp: 12, sc: 35, dmg: 18, col: '#e11d48' },
+      mitosis: { r: 22, hp: 54, sp: 70, rotSp: 0.9, xp: 16, sc: 50, dmg: 20, col: '#84cc16' },
+      microbe: { r: 12, hp: 18, sp: 148, rotSp: 2.5, xp: 7, sc: 20, dmg: 14, col: '#a3e635' },
+      shooter: { r: 20, hp: 48, sp: 76, rotSp: -1.4, xp: 18, sc: 65, dmg: 18, col: '#ea580c' },
+      capsid: { r: 29, hp: 135, sp: 56, rotSp: 0.5, xp: 28, sc: 110, dmg: 26, col: '#9333ea' },
     };
     const d = defs[type];
     if (!d) return;
@@ -1189,7 +1212,7 @@
       hp: Math.round(d.hp * hpScale),
       maxHp: Math.round(d.hp * hpScale),
       speed: d.sp * speedScale,
-      fireTimer: type === 'shooter' ? rand(1.4, 2.6) : 0,
+      fireTimer: type === 'shooter' ? rand(1.1, 2.2) : 0,
       rot: rand(0, Math.PI * 2),
       rotSpeed: d.rotSp,
       xp: d.xp,
@@ -1204,15 +1227,15 @@
   function pickWaveEnemyType() {
     const lv = state.level;
     const r = Math.random();
-    if (lv >= 7 && r < 0.14) return 'capsid';
-    if (lv >= 4 && r < 0.30) return 'shooter';
-    if (lv >= 3 && r < 0.48) return 'mitosis';
-    if (lv >= 5 && r < 0.60) return 'microbe';
-    if (r < 0.78) return 'corona';
+    if (lv >= 6 && r < 0.16) return 'capsid';
+    if (lv >= 3 && r < 0.36) return 'shooter';
+    if (lv >= 2 && r < 0.54) return 'mitosis';
+    if (lv >= 4 && r < 0.68) return 'microbe';
+    if (r < 0.84) return 'corona';
     return 'asteroid_lg';
   }
 
-  // ---- BOSS SPAWNING (Every 10 Levels!) ----
+  // ---- TOUGH MULTI-PHASE BOSSES (Every 10 Levels!) ----
   function triggerBossSequence(bossLevel) {
     state.bossActive = true;
     state.pendingBossLevel = bossLevel;
@@ -1220,11 +1243,11 @@
 
     const tier = Math.floor(bossLevel / 10);
     const variant = (tier - 1) % 3;
-    const names = ['ALPHA CORONA-LEVIATHAN', 'HYDRA MITOSIS-CORE', 'OMEGA PANDEMIC-TITAN'];
+    const names = ['BARON CORONA-CHOMP', 'HYDRA SLIME-QUEEN', 'KING PANDEMIC-REX'];
     const name = tier > 3 ? `${names[variant]} MK-${tier}` : names[variant];
-    const sub = `LEVEL ${bossLevel} — ${name} INCOMING`;
+    const sub = `LEVEL ${bossLevel} — ${name} INCOMING!`;
 
-    bossWarningTitle.textContent = '⚠ BIO-HAZARD BOSS DETECTED';
+    bossWarningTitle.textContent = '⚠ GIANT SPACE VIRUS BOSS!';
     bossWarningSub.textContent = sub;
     bossWarningEl.classList.remove('hidden');
     room.sendSignal({ type: 'BOSS_WARN', sub });
@@ -1235,24 +1258,26 @@
   function spawnBoss(bossLevel) {
     const tier = Math.floor(bossLevel / 10);
     const variant = (tier - 1) % 3;
-    const names = ['ALPHA CORONA-LEVIATHAN', 'HYDRA MITOSIS-CORE', 'OMEGA PANDEMIC-TITAN'];
+    const names = ['BARON CORONA-CHOMP', 'HYDRA SLIME-QUEEN', 'KING PANDEMIC-REX'];
     const name = tier > 3 ? `${names[variant]} MK-${tier}` : names[variant];
-    const coopScale = 1 + Math.max(0, state.players.length - 1) * 0.42;
-    const maxHp = Math.round((1150 + (tier - 1) * 950) * coopScale);
+    const coopScale = 1 + Math.max(0, state.players.length - 1) * 0.65;
+    // Much tankier so bosses are real epic multi-phase fights!
+    const maxHp = Math.round((4200 + (tier - 1) * 3800) * coopScale);
 
     const boss = {
       type: 'boss',
       isBoss: true,
       variant, tier, name,
-      x: W * 0.5, y: -95, vx: 0, vy: 0,
-      radius: 58,
+      phase: 1,
+      x: W * 0.5, y: -100, vx: 0, vy: 0,
+      radius: 62,
       hp: maxHp, maxHp,
-      speed: 62 + tier * 8,
+      speed: 74 + tier * 10,
       rot: 0, rotSpeed: 0.45,
-      attackTimer: 2.0, minionTimer: 5.5, chargeTimer: 7.0,
+      attackTimer: 1.6, minionTimer: 4.5, chargeTimer: 5.8,
       charging: 0, chargeVx: 0, chargeVy: 0, spiralAngle: 0,
-      xp: 0, score: 1200 * tier, damage: 28,
-      color: variant === 0 ? '#f43f5e' : variant === 1 ? '#84cc16' : '#fb923c',
+      xp: 0, score: 1500 * tier, damage: 32,
+      color: variant === 0 ? '#e11d48' : variant === 1 ? '#65a30d' : '#ea580c',
       hitFlash: 0, chillTimer: 0,
     };
 
@@ -1270,11 +1295,13 @@
     const pct = clamp((boss.hp / boss.maxHp) * 100, 0, 100);
     bossHpFill.style.width = pct.toFixed(1) + '%';
     bossHpText.textContent = `${Math.ceil(boss.hp)} / ${boss.maxHp}`;
+    bossNameEl.textContent = `LV ${state.level} · ${boss.name}${boss.phase >= 2 ? ' [ENRAGED!]' : ''}`;
   }
 
-  // ---- Shared Level-Up & Upgrade Draft ----
+  // ---- Shared Team XP -> PERSONAL Upgrade Drafts! ----
   function addTeamXp(amount) {
-    const mult = 1 + (state.fleet.magnet_core || 0) * 0.15;
+    const maxMag = Math.max(0, ...state.players.map((p) => p.upgrades.magnet_core || 0));
+    const mult = 1 + maxMag * 0.15;
     state.xp += amount * mult;
 
     if (state.bossActive) {
@@ -1285,7 +1312,7 @@
     while (state.xp >= state.xpNeeded) {
       state.xp -= state.xpNeeded;
       state.level += 1;
-      state.xpNeeded = Math.round(65 + state.level * 26 + Math.pow(state.level, 1.35) * 6);
+      state.xpNeeded = Math.round(75 + state.level * 30 + Math.pow(state.level, 1.4) * 7);
       SFX.levelUp();
 
       state.pendingDrafts.push({ isBossReward: false, level: state.level });
@@ -1296,61 +1323,103 @@
     }
 
     if (state.pendingDrafts.length > 0 && state.mode === 'playing') {
-      openNextDraft();
+      openNextPersonalDraft();
     }
   }
 
-  function openNextDraft() {
+  function rollPersonalChoices(player, isBoss) {
+    let pool = UPGRADES.filter((u) => (player.upgrades[u.id] || 0) < u.maxLevel);
+    if (isBoss) {
+      const wPool = pool.filter((u) => u.tag === 'Weapon' || u.tag === 'Co-op');
+      if (wPool.length >= 3) pool = wPool;
+    }
+    return pool.slice().sort(() => Math.random() - 0.5).slice(0, 3);
+  }
+
+  function openNextPersonalDraft() {
     if (!room.isHost || state.pendingDrafts.length === 0) return;
     const req = state.pendingDrafts.shift();
+    clearTouchSteer();
     state.mode = 'upgrade';
     state.draftIsBoss = req.isBossReward;
-    state.draftFocus = 0;
+    state.activeDraftMap = {};
+    state.localDraftQueue = [];
 
-    let pool = UPGRADES.filter((u) => (state.fleet[u.id] || 0) < u.maxLevel);
-    if (req.isBossReward) {
-      const weaponsPool = pool.filter((u) => u.tag === 'Weapon' || u.tag === 'Co-op');
-      if (weaponsPool.length >= 3) pool = weaponsPool;
+    const eyebrow = req.isBossReward ? 'Boss Defeated · Personal Supply Drop!' : `Team Level ${req.level}!`;
+    const title = req.isBossReward ? 'Pick Your Boss UFO Evolution' : 'Upgrade Your Personal UFO';
+    const sub = req.isBossReward
+      ? 'Full Hull Repair! Pick a personal weapon upgrade to bolt onto your saucer.'
+      : 'Every pilot chooses their own personal UFO upgrade!';
+
+    for (const p of state.players) {
+      const choices = rollPersonalChoices(p, req.isBossReward);
+      if (choices.length === 0) {
+        state.activeDraftMap[p.id] = { choices: [], picked: true, isBoss: req.isBossReward };
+        continue;
+      }
+      state.activeDraftMap[p.id] = { choices, picked: false, isBoss: req.isBossReward };
+
+      if (p.isLocal) {
+        state.localDraftQueue.push(p.id);
+      } else {
+        room.sendToPlayer(p.id, {
+          type: 'PERSONAL_DRAFT',
+          isBoss: req.isBossReward,
+          eyebrow,
+          title,
+          sub,
+          choiceIds: choices.map((c) => c.id),
+          myUpgrades: p.upgrades,
+        });
+      }
     }
 
-    pool = pool.slice().sort(() => Math.random() - 0.5);
-    state.draftChoices = pool.slice(0, 3);
-    if (state.draftChoices.length === 0) {
-      state.mode = 'playing';
+    showNextLocalDraft(eyebrow, title, sub);
+    checkAllDraftsPicked();
+  }
+
+  function showNextLocalDraft(eyebrow, title, sub) {
+    const nextLocalId = state.localDraftQueue.find(
+      (pid) => state.activeDraftMap[pid] && !state.activeDraftMap[pid].picked
+    );
+    if (!nextLocalId) {
+      state.myDraftPicked = true;
+      upgradeGrid.innerHTML = '';
+      const { ready, total } = countDraftReady();
+      draftWaitingEl.textContent = `Your UFO upgrade is locked in! Waiting for teammates (${ready}/${total} ready)...`;
+      draftWaitingEl.classList.remove('hidden');
+      upgradeOverlay.classList.remove('hidden');
       return;
     }
 
-    const eyebrow = req.isBossReward ? 'Boss Purged · Bonus Supply Drop!' : `Fleet Level ${req.level}!`;
-    const title = req.isBossReward ? 'Select a Boss Weapon Evolution' : 'Level Up Your Ships Together';
-    const sub = req.isBossReward
-      ? 'All ships repaired to 100% Hull. Choose a high-tier upgrade!'
-      : state.players.length > 1
-        ? `This upgrade powers up all ${state.players.length} ships in the room.`
-        : 'Choose an upgrade for your starship.';
+    state.activeLocalDraftId = nextLocalId;
+    state.myDraftPicked = false;
+    state.draftFocus = 0;
+    const p = state.players.find((pl) => pl.id === nextLocalId);
+    const entry = state.activeDraftMap[nextLocalId];
+    state.draftChoices = entry.choices;
 
-    draftEyebrow.textContent = eyebrow;
-    draftTitle.textContent = title;
-    draftSub.textContent = sub;
-
-    renderDraftCards();
+    draftEyebrow.textContent = eyebrow || `Team Level ${state.level}!`;
+    draftTitle.textContent =
+      state.localDraftQueue.length > 1 && p ? `${p.name}: Choose Your UFO Upgrade` : title || 'Upgrade Your Personal UFO';
+    draftSub.textContent = sub || 'Your pick upgrades & visually evolves your own UFO!';
+    draftWaitingEl.classList.add('hidden');
+    renderDraftCards(p ? p.upgrades : defaultUpgrades());
     upgradeOverlay.classList.remove('hidden');
-
-    room.sendSignal({
-      type: 'DRAFT_OPEN',
-      isBoss: req.isBossReward,
-      eyebrow,
-      title,
-      sub,
-      choiceIds: state.draftChoices.map((c) => c.id),
-      fleet: state.fleet,
-    });
   }
 
-  function renderDraftCards() {
+  function countDraftReady() {
+    const entries = Object.values(state.activeDraftMap);
+    const total = entries.length;
+    const ready = entries.filter((e) => e.picked).length;
+    return { ready, total };
+  }
+
+  function renderDraftCards(myUpgrades) {
     upgradeGrid.innerHTML = '';
     const isCoop = state.players.length >= 2;
     state.draftChoices.forEach((u, idx) => {
-      const curLv = state.fleet[u.id] || 0;
+      const curLv = (myUpgrades && myUpgrades[u.id]) || 0;
       const nextLv = curLv + 1;
       const card = document.createElement('button');
       card.type = 'button';
@@ -1358,7 +1427,7 @@
         'upgrade-card' +
         (idx === state.draftFocus ? ' focused' : '') +
         (state.draftIsBoss ? ' boss-tier' : '');
-      const displayName = !isCoop && u.id === 'tether_beam' ? 'Wingman Drone' : u.name;
+      const displayName = !isCoop && u.id === 'tether_beam' ? 'Wingman Mini-UFO' : u.name;
       const displayTag = !isCoop && u.id === 'tether_beam' ? 'Weapon' : u.tag;
       card.innerHTML = `
         <div class="upg-head">
@@ -1368,7 +1437,7 @@
         <div class="upg-name">${displayName}</div>
         <div class="upg-desc">${u.describe(nextLv, isCoop)}</div>
         <div class="upg-footer">
-          <span>${curLv === 0 ? 'NEW UNLOCK' : `LV ${curLv} → LV ${nextLv}`}</span>
+          <span>${curLv === 0 ? 'NEW VISUAL GEAR' : `LV ${curLv} → LV ${nextLv}`}</span>
           <span>[${idx + 1}]</span>
         </div>
       `;
@@ -1396,39 +1465,69 @@
   }
 
   function requestPickUpgrade(idx) {
+    if (state.myDraftPicked) return;
     if (room.isHost) {
-      pickUpgrade(idx);
+      if (state.activeLocalDraftId) {
+        applyPlayerDraftPick(state.activeLocalDraftId, idx);
+      }
     } else {
-      room.sendSignal({ type: 'DRAFT_PICK', idx });
+      state.myDraftPicked = true;
+      SFX.xp();
+      upgradeGrid.innerHTML = '';
+      draftWaitingEl.textContent = 'Your UFO upgrade is locked in! Waiting for teammates...';
+      draftWaitingEl.classList.remove('hidden');
+      room.sendSignal({ type: 'PERSONAL_PICK', idx });
     }
   }
 
-  function pickUpgrade(idx) {
+  function applyPlayerDraftPick(playerId, idx) {
     if (!room.isHost) return;
-    const u = state.draftChoices[idx];
+    const entry = state.activeDraftMap[playerId];
+    const p = state.players.find((pl) => pl.id === playerId);
+    if (!entry || entry.picked || !p) return;
+    const u = entry.choices[idx];
     if (!u) return;
-    state.fleet[u.id] = (state.fleet[u.id] || 0) + 1;
+
+    p.upgrades[u.id] = (p.upgrades[u.id] || 0) + 1;
+    entry.picked = true;
 
     if (u.id === 'hull_plating') {
-      state.players.forEach((p) => {
-        p.maxHp += 25;
-        if (!p.downed) p.hp = Math.min(p.maxHp, p.hp + 40);
-      });
+      p.maxHp += 30;
+      if (!p.downed) p.hp = Math.min(p.maxHp, p.hp + 45);
     }
 
     SFX.xp();
-    upgradeOverlay.classList.add('hidden');
-    room.sendSignal({ type: 'DRAFT_CLOSE', fleet: state.fleet });
+    const { ready, total } = countDraftReady();
+    room.sendSignal({ type: 'DRAFT_STATUS', ready, total });
 
-    if (state.pendingDrafts.length > 0) {
-      openNextDraft();
-    } else {
-      state.mode = 'playing';
+    if (p.isLocal) {
+      showNextLocalDraft(draftEyebrow.textContent, draftTitle.textContent, draftSub.textContent);
+    } else if (state.myDraftPicked) {
+      draftWaitingEl.textContent = `Your UFO upgrade is locked in! Waiting for teammates (${ready}/${total} ready)...`;
     }
-    renderHud();
+
+    checkAllDraftsPicked();
   }
 
-  // ---- Weapons Firing ----
+  function checkAllDraftsPicked() {
+    if (!room.isHost || state.mode !== 'upgrade') return;
+    const { ready, total } = countDraftReady();
+    if (total === 0 || ready >= total) {
+      upgradeOverlay.classList.add('hidden');
+      draftWaitingEl.classList.add('hidden');
+      state.myDraftPicked = false;
+      room.sendSignal({ type: 'DRAFT_DONE' });
+
+      if (state.pendingDrafts.length > 0) {
+        openNextPersonalDraft();
+      } else {
+        state.mode = 'playing';
+      }
+      renderHud();
+    }
+  }
+
+  // ---- Weapons Firing (Per-Player Personal Upgrades!) ----
   function findNearestEnemy(x, y, maxRange = Infinity) {
     let best = null;
     let bestD = maxRange;
@@ -1440,22 +1539,23 @@
   }
 
   function firePulseCannon(p) {
-    const lv = state.fleet.pulse_cannon || 1;
+    const lv = p.upgrades.pulse_cannon || 1;
     const count = lv;
     const spread = count === 1 ? 0 : Math.min(0.46, (count - 1) * 0.11);
-    const speed = 640;
-    const baseDmg = 14 + lv * 3;
+    const speed = 660;
+    const baseDmg = 13 + lv * 3;
 
     for (let i = 0; i < count; i++) {
       const t = count === 1 ? 0 : i / (count - 1) - 0.5;
       const ang = p.angle + t * spread;
       state.bullets.push({
         kind: 'pulse',
-        x: p.x + Math.cos(ang) * 18,
-        y: p.y + Math.sin(ang) * 18,
+        ownerId: p.id,
+        x: p.x + Math.cos(ang) * 20,
+        y: p.y + Math.sin(ang) * 20,
         vx: Math.cos(ang) * speed,
         vy: Math.sin(ang) * speed,
-        radius: 4.5,
+        radius: 5,
         damage: baseDmg,
         color: p.glow,
         life: 1.05,
@@ -1465,7 +1565,7 @@
   }
 
   function firePlasmaRail(p) {
-    const lv = state.fleet.plasma_rail;
+    const lv = p.upgrades.plasma_rail;
     const target = findNearestEnemy(p.x, p.y, 700);
     const ang = target ? Math.atan2(target.y - p.y, target.x - p.x) : p.angle;
     const len = Math.max(W, H) * 0.9;
@@ -1483,26 +1583,27 @@
       const e = state.enemies[i];
       const t = clamp(((e.x - p.x) * dx + (e.y - p.y) * dy) / lenSq, 0, 1);
       if (dist(p.x + t * dx, p.y + t * dy, e.x, e.y) <= e.radius + width * 0.6) {
-        damageEnemy(e, baseDmg, '#38bdf8');
+        damageEnemy(e, baseDmg, '#38bdf8', p);
       }
     }
     SFX.rail();
   }
 
   function fireHomingMissiles(p) {
-    const lv = state.fleet.homing_missiles;
+    const lv = p.upgrades.homing_missiles;
     for (let i = 0; i < lv + 1; i++) {
       const ang = p.angle + rand(-0.9, 0.9);
       state.bullets.push({
         kind: 'missile',
-        x: p.x + Math.cos(ang) * 14,
-        y: p.y + Math.sin(ang) * 14,
+        ownerId: p.id,
+        x: p.x + Math.cos(ang) * 16,
+        y: p.y + Math.sin(ang) * 16,
         vx: Math.cos(ang) * 260,
         vy: Math.sin(ang) * 260,
-        speed: 410 + lv * 22,
-        radius: 6,
+        speed: 420 + lv * 22,
+        radius: 6.5,
         damage: 24 + lv * 10,
-        color: '#f472b6',
+        color: '#fde047',
         life: 3.0,
       });
     }
@@ -1510,7 +1611,7 @@
   }
 
   function fireChainLightning(p) {
-    const lv = state.fleet.chain_lightning;
+    const lv = p.upgrades.chain_lightning;
     const hitSet = new Set();
     let curX = p.x;
     let curY = p.y;
@@ -1530,7 +1631,7 @@
         x1: curX, y1: curY, x2: best.x, y2: best.y,
         width: 4, color: '#fde047', jagged: true, life: 0.16, maxLife: 0.16,
       });
-      damageEnemy(best, baseDmg, '#fde047');
+      damageEnemy(best, baseDmg, '#fde047', p);
       curX = best.x;
       curY = best.y;
     }
@@ -1538,15 +1639,15 @@
   }
 
   function triggerNovaPulse(p) {
-    const lv = state.fleet.nova_pulse;
+    const lv = p.upgrades.nova_pulse;
     const maxR = 145 + lv * 35;
     const baseDmg = 26 + lv * 14;
-    state.novas.push({ x: p.x, y: p.y, r: 18, maxR, color: p.color, life: 0.36, maxLife: 0.36 });
+    state.novas.push({ x: p.x, y: p.y, r: 18, maxR, color: p.glow, life: 0.36, maxLife: 0.36 });
 
     for (let i = state.enemyBullets.length - 1; i >= 0; i--) {
       const b = state.enemyBullets[i];
       if (dist(p.x, p.y, b.x, b.y) <= maxR) {
-        spawnParticles(b.x, b.y, '#fb7185', 4, 90, 2);
+        spawnParticles(b.x, b.y, '#fb7185', 4, 90, 2.5);
         state.enemyBullets.splice(i, 1);
       }
     }
@@ -1554,7 +1655,7 @@
       const e = state.enemies[i];
       const d = dist(p.x, p.y, e.x, e.y);
       if (d <= maxR + e.radius) {
-        damageEnemy(e, baseDmg, p.glow);
+        damageEnemy(e, baseDmg, p.glow, p);
         if (!e.isBoss && d > 1) {
           e.vx += ((e.x - p.x) / d) * 210;
           e.vy += ((e.y - p.y) / d) * 210;
@@ -1564,13 +1665,38 @@
     SFX.nova();
   }
 
-  // ---- Enemy Damage & Death ----
-  function damageEnemy(e, baseDmg, color = '#f8fafc') {
+  // ---- Enemy Damage & Death (With Damage Meter Tracking & Boss Armor Cap) ----
+  function damageEnemy(e, baseDmg, color = '#f8fafc', sourcePlayer = null) {
     if (e.hp <= 0) return;
-    const { dmg, isCrit } = rollDamage(baseDmg);
+    let { dmg, isCrit } = rollPlayerDamage(sourcePlayer, baseDmg);
+
+    // Boss burst-armor cap so bosses are real battles and never insta-melt
+    if (e.isBoss) {
+      const maxHit = Math.max(40, Math.round(e.maxHp * 0.035));
+      dmg = Math.min(dmg, maxHit);
+    }
+
+    const dealt = Math.min(e.hp, dmg);
     e.hp -= dmg;
     e.hitFlash = 0.09;
-    if ((state.fleet.cryo_rounds || 0) > 0) e.chillTimer = 2.2;
+
+    if (sourcePlayer) {
+      sourcePlayer.damage += dealt;
+      if ((sourcePlayer.upgrades.cryo_rounds || 0) > 0) {
+        e.chillTimer = 2.2;
+        e.chillPower = Math.min(0.55, 0.18 + sourcePlayer.upgrades.cryo_rounds * 0.1);
+      }
+    }
+
+    // Boss Phase 2 Enrage at 50% HP!
+    if (e.isBoss && e.phase === 1 && e.hp > 0 && e.hp <= e.maxHp * 0.5) {
+      e.phase = 2;
+      e.speed *= 1.28;
+      state.shake = 12;
+      spawnParticles(e.x, e.y, '#fb7185', 30, 260, 4.5);
+      spawnFloatText(e.x, e.y - 72, 'PHASE 2 — ENRAGED!', '#fde047');
+      SFX.bossWarn();
+    }
 
     if (isCrit || e.isBoss) {
       spawnFloatText(e.x + rand(-10, 10), e.y - e.radius * 0.6, isCrit ? `${dmg}!` : `${dmg}`, isCrit ? '#fde047' : color);
@@ -1586,7 +1712,7 @@
 
     state.kills += 1;
     state.score += e.score;
-    spawnParticles(e.x, e.y, e.color, e.isBoss ? 55 : 14, e.isBoss ? 320 : 180, e.isBoss ? 5 : 3);
+    spawnParticles(e.x, e.y, e.color, e.isBoss ? 65 : 16, e.isBoss ? 340 : 190, e.isBoss ? 6 : 3.5);
 
     if (e.type === 'asteroid_lg') {
       spawnEnemy('asteroid_md', { x: e.x + rand(-12, 12), y: e.y + rand(-12, 12) });
@@ -1602,7 +1728,7 @@
     if (e.isBoss) {
       state.bossActive = false;
       state.bossesDefeated += 1;
-      state.shake = 18;
+      state.shake = 20;
       state.enemyBullets = [];
       bossBarWrap.classList.add('hidden');
       SFX.bossDead();
@@ -1616,17 +1742,17 @@
       });
 
       state.pendingDrafts.push({ isBossReward: true, level: state.level });
-      openNextDraft();
+      openNextPersonalDraft();
       return;
     }
 
     SFX.pop();
     state.pickups.push({
-      kind: 'xp', x: e.x, y: e.y, vx: rand(-35, 35), vy: rand(-35, 35), value: e.xp, life: 16,
+      kind: 'xp', x: e.x, y: e.y, vx: rand(-35, 35), vy: rand(-35, 35), value: e.xp, life: 16, pulling: false,
     });
-    if (Math.random() < 0.055) {
+    if (Math.random() < 0.05) {
       state.pickups.push({
-        kind: 'heal', x: e.x + rand(-10, 10), y: e.y + rand(-10, 10), vx: rand(-25, 25), vy: rand(-25, 25), value: 26, life: 16,
+        kind: 'heal', x: e.x + rand(-10, 10), y: e.y + rand(-10, 10), vx: rand(-25, 25), vy: rand(-25, 25), value: 26, life: 16, pulling: false,
       });
     }
   }
@@ -1637,15 +1763,15 @@
     p.hp = Math.max(0, p.hp - amount);
     p.invuln = 0.85;
     state.shake = Math.max(state.shake, 9);
-    spawnParticles(p.x, p.y, p.color, 14, 170, 3);
+    spawnParticles(p.x, p.y, p.color, 14, 170, 3.5);
     SFX.hurt();
 
     if (p.hp <= 0) {
       p.downed = true;
       p.reviveProgress = 0;
-      spawnParticles(p.x, p.y, '#fb7185', 26, 220, 4);
+      spawnParticles(p.x, p.y, '#fb7185', 26, 220, 4.5);
       if (state.players.length >= 2) {
-        spawnFloatText(p.x, p.y - 24, `${p.name} DOWN! FLY NEAR TO REVIVE`, '#fb7185');
+        spawnFloatText(p.x, p.y - 28, `${p.name} DOWN! FLY NEAR TO REVIVE`, '#fb7185');
       }
       if (!state.players.some((pl) => !pl.downed)) {
         triggerGameOver();
@@ -1655,25 +1781,53 @@
 
   function triggerGameOver() {
     saveBestStats();
+    const dmgSummary = state.players
+      .slice()
+      .sort((a, b) => b.damage - a.damage)
+      .map((p) => ({ name: p.name, color: p.color, damage: Math.round(p.damage) }));
     room.sendSignal({
       type: 'GAME_OVER',
       level: state.level,
       score: state.score,
       bosses: state.bossesDefeated,
       kills: state.kills,
+      dmgSummary,
     });
-    showGameOverUI();
+    showGameOverUI(dmgSummary);
   }
 
-  function showGameOverUI() {
+  function showGameOverUI(dmgSummary = []) {
+    clearTouchSteer();
     state.mode = 'gameover';
     sumLevel.textContent = String(state.level);
     sumScore.textContent = state.score.toLocaleString();
     sumBosses.textContent = String(state.bossesDefeated);
     gameoverSub.textContent =
       state.bossesDefeated > 0
-        ? `Your fleet reached Level ${state.level} and purged ${state.bossesDefeated} space virus boss${state.bossesDefeated > 1 ? 'es' : ''}!`
-        : `Your fleet reached Level ${state.level} and purged ${state.kills} space viruses.`;
+        ? `Your UFO squad reached Level ${state.level} and purged ${state.bossesDefeated} space virus boss${state.bossesDefeated > 1 ? 'es' : ''}!`
+        : `Your UFO squad reached Level ${state.level} and purged ${state.kills} space viruses.`;
+
+    const totalDmg = Math.max(1, dmgSummary.reduce((acc, d) => acc + d.damage, 0));
+    gameoverDamageList.innerHTML = dmgSummary.length
+      ? `<div style="font-size:0.78rem;font-weight:700;color:#fde68a;margin-bottom:8px;text-transform:uppercase;">Squad Damage Breakdown</div>` +
+        dmgSummary
+          .map((d) => {
+            const pct = Math.round((d.damage / totalDmg) * 100);
+            return `
+              <div class="dmg-row" style="margin-bottom:8px;">
+                <div class="dmg-row-head">
+                  <span>${escapeHtml(d.name)}</span>
+                  <span>${formatDmg(d.damage)} (${pct}%)</span>
+                </div>
+                <div class="dmg-bar-track" style="height:8px;">
+                  <div class="dmg-bar-fill" style="width:${pct}%;background:${d.color};"></div>
+                </div>
+              </div>
+            `;
+          })
+          .join('')
+      : '';
+
     btnPlayAgain.disabled = !room.isHost;
     btnPlayAgain.textContent = room.isHost ? 'Play Again' : 'Waiting for Host...';
     gameoverOverlay.classList.remove('hidden');
@@ -1709,34 +1863,34 @@
       }
     }
 
-    // Spawner
+    // Spawner (Harder & More Action-Packed)
     state.spawnTimer -= dt;
-    const maxEnemies = state.bossActive ? 10 : Math.min(38, 9 + state.level * 2 + state.players.length * 2);
+    const maxEnemies = state.bossActive ? 12 : Math.min(42, 11 + state.level * 2 + state.players.length * 3);
     if (state.spawnTimer <= 0 && state.bossWarningTimer <= 0 && state.enemies.length < maxEnemies) {
       const type = pickWaveEnemyType();
       if (type === 'microbe') {
         const base = edgeSpawnPos();
-        for (let k = 0; k < 3; k++) {
+        for (let k = 0; k < 4; k++) {
           spawnEnemy('microbe', { x: base.x + rand(-24, 24), y: base.y + rand(-24, 24) });
         }
       } else {
         spawnEnemy(type);
       }
-      const baseInterval = state.bossActive ? 2.8 : Math.max(0.36, 1.55 - state.level * 0.055);
-      state.spawnTimer = baseInterval / (1 + (state.players.length - 1) * 0.22);
+      const baseInterval = state.bossActive ? 2.4 : Math.max(0.32, 1.38 - state.level * 0.055);
+      state.spawnTimer = baseInterval / (1 + (state.players.length - 1) * 0.25);
     }
 
     // Update Players
-    const speedBoost = 1 + (state.fleet.thrusters || 0) * 0.13;
-    const dashCdMax = Math.max(1.2, 3.0 * Math.pow(0.84, state.fleet.thrusters || 0));
-
     for (const p of state.players) {
       if (p.invuln > 0) p.invuln -= dt;
       if (p.dashCooldown > 0) p.dashCooldown = Math.max(0, p.dashCooldown - dt);
       if (p.dashTimer > 0) p.dashTimer = Math.max(0, p.dashTimer - dt);
 
+      const speedBoost = 1 + (p.upgrades.thrusters || 0) * 0.13;
+      const dashCdMax = Math.max(1.2, 3.0 * Math.pow(0.84, p.upgrades.thrusters || 0));
+
       if (p.downed) {
-        const helper = state.players.find((o) => o !== p && !o.downed && dist(p.x, p.y, o.x, o.y) < 76);
+        const helper = state.players.find((o) => o !== p && !o.downed && dist(p.x, p.y, o.x, o.y) < 78);
         if (helper) {
           p.reviveProgress += dt / 2.2;
           if (p.reviveProgress >= 1) {
@@ -1744,8 +1898,8 @@
             p.reviveProgress = 0;
             p.hp = Math.round(p.maxHp * 0.55);
             p.invuln = 2.0;
-            spawnParticles(p.x, p.y, p.glow, 22, 190, 3.5);
-            spawnFloatText(p.x, p.y - 24, 'REVIVED!', '#5eead4');
+            spawnParticles(p.x, p.y, p.glow, 22, 190, 4);
+            spawnFloatText(p.x, p.y - 26, 'REVIVED!', '#5eead4');
             SFX.levelUp();
           }
         } else {
@@ -1756,29 +1910,49 @@
 
       const inp = p.isLocal
         ? readLocalInput(p.localIndex, pads)
-        : remoteInputs[p.id] || { mx: 0, my: 0, ax: 0, ay: 0, fire: false, dash: false };
+        : remoteInputs[p.id] || { mx: 0, my: 0, tx: null, ty: null, ax: 0, ay: 0, fire: false, dash: false };
+
+      let moveX = inp.mx || 0;
+      let moveY = inp.my || 0;
+
+      // Follow-the-finger touch steering! (When finger is lifted, tx/ty are null -> zero input!)
+      if (inp.tx !== null && inp.tx !== undefined && inp.ty !== null && inp.ty !== undefined) {
+        const targetX = inp.tx * W;
+        const targetY = inp.ty * H;
+        const dx = targetX - p.x;
+        const dy = targetY - p.y;
+        const d = Math.hypot(dx, dy);
+        if (d > 14) {
+          const strength = clamp((d - 12) / 70, 0.2, 1);
+          moveX = (dx / d) * strength;
+          moveY = (dy / d) * strength;
+        } else {
+          moveX = 0;
+          moveY = 0;
+        }
+      }
 
       const accel = 1140 * speedBoost;
       const maxSpeed = 395 * speedBoost;
 
       if (inp.dash && p.dashCooldown <= 0) {
-        const dx = inp.mx || Math.cos(p.angle);
-        const dy = inp.my || Math.sin(p.angle);
+        const dx = moveX || Math.cos(p.angle);
+        const dy = moveY || Math.sin(p.angle);
         const dm = Math.hypot(dx, dy) || 1;
         p.vx = (dx / dm) * 780;
         p.vy = (dy / dm) * 780;
         p.dashTimer = 0.22;
         p.dashCooldown = dashCdMax;
-        spawnParticles(p.x, p.y, p.glow, 14, 170, 3);
+        spawnParticles(p.x, p.y, p.glow, 14, 170, 3.5);
         SFX.dash();
       }
 
-      p.thrusting = Math.abs(inp.mx) > 0.1 || Math.abs(inp.my) > 0.1;
+      p.thrusting = Math.abs(moveX) > 0.08 || Math.abs(moveY) > 0.08;
 
       if (p.dashTimer <= 0) {
-        p.vx += inp.mx * accel * dt;
-        p.vy += inp.my * accel * dt;
-        // Longer, smoother space-drift braking when releasing controls
+        p.vx += moveX * accel * dt;
+        p.vy += moveY * accel * dt;
+        // Longer, smooth space-drift braking when no input is pressed
         const drag = Math.pow(0.28, dt);
         p.vx *= drag;
         p.vy *= drag;
@@ -1789,13 +1963,13 @@
         }
       }
 
-      p.x = clamp(p.x + p.vx * dt, 22, W - 22);
-      p.y = clamp(p.y + p.vy * dt, 22, H - 22);
+      p.x = clamp(p.x + p.vx * dt, 24, W - 24);
+      p.y = clamp(p.y + p.vy * dt, 24, H - 24);
 
       if (inp.ax || inp.ay) {
         p.angle = Math.atan2(inp.ay, inp.ax);
       } else {
-        const nearest = findNearestEnemy(p.x, p.y, 460);
+        const nearest = findNearestEnemy(p.x, p.y, 480);
         if (nearest) {
           const targetAng = Math.atan2(nearest.y - p.y, nearest.x - p.x);
           let diff = targetAng - p.angle;
@@ -1803,7 +1977,7 @@
           while (diff < -Math.PI) diff += Math.PI * 2;
           p.angle += diff * Math.min(1, dt * 12);
         } else if (p.thrusting) {
-          const moveAng = Math.atan2(inp.my, inp.mx);
+          const moveAng = Math.atan2(moveY, moveX);
           let diff = moveAng - p.angle;
           while (diff > Math.PI) diff -= Math.PI * 2;
           while (diff < -Math.PI) diff += Math.PI * 2;
@@ -1811,86 +1985,86 @@
         }
       }
 
-      // Weapons
+      // Personal Weapons
       p.fireTimer -= dt;
-      const pulseInterval = Math.max(0.11, 0.24 - (state.fleet.pulse_cannon - 1) * 0.025);
+      const pulseInterval = Math.max(0.11, 0.24 - ((p.upgrades.pulse_cannon || 1) - 1) * 0.025);
       if (((state.autoFire && state.enemies.length > 0) || inp.fire) && p.fireTimer <= 0) {
         firePulseCannon(p);
         p.fireTimer = pulseInterval;
       }
 
-      if (state.fleet.plasma_rail > 0) {
+      if (p.upgrades.plasma_rail > 0) {
         p.railTimer -= dt;
         if (p.railTimer <= 0 && state.enemies.length > 0) {
           firePlasmaRail(p);
-          p.railTimer = Math.max(1.3, 3.3 - state.fleet.plasma_rail * 0.35);
+          p.railTimer = Math.max(1.3, 3.3 - p.upgrades.plasma_rail * 0.35);
         }
       }
 
-      if (state.fleet.homing_missiles > 0) {
+      if (p.upgrades.homing_missiles > 0) {
         p.missileTimer -= dt;
         if (p.missileTimer <= 0 && state.enemies.length > 0) {
           fireHomingMissiles(p);
-          p.missileTimer = Math.max(1.2, 2.7 - state.fleet.homing_missiles * 0.25);
+          p.missileTimer = Math.max(1.2, 2.7 - p.upgrades.homing_missiles * 0.25);
         }
       }
 
-      if (state.fleet.chain_lightning > 0) {
+      if (p.upgrades.chain_lightning > 0) {
         p.teslaTimer -= dt;
         if (p.teslaTimer <= 0 && state.enemies.length > 0) {
           fireChainLightning(p);
-          p.teslaTimer = Math.max(0.75, 1.85 - state.fleet.chain_lightning * 0.18);
+          p.teslaTimer = Math.max(0.75, 1.85 - p.upgrades.chain_lightning * 0.18);
         }
       }
 
-      if (state.fleet.nova_pulse > 0) {
+      if (p.upgrades.nova_pulse > 0) {
         p.novaTimer -= dt;
         if (p.novaTimer <= 0) {
           triggerNovaPulse(p);
-          p.novaTimer = Math.max(2.6, 5.4 - state.fleet.nova_pulse * 0.5);
+          p.novaTimer = Math.max(2.6, 5.4 - p.upgrades.nova_pulse * 0.5);
         }
       }
 
-      if (state.fleet.orbital_blades > 0) {
-        const orbCount = state.fleet.orbital_blades + 1;
-        p.orbitAngle += (2.6 + state.fleet.orbital_blades * 0.35) * dt;
+      if (p.upgrades.orbital_blades > 0) {
+        const orbCount = p.upgrades.orbital_blades + 1;
+        p.orbitAngle += (2.6 + p.upgrades.orbital_blades * 0.35) * dt;
         for (let k = 0; k < orbCount; k++) {
           const oa = p.orbitAngle + (k / orbCount) * Math.PI * 2;
-          const ox = p.x + Math.cos(oa) * 56;
-          const oy = p.y + Math.sin(oa) * 56;
+          const ox = p.x + Math.cos(oa) * 58;
+          const oy = p.y + Math.sin(oa) * 58;
           for (let i = state.enemies.length - 1; i >= 0; i--) {
             const e = state.enemies[i];
-            if (dist(ox, oy, e.x, e.y) < e.radius + 11) {
+            if (dist(ox, oy, e.x, e.y) < e.radius + 12) {
               if (!e._orbCd || state.time - e._orbCd > 0.22) {
                 e._orbCd = state.time;
-                damageEnemy(e, 16 + state.fleet.orbital_blades * 6, '#5eead4');
+                damageEnemy(e, 16 + p.upgrades.orbital_blades * 6, '#5eead4', p);
               }
             }
           }
           for (let i = state.enemyBullets.length - 1; i >= 0; i--) {
             const b = state.enemyBullets[i];
-            if (dist(ox, oy, b.x, b.y) < b.radius + 11) {
-              spawnParticles(b.x, b.y, '#5eead4', 4, 80, 2);
+            if (dist(ox, oy, b.x, b.y) < b.radius + 12) {
+              spawnParticles(b.x, b.y, '#5eead4', 4, 80, 2.5);
               state.enemyBullets.splice(i, 1);
             }
           }
         }
       }
 
-      if (state.players.length === 1 && state.fleet.tether_beam > 0) {
-        const lv = state.fleet.tether_beam;
+      if (state.players.length === 1 && p.upgrades.tether_beam > 0) {
+        const lv = p.upgrades.tether_beam;
         p.droneAngle += 1.9 * dt;
-        const dx = p.x + Math.cos(p.droneAngle) * 52;
-        const dy = p.y + Math.sin(p.droneAngle) * 52;
+        const dx = p.x + Math.cos(p.droneAngle) * 56;
+        const dy = p.y + Math.sin(p.droneAngle) * 56;
         p.droneFireTimer -= dt;
         if (p.droneFireTimer <= 0) {
           const t = findNearestEnemy(dx, dy, 420);
           if (t) {
             const ang = Math.atan2(t.y - dy, t.x - dx);
             state.bullets.push({
-              kind: 'pulse', x: dx, y: dy,
+              kind: 'pulse', ownerId: p.id, x: dx, y: dy,
               vx: Math.cos(ang) * 580, vy: Math.sin(ang) * 580,
-              radius: 4, damage: 14 + lv * 7, color: '#fcd34d', life: 0.9,
+              radius: 4.5, damage: 14 + lv * 7, color: '#fcd34d', life: 0.9,
             });
             p.droneFireTimer = Math.max(0.18, 0.55 - lv * 0.07);
           }
@@ -1898,14 +2072,17 @@
       }
     }
 
-    // Co-op Plasma Tether between ANY pair of living teammates within range
-    if (state.players.length >= 2 && state.fleet.tether_beam > 0) {
-      const maxRange = 290 + state.fleet.tether_beam * 55;
+    // Co-op Plasma Tether between teammates if either player has tether_beam
+    if (state.players.length >= 2) {
       for (let a = 0; a < state.players.length; a++) {
         for (let b = a + 1; b < state.players.length; b++) {
           const p1 = state.players[a];
           const p2 = state.players[b];
-          if (p1.downed || p2.downed || dist(p1.x, p1.y, p2.x, p2.y) > maxRange) continue;
+          const tetherLv = Math.max(p1.upgrades.tether_beam || 0, p2.upgrades.tether_beam || 0);
+          if (tetherLv <= 0 || p1.downed || p2.downed) continue;
+          const maxRange = 290 + tetherLv * 55;
+          if (dist(p1.x, p1.y, p2.x, p2.y) > maxRange) continue;
+          const owner = (p1.upgrades.tether_beam || 0) >= (p2.upgrades.tether_beam || 0) ? p1 : p2;
           const dx = p2.x - p1.x;
           const dy = p2.y - p1.y;
           const lenSq = dx * dx + dy * dy || 1;
@@ -1915,7 +2092,7 @@
             if (dist(p1.x + t * dx, p1.y + t * dy, e.x, e.y) <= e.radius + 9) {
               if (!e._tetherCd || state.time - e._tetherCd > 0.16) {
                 e._tetherCd = state.time;
-                damageEnemy(e, 14 + state.fleet.tether_beam * 8, '#fcd34d');
+                damageEnemy(e, 14 + tetherLv * 8, '#fcd34d', owner);
               }
             }
           }
@@ -1953,8 +2130,9 @@
       for (let j = state.enemies.length - 1; j >= 0; j--) {
         const e = state.enemies[j];
         if (dist(b.x, b.y, e.x, e.y) <= b.radius + e.radius) {
-          damageEnemy(e, b.damage, b.color);
-          spawnParticles(b.x, b.y, b.color, 4, 90, 2);
+          const owner = state.players.find((pl) => pl.id === b.ownerId) || null;
+          damageEnemy(e, b.damage, b.color, owner);
+          spawnParticles(b.x, b.y, b.color, 4, 90, 2.5);
           state.bullets.splice(i, 1);
           break;
         }
@@ -1963,17 +2141,12 @@
 
     // Update Enemies
     const livingPlayers = state.players.filter((p) => !p.downed);
-    const cryoSlow =
-      (state.fleet.cryo_rounds || 0) > 0
-        ? 1 - Math.min(0.55, 0.18 + state.fleet.cryo_rounds * 0.1)
-        : 1;
-
     for (let i = state.enemies.length - 1; i >= 0; i--) {
       const e = state.enemies[i];
       if (e.hitFlash > 0) e.hitFlash -= dt;
       if (e.chillTimer > 0) e.chillTimer -= dt;
       e.rot += (e.rotSpeed || 0) * dt;
-      const slow = e.chillTimer > 0 ? cryoSlow : 1;
+      const slow = e.chillTimer > 0 ? 1 - (e.chillPower || 0.25) : 1;
 
       let target = null;
       let bestPD = Infinity;
@@ -1995,17 +2168,17 @@
         const ang = Math.atan2(target.y - e.y, target.x - e.x);
         const d = bestPD;
         if (e.type === 'shooter') {
-          const desiredSp = d > 250 ? e.speed : d < 170 ? -e.speed * 0.6 : 0;
+          const desiredSp = d > 260 ? e.speed : d < 170 ? -e.speed * 0.6 : 0;
           const strafe = ang + Math.PI * 0.5;
           e.vx += (Math.cos(ang) * desiredSp + Math.cos(strafe) * e.speed * 0.55 - e.vx) * dt * 3;
           e.vy += (Math.sin(ang) * desiredSp + Math.sin(strafe) * e.speed * 0.55 - e.vy) * dt * 3;
           e.fireTimer -= dt;
-          if (e.fireTimer <= 0 && d < 520) {
+          if (e.fireTimer <= 0 && d < 560) {
             state.enemyBullets.push({
-              x: e.x, y: e.y, vx: Math.cos(ang) * 235, vy: Math.sin(ang) * 235,
-              radius: 5.5, damage: 14, color: '#fbbf24', life: 3.4,
+              x: e.x, y: e.y, vx: Math.cos(ang) * 255, vy: Math.sin(ang) * 255,
+              radius: 7.5, damage: 17, color: '#ef4444', life: 3.6,
             });
-            e.fireTimer = Math.max(1.3, 2.5 - state.level * 0.04);
+            e.fireTimer = Math.max(1.05, 2.2 - state.level * 0.045);
           }
         } else {
           e.vx += (Math.cos(ang) * e.speed - e.vx) * dt * 2.6;
@@ -2038,7 +2211,7 @@
         continue;
       }
       for (const p of livingPlayers) {
-        if (dist(b.x, b.y, p.x, p.y) < b.radius + p.radius - 2) {
+        if (dist(b.x, b.y, p.x, p.y) < b.radius + p.radius - 3) {
           hurtPlayer(p, b.damage);
           state.enemyBullets.splice(i, 1);
           break;
@@ -2046,8 +2219,7 @@
       }
     }
 
-    // Pickups
-    const magnetRadius = 115 * (1 + (state.fleet.magnet_core || 0) * 0.45);
+    // Pickups (Animated Magnetic Pull + Absorption Burst)
     for (let i = state.pickups.length - 1; i >= 0; i--) {
       const pk = state.pickups[i];
       pk.life -= dt;
@@ -2056,29 +2228,25 @@
       pk.vy *= Math.pow(0.08, dt);
 
       let nearest = null;
-      let bestD = magnetRadius;
+      let bestD = Infinity;
       for (const p of livingPlayers) {
+        const pMag = 120 * (1 + (p.upgrades.magnet_core || 0) * 0.45);
         const d = dist(pk.x, pk.y, p.x, p.y);
-        if (d < bestD) { bestD = d; nearest = p; }
+        if (d < pMag && d < bestD) { bestD = d; nearest = p; }
       }
       if (nearest) {
         pk.pulling = true;
         const ang = Math.atan2(nearest.y - pk.y, nearest.x - pk.x);
-        pk.vx += Math.cos(ang) * 520 * dt * 4.5;
-        pk.vy += Math.sin(ang) * 520 * dt * 4.5;
+        pk.vx += Math.cos(ang) * 540 * dt * 4.5;
+        pk.vy += Math.sin(ang) * 540 * dt * 4.5;
         if (bestD < nearest.radius + 16) {
           const orbColor = pk.kind === 'xp' ? '#38bdf8' : '#4ade80';
-          // Juicy absorption ring + sparkle burst on the ship
           state.novas.push({
-            x: nearest.x,
-            y: nearest.y,
-            r: 8,
-            maxR: pk.kind === 'xp' ? 38 : 54,
-            color: orbColor,
-            life: 0.24,
-            maxLife: 0.24,
+            x: nearest.x, y: nearest.y, r: 8,
+            maxR: pk.kind === 'xp' ? 40 : 56,
+            color: orbColor, life: 0.24, maxLife: 0.24,
           });
-          spawnParticles(nearest.x, nearest.y, orbColor, pk.kind === 'xp' ? 9 : 16, 155, 2.8);
+          spawnParticles(nearest.x, nearest.y, orbColor, pk.kind === 'xp' ? 9 : 16, 155, 3);
 
           if (pk.kind === 'xp') {
             addTeamXp(pk.value);
@@ -2087,7 +2255,7 @@
             state.players.forEach((pl) => {
               if (!pl.downed) pl.hp = Math.min(pl.maxHp, pl.hp + pk.value);
             });
-            spawnFloatText(nearest.x, nearest.y - 20, `+${pk.value} HULL`, '#4ade80');
+            spawnFloatText(nearest.x, nearest.y - 24, `+${pk.value} HULL`, '#4ade80');
             SFX.heal();
           }
           state.pickups.splice(i, 1);
@@ -2129,89 +2297,112 @@
   }
 
   function updateBossBehavior(boss, target, dt, slow) {
-    if (boss.y < 140) { boss.y += 120 * dt; return; }
+    if (boss.y < 145) { boss.y += 120 * dt; return; }
     if (boss.charging > 0) {
       boss.charging -= dt;
       boss.x = clamp(boss.x + boss.chargeVx * dt, 70, W - 70);
-      boss.y = clamp(boss.y + boss.chargeVy * dt, 90, H - 70);
+      boss.y = clamp(boss.y + boss.chargeVy * dt, 95, H - 70);
       return;
     }
     if (target) {
       const ang = Math.atan2(target.y - boss.y, target.x - boss.x);
-      boss.vx += (Math.cos(ang) * boss.speed - boss.vx) * dt * 1.5;
-      boss.vy += (Math.sin(ang) * boss.speed - boss.vy) * dt * 1.5;
+      boss.vx += (Math.cos(ang) * boss.speed - boss.vx) * dt * 1.6;
+      boss.vy += (Math.sin(ang) * boss.speed - boss.vy) * dt * 1.6;
       boss.x = clamp(boss.x + boss.vx * slow * dt, 70, W - 70);
       boss.y = clamp(boss.y + boss.vy * slow * dt, 95, H - 70);
     }
 
+    const enraged = boss.phase >= 2;
     boss.attackTimer -= dt;
     if (boss.attackTimer <= 0) {
       if (boss.variant === 0) {
-        const count = 12 + boss.tier * 2;
+        const count = (enraged ? 18 : 12) + boss.tier * 2;
         boss.spiralAngle += 0.35;
         for (let k = 0; k < count; k++) {
           const a = boss.spiralAngle + (k / count) * Math.PI * 2;
           state.enemyBullets.push({
-            x: boss.x, y: boss.y, vx: Math.cos(a) * 210, vy: Math.sin(a) * 210,
-            radius: 6.5, damage: 16, color: '#fb7185', life: 4.5,
+            x: boss.x, y: boss.y,
+            vx: Math.cos(a) * (enraged ? 245 : 210),
+            vy: Math.sin(a) * (enraged ? 245 : 210),
+            radius: 8, damage: 19, color: '#ef4444', life: 4.5,
           });
         }
-        boss.attackTimer = Math.max(1.3, 2.2 - boss.tier * 0.12);
+        boss.attackTimer = Math.max(0.95, (enraged ? 1.45 : 2.0) - boss.tier * 0.1);
       } else if (boss.variant === 1 && target) {
         const baseAng = Math.atan2(target.y - boss.y, target.x - boss.x);
-        for (let k = -2; k <= 2; k++) {
-          const a = baseAng + k * 0.2;
+        const span = enraged ? 3 : 2;
+        for (let k = -span; k <= span; k++) {
+          const a = baseAng + k * 0.18;
           state.enemyBullets.push({
-            x: boss.x, y: boss.y, vx: Math.cos(a) * 260, vy: Math.sin(a) * 260,
-            radius: 6.5, damage: 16, color: '#a3e635', life: 4.0,
+            x: boss.x, y: boss.y,
+            vx: Math.cos(a) * (enraged ? 295 : 260),
+            vy: Math.sin(a) * (enraged ? 295 : 260),
+            radius: 8, damage: 19, color: '#ef4444', life: 4.0,
           });
         }
-        boss.attackTimer = Math.max(1.0, 1.8 - boss.tier * 0.1);
+        boss.attackTimer = Math.max(0.8, (enraged ? 1.2 : 1.65) - boss.tier * 0.1);
       } else {
         boss.spiralAngle += 0.45;
-        for (let k = 0; k < 16; k++) {
-          const a = boss.spiralAngle + (k / 16) * Math.PI * 2;
+        const count = enraged ? 20 : 14;
+        for (let k = 0; k < count; k++) {
+          const a = boss.spiralAngle + (k / count) * Math.PI * 2;
           state.enemyBullets.push({
-            x: boss.x, y: boss.y, vx: Math.cos(a) * 230, vy: Math.sin(a) * 230,
-            radius: 7, damage: 18, color: '#fb923c', life: 4.5,
+            x: boss.x, y: boss.y,
+            vx: Math.cos(a) * (enraged ? 265 : 230),
+            vy: Math.sin(a) * (enraged ? 265 : 230),
+            radius: 8.5, damage: 21, color: '#ef4444', life: 4.5,
           });
         }
-        boss.attackTimer = Math.max(1.1, 1.9 - boss.tier * 0.1);
+        boss.attackTimer = Math.max(0.9, (enraged ? 1.3 : 1.75) - boss.tier * 0.1);
       }
     }
 
     boss.chargeTimer -= dt;
     if (boss.chargeTimer <= 0 && target) {
       const ang = Math.atan2(target.y - boss.y, target.x - boss.x);
-      boss.chargeVx = Math.cos(ang) * 340;
-      boss.chargeVy = Math.sin(ang) * 340;
-      boss.charging = 0.75;
-      boss.chargeTimer = 6.2;
-      spawnFloatText(boss.x, boss.y - 68, 'BOSS LUNGE!', '#fb7185');
+      const sp = enraged ? 420 : 355;
+      boss.chargeVx = Math.cos(ang) * sp;
+      boss.chargeVy = Math.sin(ang) * sp;
+      boss.charging = 0.8;
+      boss.chargeTimer = enraged ? 4.4 : 5.8;
+      spawnFloatText(boss.x, boss.y - 74, 'BOSS LUNGE!', '#fb7185');
     }
 
     boss.minionTimer -= dt;
-    if (boss.minionTimer <= 0 && state.enemies.length < 12) {
-      for (let k = 0; k < 2; k++) {
+    if (boss.minionTimer <= 0 && state.enemies.length < 14) {
+      const count = enraged ? 3 : 2;
+      for (let k = 0; k < count; k++) {
         spawnEnemy(boss.variant === 1 ? 'microbe' : 'corona', {
-          x: boss.x + rand(-50, 50),
-          y: boss.y + rand(-50, 50),
+          x: boss.x + rand(-55, 55),
+          y: boss.y + rand(-55, 55),
         });
       }
-      boss.minionTimer = 5.5;
+      boss.minionTimer = enraged ? 4.0 : 5.2;
     }
   }
 
-  // ---- Rendering ----
+  // ---- Old-School Disney / Vintage Cartoon Rendering ----
   function draw() {
     ctx.save();
-    ctx.fillStyle = '#070b12';
+    // Deep vintage midnight-indigo cartoon sky
+    ctx.fillStyle = '#0a1020';
     ctx.fillRect(0, 0, W, H);
+
+    // Soft pastel cartoon space clouds
+    for (const c of clouds) {
+      const grad = ctx.createRadialGradient(c.x * W, c.y * H, 10, c.x * W, c.y * H, c.r);
+      grad.addColorStop(0, c.color);
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(c.x * W, c.y * H, c.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     if (state.bossActive) {
       const grad = ctx.createRadialGradient(W * 0.5, H * 0.5, 80, W * 0.5, H * 0.5, Math.max(W, H) * 0.7);
-      grad.addColorStop(0, 'rgba(244, 63, 94, 0.04)');
-      grad.addColorStop(1, 'rgba(244, 63, 94, 0.13)');
+      grad.addColorStop(0, 'rgba(225, 29, 72, 0.04)');
+      grad.addColorStop(1, 'rgba(225, 29, 72, 0.16)');
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, W, H);
     }
@@ -2220,18 +2411,40 @@
       ctx.translate(rand(-state.shake, state.shake), rand(-state.shake, state.shake));
     }
 
+    // Twinkling cartoon stars (4-point sparkles + dots)
     for (const s of stars) {
-      ctx.fillStyle = `rgba(226, 232, 240, ${s.alpha})`;
-      ctx.beginPath();
-      ctx.arc(s.x * W, s.y * H, s.r, 0, Math.PI * 2);
-      ctx.fill();
+      const tw = 0.55 + Math.sin(state.time * 3.5 + s.phase) * 0.45;
+      ctx.fillStyle = s.color;
+      ctx.globalAlpha = tw;
+      const sx = s.x * W;
+      const sy = s.y * H;
+      if (s.sparkle) {
+        const r = s.r * (0.85 + tw * 0.35);
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - r * 2);
+        ctx.lineTo(sx + r * 0.45, sy - r * 0.45);
+        ctx.lineTo(sx + r * 2, sy);
+        ctx.lineTo(sx + r * 0.45, sy + r * 0.45);
+        ctx.lineTo(sx, sy + r * 2);
+        ctx.lineTo(sx - r * 0.45, sy + r * 0.45);
+        ctx.lineTo(sx - r * 2, sy);
+        ctx.lineTo(sx - r * 0.45, sy - r * 0.45);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        ctx.beginPath();
+        ctx.arc(sx, sy, s.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
+    ctx.globalAlpha = 1;
 
+    // Novas & Absorption Rings
     for (const n of state.novas) {
       const a = n.life / n.maxLife;
       ctx.strokeStyle = n.color;
-      ctx.globalAlpha = a * 0.85;
-      ctx.lineWidth = 5 * a;
+      ctx.globalAlpha = a * 0.9;
+      ctx.lineWidth = 5.5 * a;
       ctx.beginPath();
       ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
       ctx.stroke();
@@ -2239,29 +2452,30 @@
     }
 
     // Co-op Plasma Tether lines
-    if (state.players.length >= 2 && state.fleet.tether_beam > 0) {
-      const maxRange = 290 + state.fleet.tether_beam * 55;
+    if (state.players.length >= 2) {
       for (let a = 0; a < state.players.length; a++) {
         for (let b = a + 1; b < state.players.length; b++) {
           const p1 = state.players[a];
           const p2 = state.players[b];
-          if (!p1.downed && !p2.downed && dist(p1.x, p1.y, p2.x, p2.y) <= maxRange) {
-            drawJaggedLine(p1.x, p1.y, p2.x, p2.y, '#fcd34d', 4);
+          const tetherLv = Math.max(p1.upgrades.tether_beam || 0, p2.upgrades.tether_beam || 0);
+          if (tetherLv <= 0 || p1.downed || p2.downed) continue;
+          if (dist(p1.x, p1.y, p2.x, p2.y) <= 290 + tetherLv * 55) {
+            drawJaggedLine(p1.x, p1.y, p2.x, p2.y, '#fde047', 4.5);
           }
         }
       }
     }
 
+    // Animated XP & Heal Orbs
     for (const pk of state.pickups) {
       const pulse = 1 + Math.sin(state.time * 8 + pk.x * 0.05) * 0.16;
       const col = pk.kind === 'xp' ? '#38bdf8' : '#22c55e';
-      const glowCol = pk.kind === 'xp' ? 'rgba(56, 189, 248, 0.28)' : 'rgba(34, 197, 94, 0.3)';
+      const glowCol = pk.kind === 'xp' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(34, 197, 94, 0.34)';
 
-      // Comet streak when zipping into a ship
-      if (pk.pulling && (Math.abs(pk.vx || 0) > 40 || Math.abs(pk.vy || 0) > 40)) {
+      if (pk.pulling && (Math.abs(pk.vx || 0) > 35 || Math.abs(pk.vy || 0) > 35)) {
         ctx.strokeStyle = col;
-        ctx.globalAlpha = 0.55;
-        ctx.lineWidth = 3;
+        ctx.globalAlpha = 0.6;
+        ctx.lineWidth = 3.5;
         ctx.lineCap = 'round';
         ctx.beginPath();
         ctx.moveTo(pk.x, pk.y);
@@ -2270,76 +2484,131 @@
         ctx.globalAlpha = 1;
       }
 
-      // Soft pulsing glow halo
       ctx.fillStyle = glowCol;
       ctx.beginPath();
-      ctx.arc(pk.x, pk.y, (pk.pulling ? 12 : 9) * pulse, 0, Math.PI * 2);
+      ctx.arc(pk.x, pk.y, (pk.pulling ? 13 : 9.5) * pulse, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.save();
       ctx.translate(pk.x, pk.y);
-      ctx.scale(pulse * (pk.pulling ? 1.18 : 1), pulse * (pk.pulling ? 1.18 : 1));
+      ctx.scale(pulse * (pk.pulling ? 1.2 : 1), pulse * (pk.pulling ? 1.2 : 1));
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 1.8;
       if (pk.kind === 'xp') {
         ctx.rotate(state.time * 3 + pk.y * 0.02);
         ctx.fillStyle = '#38bdf8';
         ctx.beginPath();
-        ctx.moveTo(0, -6.5);
-        ctx.lineTo(5.5, 0);
-        ctx.lineTo(0, 6.5);
-        ctx.lineTo(-5.5, 0);
+        ctx.moveTo(0, -7);
+        ctx.lineTo(6, 0);
+        ctx.lineTo(0, 7);
+        ctx.lineTo(-6, 0);
         ctx.closePath();
         ctx.fill();
+        ctx.stroke();
         ctx.fillStyle = '#e0f2fe';
         ctx.beginPath();
-        ctx.arc(0, 0, 2, 0, Math.PI * 2);
+        ctx.arc(0, 0, 2.2, 0, Math.PI * 2);
         ctx.fill();
       } else {
-        ctx.fillStyle = '#22c55e';
-        ctx.fillRect(-6, -2.2, 12, 4.4);
-        ctx.fillRect(-2.2, -6, 4.4, 12);
+        ctx.fillStyle = '#4ade80';
+        ctx.beginPath();
+        ctx.roundRect(-6.5, -2.5, 13, 5, 2);
+        ctx.roundRect(-2.5, -6.5, 5, 13, 2);
+        ctx.fill();
+        ctx.stroke();
       }
       ctx.restore();
     }
 
+    // Beams
     for (const b of state.beams) {
       const a = b.life / b.maxLife;
       ctx.globalAlpha = a;
       if (b.jagged) {
         drawJaggedLine(b.x1, b.y1, b.x2, b.y2, b.color, b.width);
       } else {
-        ctx.strokeStyle = b.color;
-        ctx.lineWidth = b.width * a;
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = (b.width + 4) * a;
         ctx.lineCap = 'round';
         ctx.beginPath();
         ctx.moveTo(b.x1, b.y1);
         ctx.lineTo(b.x2, b.y2);
         ctx.stroke();
+        ctx.strokeStyle = b.color;
+        ctx.lineWidth = b.width * a;
+        ctx.stroke();
       }
       ctx.globalAlpha = 1;
     }
 
+    // Cartoon Enemies
     for (const e of state.enemies) drawEnemy(e);
 
+    // ENEMY PROJECTILES — High-contrast spiky red hazard globs with pulsing danger rings!
     for (const b of state.enemyBullets) {
-      ctx.fillStyle = b.color;
+      const p = 1 + Math.sin(state.time * 16 + b.x) * 0.14;
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      // Pulsing danger halo
+      ctx.strokeStyle = 'rgba(244, 63, 94, 0.7)';
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#fff';
+      ctx.arc(0, 0, (b.radius + 3.5) * p, 0, Math.PI * 2);
+      ctx.stroke();
+      // Spiky dark-inked crimson glob
+      ctx.fillStyle = '#e11d48';
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 2.2;
       ctx.beginPath();
-      ctx.arc(b.x, b.y, b.radius * 0.42, 0, Math.PI * 2);
+      for (let k = 0; k < 10; k++) {
+        const a = (k / 10) * Math.PI * 2 + state.time * 5;
+        const rr = k % 2 === 0 ? b.radius * 1.15 : b.radius * 0.72;
+        if (k === 0) ctx.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+        else ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+      }
+      ctx.closePath();
       ctx.fill();
+      ctx.stroke();
+      // Bright yellow-white warning core
+      ctx.fillStyle = '#fef08a';
+      ctx.beginPath();
+      ctx.arc(0, 0, b.radius * 0.36, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     }
 
+    // TEAM PROJECTILES — Clean bright glowing star-bolts & retro rockets (distinct from red enemy globs!)
     for (const b of state.bullets) {
+      ctx.save();
+      ctx.translate(b.x, b.y);
       ctx.fillStyle = b.color;
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 1.6;
+      if (b.kind === 'missile') {
+        ctx.beginPath();
+        ctx.arc(0, 0, b.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(0, 0, b.radius * 0.45, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.beginPath();
+        ctx.arc(0, 0, b.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(0, 0, b.radius * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
     }
 
-    for (const p of state.players) drawPlayer(p);
+    // Cartoon UFO Players (with Visual Upgrades + Easy "YOU" Beacon!)
+    for (const p of state.players) drawUfoPlayer(p);
 
+    // Cartoon Particles (with subtle dark ink edge on big puffs)
     for (const pt of state.particles) {
       ctx.globalAlpha = clamp(pt.life / pt.maxLife, 0, 1);
       ctx.fillStyle = pt.color;
@@ -2349,10 +2618,13 @@
     }
     ctx.globalAlpha = 1;
 
-    ctx.font = '700 13px "Space Grotesk", system-ui, sans-serif';
+    ctx.font = '700 14px "Fredoka", "Space Grotesk", system-ui, sans-serif';
     ctx.textAlign = 'center';
     for (const ft of state.floatTexts) {
       ctx.globalAlpha = clamp(ft.life / ft.maxLife, 0, 1);
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 3;
+      ctx.strokeText(ft.text, ft.x, ft.y);
       ctx.fillStyle = ft.color;
       ctx.fillText(ft.text, ft.x, ft.y);
     }
@@ -2360,24 +2632,22 @@
 
     ctx.restore();
 
-    // Floating virtual thumbstick indicator (unshaken screen coordinates)
+    // Cute Cartoon Finger-Follow Target Reticle (only while finger is pressed down!)
     if (touchCtrl.active && state.mode === 'playing') {
+      const pulse = 1 + Math.sin(state.time * 10) * 0.12;
       ctx.save();
+      ctx.translate(touchCtrl.x, touchCtrl.y);
+      ctx.strokeStyle = 'rgba(94, 234, 212, 0.75)';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([6, 5]);
       ctx.beginPath();
-      ctx.arc(touchCtrl.originX, touchCtrl.originY, touchCtrl.maxR, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(14, 21, 34, 0.35)';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(94, 234, 212, 0.45)';
-      ctx.lineWidth = 2;
+      ctx.arc(0, 0, 24 * pulse, 0, Math.PI * 2);
       ctx.stroke();
-
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(204, 251, 241, 0.85)';
       ctx.beginPath();
-      ctx.arc(touchCtrl.curX, touchCtrl.curY, 22, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(94, 234, 212, 0.45)';
+      ctx.arc(0, 0, 5, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(204, 251, 241, 0.85)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
       ctx.restore();
     }
   }
@@ -2396,64 +2666,112 @@
     ctx.stroke();
   }
 
-  function drawPlayer(p) {
+  // ---- Old-School Cartoon UFO Ship with Visual Upgrades! ----
+  function drawUfoPlayer(p) {
+    const up = p.upgrades || defaultUpgrades();
+    const isMe = p.id === room.myId;
+
     ctx.save();
     ctx.translate(p.x, p.y);
 
     if (p.downed) {
-      ctx.strokeStyle = 'rgba(244, 63, 94, 0.55)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([6, 6]);
+      ctx.strokeStyle = 'rgba(244, 63, 94, 0.7)';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([7, 6]);
       ctx.beginPath();
-      ctx.arc(0, 0, 56, 0, Math.PI * 2);
+      ctx.arc(0, 0, 58, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
 
       if (p.reviveProgress > 0) {
         ctx.strokeStyle = '#5eead4';
-        ctx.lineWidth = 4;
+        ctx.lineWidth = 5;
         ctx.beginPath();
-        ctx.arc(0, 0, 56, -Math.PI / 2, -Math.PI / 2 + p.reviveProgress * Math.PI * 2);
+        ctx.arc(0, 0, 58, -Math.PI / 2, -Math.PI / 2 + p.reviveProgress * Math.PI * 2);
         ctx.stroke();
       }
 
       ctx.fillStyle = '#334155';
-      ctx.strokeStyle = '#fb7185';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.arc(0, 0, 12, 0, Math.PI * 2);
+      ctx.arc(0, 0, 14, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
 
       ctx.fillStyle = '#fecdd3';
-      ctx.font = '700 11px Inter, sans-serif';
+      ctx.font = '700 12px "Fredoka", sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('REVIVE', 0, -20);
+      ctx.fillText('REVIVE!', 0, -22);
       ctx.restore();
       return;
     }
 
-    if (state.fleet.orbital_blades > 0) {
-      const orbCount = state.fleet.orbital_blades + 1;
+    // "YOU" Spotter Ring so your own UFO is unmistakable in chaos!
+    if (isMe) {
+      const rPulse = 1 + Math.sin(state.time * 6) * 0.07;
+      ctx.strokeStyle = p.glow;
+      ctx.globalAlpha = 0.45;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath();
+      ctx.arc(0, 0, 32 * rPulse, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
+
+    // Visual Upgrade: Nova Bumper Ring
+    if (up.nova_pulse > 0) {
+      ctx.strokeStyle = 'rgba(253, 224, 71, 0.55)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, 26 + Math.sin(state.time * 8) * 1.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Visual Upgrade: Orbital Star-Saw Satellites
+    if (up.orbital_blades > 0) {
+      const orbCount = up.orbital_blades + 1;
       for (let k = 0; k < orbCount; k++) {
         const oa = p.orbitAngle + (k / orbCount) * Math.PI * 2;
-        ctx.fillStyle = '#2dd4bf';
-        ctx.beginPath();
-        ctx.arc(Math.cos(oa) * 56, Math.sin(oa) * 56, 8, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#ccfbf1';
+        const ox = Math.cos(oa) * 58;
+        const oy = Math.sin(oa) * 58;
+        ctx.save();
+        ctx.translate(ox, oy);
+        ctx.rotate(state.time * 8);
+        ctx.fillStyle = '#fde047';
+        ctx.strokeStyle = '#090d16';
         ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let s = 0; s < 8; s++) {
+          const sa = (s / 8) * Math.PI * 2;
+          const sr = s % 2 === 0 ? 10 : 5;
+          if (s === 0) ctx.moveTo(Math.cos(sa) * sr, Math.sin(sa) * sr);
+          else ctx.lineTo(Math.cos(sa) * sr, Math.sin(sa) * sr);
+        }
+        ctx.closePath();
+        ctx.fill();
         ctx.stroke();
+        ctx.restore();
       }
     }
 
-    if (state.players.length === 1 && state.fleet.tether_beam > 0) {
+    // Visual Upgrade: Solo Wingman Mini-UFO
+    if (state.players.length === 1 && up.tether_beam > 0) {
+      const dx = Math.cos(p.droneAngle) * 56;
+      const dy = Math.sin(p.droneAngle) * 56;
       ctx.fillStyle = '#f59e0b';
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(Math.cos(p.droneAngle) * 52, Math.sin(p.droneAngle) * 52, 7, 0, Math.PI * 2);
+      ctx.ellipse(dx, dy, 10, 5.5, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#fef3c7';
-      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = '#bae6fd';
+      ctx.beginPath();
+      ctx.arc(dx, dy - 3, 5, Math.PI, 0);
+      ctx.fill();
       ctx.stroke();
     }
 
@@ -2461,58 +2779,221 @@
       ctx.globalAlpha = 0.45;
     }
 
-    ctx.rotate(p.angle);
+    // Cartoon squash-and-stretch wobble!
+    const bob = Math.sin(state.time * 8 + p.slot) * 0.05;
+    const tilt = clamp((p.vx || 0) * 0.00055, -0.22, 0.22);
+    ctx.rotate(tilt);
+    ctx.scale(1 + bob, 1 - bob);
 
-    if (p.thrusting || p.dashTimer > 0) {
-      const flameLen = p.dashTimer > 0 ? 28 : rand(14, 21);
+    // Visual Upgrade: Oversized Twin Cartoon Booster Bells (thrusters)
+    if (up.thrusters > 0) {
+      ctx.fillStyle = '#94a3b8';
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 2.2;
+      [-12, 12].forEach((bx) => {
+        ctx.beginPath();
+        ctx.roundRect(bx - 4, 8, 8, 9, 3);
+        ctx.fill();
+        ctx.stroke();
+        if (p.thrusting || p.dashTimer > 0) {
+          ctx.fillStyle = '#fde047';
+          ctx.beginPath();
+          ctx.arc(bx, 19 + rand(0, 4), p.dashTimer > 0 ? 6 : 4, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#94a3b8';
+        }
+      });
+    } else if (p.thrusting || p.dashTimer > 0) {
+      // Cute bouncy thruster glow puff under saucer
       ctx.fillStyle = p.glow;
       ctx.beginPath();
-      ctx.moveTo(-11, -5);
-      ctx.lineTo(-11 - flameLen, 0);
-      ctx.lineTo(-11, 5);
-      ctx.closePath();
+      ctx.ellipse(0, 14, p.dashTimer > 0 ? 14 : 9, p.dashTimer > 0 ? 7 : 4.5, 0, 0, Math.PI * 2);
       ctx.fill();
     }
 
+    // Visual Upgrade: Frost Crystal Fins (cryo_rounds)
+    if (up.cryo_rounds > 0) {
+      ctx.fillStyle = '#7dd3fc';
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 2;
+      [-1, 1].forEach((side) => {
+        ctx.beginPath();
+        ctx.moveTo(side * 19, -2);
+        ctx.lineTo(side * 29, -8);
+        ctx.lineTo(side * 25, 4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      });
+    }
+
+    // Visual Upgrade: Striped Retro Rocket Pods (homing_missiles)
+    if (up.homing_missiles > 0) {
+      [-21, 21].forEach((rx) => {
+        ctx.fillStyle = '#fef3c7';
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(rx - 4, -8, 8, 15, 4);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#ef4444';
+        ctx.beginPath();
+        ctx.arc(rx, -7, 4, Math.PI, 0);
+        ctx.fill();
+        ctx.stroke();
+      });
+    }
+
+    // Main Cartoon UFO Saucer Rim
     ctx.fillStyle = p.color;
-    ctx.strokeStyle = p.glow;
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#090d16';
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(20, 0);
-    ctx.lineTo(-13, -12);
-    ctx.lineTo(-8, 0);
-    ctx.lineTo(-13, 12);
+    ctx.ellipse(0, 3, 23, 10.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Rim Glossy Highlight Strip
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.beginPath();
+    ctx.ellipse(-4, 0, 14, 3.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Little Blinking Saucer Lights along rim
+    const lightColors = ['#fef08a', '#ffffff', '#fef08a'];
+    [-12, 0, 12].forEach((lx, i) => {
+      ctx.fillStyle = Math.floor(state.time * 6 + i) % 2 === 0 ? lightColors[i] : '#0f172a';
+      ctx.beginPath();
+      ctx.arc(lx, 5.5, 2.3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // Visual Upgrade: Riveted Steel Armor Plates (hull_plating)
+    if (up.hull_plating > 0) {
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 3.2;
+      ctx.beginPath();
+      ctx.arc(0, 3, 21, 0.15, Math.PI - 0.15);
+      ctx.stroke();
+    }
+
+    // Visual Upgrade: Ray Blaster Pods along saucer front (pulse_cannon >= 2)
+    if ((up.pulse_cannon || 1) >= 2) {
+      const pods = Math.min(4, up.pulse_cannon);
+      ctx.fillStyle = '#e2e8f0';
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 1.8;
+      for (let i = 0; i < pods; i++) {
+        const px = (i / (pods - 1) - 0.5) * 28;
+        ctx.beginPath();
+        ctx.roundRect(px - 2.5, -12, 5, 8, 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+
+    // Big Glossy Cartoon Glass UFO Dome
+    ctx.fillStyle = 'rgba(186, 230, 253, 0.82)';
+    ctx.strokeStyle = '#090d16';
+    ctx.lineWidth = 2.8;
+    ctx.beginPath();
+    ctx.arc(0, 0, 13.5, Math.PI, 0);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = '#f8fafc';
+    // Cute Cartoon Alien Pilot Eyes inside the dome (looks toward aim!)
+    const lookX = Math.cos(p.angle) * 2.2;
+    const lookY = Math.sin(p.angle) * 1.4;
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#090d16';
+    ctx.lineWidth = 1.4;
     ctx.beginPath();
-    ctx.arc(3, 0, 3.5, 0, Math.PI * 2);
+    ctx.ellipse(-4, -5, 3.3, 4, 0, 0, Math.PI * 2);
+    ctx.ellipse(4, -5, 3.3, 4, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#090d16';
+    ctx.beginPath();
+    ctx.arc(-4 + lookX * 0.6, -5 + lookY * 0.6, 1.7, 0, Math.PI * 2);
+    ctx.arc(4 + lookX * 0.6, -5 + lookY * 0.6, 1.7, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Dome Specular Shine Arc
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(-1, -1, 9.5, Math.PI * 1.15, Math.PI * 1.48);
+    ctx.stroke();
+
+    // Visual Upgrade: Dome Laser Dish (plasma_rail)
+    if (up.plasma_rail > 0) {
+      ctx.fillStyle = '#38bdf8';
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, -16, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // Visual Upgrade: Twin Tesla Antennae Coils (chain_lightning)
+    if (up.chain_lightning > 0) {
+      ctx.strokeStyle = '#fde047';
+      ctx.lineWidth = 2.2;
+      [-9, 9].forEach((ax) => {
+        ctx.beginPath();
+        ctx.moveTo(ax, -10);
+        ctx.lineTo(ax * 1.35, -20);
+        ctx.stroke();
+        ctx.fillStyle = '#fde047';
+        ctx.beginPath();
+        ctx.arc(ax * 1.35, -21, 3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    // Visual Upgrade: Horseshoe Magnet (magnet_core)
+    if (up.magnet_core > 0) {
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 12, 5.5, 0, Math.PI);
+      ctx.stroke();
+    }
 
     ctx.restore();
 
-    // Subtle player name tag underneath in 2-4P rooms
-    if (state.players.length > 1) {
-      ctx.fillStyle = 'rgba(248, 250, 252, 0.72)';
-      ctx.font = '600 10px Inter, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(p.name, p.x, p.y + 26);
-    }
+    // Clear "YOU" or Player Name Tag underneath
+    ctx.save();
+    ctx.font = '700 11px "Fredoka", "Inter", sans-serif';
+    ctx.textAlign = 'center';
+    const tagText = isMe ? `▲ YOU (${p.name})` : p.name;
+    ctx.strokeStyle = '#090d16';
+    ctx.lineWidth = 3;
+    ctx.strokeText(tagText, p.x, p.y + 34);
+    ctx.fillStyle = isMe ? '#fef08a' : '#f8fafc';
+    ctx.fillText(tagText, p.x, p.y + 34);
+    ctx.restore();
   }
 
+  // ---- Old-School Cartoon Space Viruses & Bosses (Grumpy Expressive Faces!) ----
   function drawEnemy(e) {
     ctx.save();
     ctx.translate(e.x, e.y);
-    ctx.rotate(e.rot);
+
     const flash = e.hitFlash > 0;
     const chilled = e.chillTimer > 0;
+    const squash = 1 + Math.sin(state.time * 7 + e.x * 0.03) * 0.07;
+    ctx.scale(squash, 2 - squash);
 
     if (e.type.startsWith('asteroid')) {
-      ctx.fillStyle = flash ? '#f8fafc' : chilled ? '#334155' : '#1e293b';
-      ctx.strokeStyle = flash ? '#fff' : chilled ? '#7dd3fc' : '#64748b';
-      ctx.lineWidth = 2;
+      ctx.rotate(e.rot);
+      ctx.fillStyle = flash ? '#ffffff' : chilled ? '#334155' : '#2d3748';
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 3;
       ctx.beginPath();
       (e.shape || getCachedRockShape(e.radius)).forEach((pt, idx) => {
         if (idx === 0) ctx.moveTo(pt.x, pt.y);
@@ -2522,88 +3003,155 @@
       ctx.fill();
       ctx.stroke();
       if (!flash) {
-        ctx.strokeStyle = e.veinColor;
-        ctx.lineWidth = 1.6;
+        ctx.strokeStyle = chilled ? '#7dd3fc' : e.veinColor;
+        ctx.lineWidth = 2.4;
+        ctx.lineCap = 'round';
         ctx.beginPath();
         ctx.moveTo(-e.radius * 0.4, -e.radius * 0.2);
         ctx.lineTo(0, 0);
-        ctx.lineTo(e.radius * 0.35, e.radius * 0.25);
+        ctx.lineTo(e.radius * 0.35, e.radius * 0.28);
         ctx.stroke();
       }
     } else if (e.isBoss) {
-      ctx.strokeStyle = flash ? '#ffffff' : e.color;
-      ctx.lineWidth = 4;
+      const enraged = e.phase >= 2;
+      // Wobbling spikes with dark ink outline
       for (let k = 0; k < 12; k++) {
-        const a = (k / 12) * Math.PI * 2;
+        const a = (k / 12) * Math.PI * 2 + e.rot;
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 8;
         ctx.beginPath();
         ctx.moveTo(Math.cos(a) * e.radius * 0.85, Math.sin(a) * e.radius * 0.85);
-        ctx.lineTo(Math.cos(a) * (e.radius + 16), Math.sin(a) * (e.radius + 16));
+        ctx.lineTo(Math.cos(a) * (e.radius + 18), Math.sin(a) * (e.radius + 18));
         ctx.stroke();
-        ctx.fillStyle = flash ? '#fff' : '#fda4af';
+        ctx.strokeStyle = flash ? '#fff' : e.color;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+        ctx.fillStyle = flash ? '#fff' : enraged ? '#fde047' : '#fda4af';
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(Math.cos(a) * (e.radius + 18), Math.sin(a) * (e.radius + 18), 5, 0, Math.PI * 2);
+        ctx.arc(Math.cos(a) * (e.radius + 20), Math.sin(a) * (e.radius + 20), 6.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      // Giant Cartoon Boss Body
+      ctx.fillStyle = flash ? '#ffffff' : e.color;
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 4.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, e.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Big Grumpy Cartoon Boss Eyes & Jagged Grin!
+      if (!flash) {
+        ctx.fillStyle = enraged ? '#fef08a' : '#ffffff';
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.ellipse(-20, -10, 12, 15, 0, 0, Math.PI * 2);
+        ctx.ellipse(20, -10, 12, 15, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        // Pupils
+        ctx.fillStyle = enraged ? '#dc2626' : '#090d16';
+        ctx.beginPath();
+        ctx.arc(-18, -8, 5.5, 0, Math.PI * 2);
+        ctx.arc(18, -8, 5.5, 0, Math.PI * 2);
+        ctx.fill();
+        // Furrowed Angry Eyebrows
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-34, -26); ctx.lineTo(-8, -18);
+        ctx.moveTo(34, -26); ctx.lineTo(8, -18);
+        ctx.stroke();
+        // Jagged Cartoon Mouth
+        ctx.fillStyle = '#090d16';
+        ctx.beginPath();
+        ctx.moveTo(-26, 18);
+        ctx.lineTo(-14, 28);
+        ctx.lineTo(0, 20);
+        ctx.lineTo(14, 28);
+        ctx.lineTo(26, 18);
+        ctx.lineTo(16, 36);
+        ctx.lineTo(-16, 36);
+        ctx.closePath();
         ctx.fill();
       }
-      ctx.fillStyle = flash ? '#ffffff' : '#24101a';
-      ctx.strokeStyle = flash ? '#ffffff' : e.color;
-      ctx.lineWidth = 3.5;
-      ctx.beginPath();
-      ctx.arc(0, 0, e.radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      const pulse = 0.65 + Math.sin(state.time * 6) * 0.08;
-      ctx.fillStyle = flash ? '#fff' : e.color;
-      ctx.globalAlpha = 0.35;
-      ctx.beginPath();
-      ctx.arc(0, 0, e.radius * pulse, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    } else if (e.type === 'capsid') {
-      ctx.fillStyle = flash ? '#fff' : '#16253b';
-      ctx.strokeStyle = flash ? '#fff' : chilled ? '#7dd3fc' : e.color;
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      for (let k = 0; k < 6; k++) {
-        const a = (k / 6) * Math.PI * 2;
-        if (k === 0) ctx.moveTo(Math.cos(a) * e.radius, Math.sin(a) * e.radius);
-        else ctx.lineTo(Math.cos(a) * e.radius, Math.sin(a) * e.radius);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
     } else {
-      const spikes = e.type === 'microbe' ? 6 : 8;
-      ctx.strokeStyle = flash ? '#fff' : chilled ? '#7dd3fc' : e.color;
-      ctx.lineWidth = 2;
+      // Spiky Cartoon Space Virus (Corona / Mitosis / Shooter / Microbe / Capsid)
+      const spikes = e.type === 'microbe' ? 6 : e.type === 'capsid' ? 6 : 8;
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 5;
       for (let k = 0; k < spikes; k++) {
-        const a = (k / spikes) * Math.PI * 2;
+        const a = (k / spikes) * Math.PI * 2 + e.rot;
         ctx.beginPath();
         ctx.moveTo(Math.cos(a) * (e.radius - 2), Math.sin(a) * (e.radius - 2));
-        ctx.lineTo(Math.cos(a) * (e.radius + 6), Math.sin(a) * (e.radius + 6));
+        ctx.lineTo(Math.cos(a) * (e.radius + 7), Math.sin(a) * (e.radius + 7));
         ctx.stroke();
       }
-      ctx.fillStyle = flash ? '#fff' : '#151c2c';
+      ctx.strokeStyle = flash ? '#fff' : chilled ? '#7dd3fc' : e.color;
+      ctx.lineWidth = 2.5;
+      for (let k = 0; k < spikes; k++) {
+        const a = (k / spikes) * Math.PI * 2 + e.rot;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * (e.radius - 2), Math.sin(a) * (e.radius - 2));
+        ctx.lineTo(Math.cos(a) * (e.radius + 7), Math.sin(a) * (e.radius + 7));
+        ctx.stroke();
+      }
+
+      // Main Viral Body with thick cartoon ink outline
+      ctx.fillStyle = flash ? '#ffffff' : chilled ? '#0284c7' : e.color;
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(0, 0, e.radius, 0, Math.PI * 2);
+      if (e.type === 'capsid') {
+        for (let k = 0; k < 6; k++) {
+          const a = (k / 6) * Math.PI * 2 + e.rot;
+          if (k === 0) ctx.moveTo(Math.cos(a) * e.radius, Math.sin(a) * e.radius);
+          else ctx.lineTo(Math.cos(a) * e.radius, Math.sin(a) * e.radius);
+        }
+        ctx.closePath();
+      } else {
+        ctx.arc(0, 0, e.radius, 0, Math.PI * 2);
+      }
       ctx.fill();
       ctx.stroke();
 
-      ctx.fillStyle = flash ? '#fff' : e.color;
-      ctx.beginPath();
-      if (e.type === 'mitosis') {
-        ctx.arc(-5, 0, 4.5, 0, Math.PI * 2);
-        ctx.arc(5, 0, 4.5, 0, Math.PI * 2);
-      } else {
-        ctx.arc(0, 0, e.radius * 0.4, 0, Math.PI * 2);
+      // Cute/Grumpy Cartoon Eyes on Viruses (makes enemies instantly distinct from friendly UFOs!)
+      if (!flash && e.radius >= 13) {
+        const er = Math.max(2.6, e.radius * 0.22);
+        const ex = e.radius * 0.34;
+        ctx.fillStyle = '#fef08a';
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.arc(-ex, -2, er, 0, Math.PI * 2);
+        ctx.arc(ex, -2, er, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#090d16';
+        ctx.beginPath();
+        ctx.arc(-ex, -2, er * 0.45, 0, Math.PI * 2);
+        ctx.arc(ex, -2, er * 0.45, 0, Math.PI * 2);
+        ctx.fill();
+        // Little grumpy brow line
+        ctx.beginPath();
+        ctx.moveTo(-ex - er, -2 - er);
+        ctx.lineTo(-ex + er, -2 - er * 0.3);
+        ctx.moveTo(ex + er, -2 - er);
+        ctx.lineTo(ex - er, -2 - er * 0.3);
+        ctx.stroke();
       }
-      ctx.fill();
     }
 
     ctx.restore();
   }
 
-  // ---- HUD Rendering ----
+  // ---- HUD Rendering (Including Live Team Damage Meter!) ----
   function renderHud() {
     hudLevel.textContent = `LEVEL ${state.level}`;
     hudScore.textContent = `${state.score.toLocaleString()} PTS`;
@@ -2615,13 +3163,36 @@
     const nextBoss = Math.ceil((state.level + 0.01) / 10) * 10;
     const levelsLeft = nextBoss - state.level;
     if (state.bossActive) {
-      hudBossHint.textContent = 'BOSS ENCOUNTER ACTIVE';
+      hudBossHint.textContent = 'BOSS ENCOUNTER ACTIVE!';
       hudBossHint.classList.add('boss-now');
     } else {
       hudBossHint.textContent = `Boss in ${levelsLeft} level${levelsLeft === 1 ? '' : 's'} (Lv ${nextBoss})`;
       hudBossHint.classList.remove('boss-now');
     }
 
+    // Live Team Damage Meter
+    const rankedDmg = state.players.slice().sort((a, b) => (b.damage || 0) - (a.damage || 0));
+    const totalDmg = Math.max(1, rankedDmg.reduce((acc, p) => acc + (p.damage || 0), 0));
+    damageMeterEl.innerHTML =
+      `<div class="dmg-title"><span>Damage Meter</span><span>${formatDmg(rankedDmg.reduce((a, p) => a + (p.damage || 0), 0))}</span></div>` +
+      rankedDmg
+        .map((p) => {
+          const pct = Math.round(((p.damage || 0) / totalDmg) * 100);
+          return `
+            <div class="dmg-row">
+              <div class="dmg-row-head">
+                <span>${escapeHtml(p.name)}${p.id === room.myId ? ' ★' : ''}</span>
+                <span>${formatDmg(p.damage || 0)} (${pct}%)</span>
+              </div>
+              <div class="dmg-bar-track">
+                <div class="dmg-bar-fill" style="width:${pct}%;background:${p.color};"></div>
+              </div>
+            </div>
+          `;
+        })
+        .join('');
+
+    // Player Hull Cards
     playerHudCards.innerHTML = state.players
       .map((p) => {
         const hpPct = clamp((p.hp / Math.max(1, p.maxHp)) * 100, 0, 100);
@@ -2630,7 +3201,7 @@
         return `
           <div class="ship-hud ${cls} ${p.downed ? 'downed' : ''}">
             <div class="ship-hud-top">
-              <span>${escapeHtml(p.name)}</span>
+              <span>${escapeHtml(p.name)}${p.id === room.myId ? ' (You)' : ''}</span>
               <span>${p.downed ? 'DOWNED' : `${Math.ceil(p.hp)}/${p.maxHp}`}</span>
             </div>
             <div class="hp-track">
@@ -2644,9 +3215,12 @@
       })
       .join('');
 
+    // Personal Weapons Tray (shows YOUR UFO's personal upgrades!)
+    const me = state.players.find((p) => p.id === room.myId) || state.players[0];
+    const myUp = (me && me.upgrades) || defaultUpgrades();
     const chips = [];
     for (const u of UPGRADES) {
-      const lv = state.fleet[u.id] || 0;
+      const lv = myUp[u.id] || 0;
       if (lv > 0) {
         const shortName = state.players.length === 1 && u.id === 'tether_beam' ? 'Drone' : u.name.split(' ')[0];
         chips.push(`<span class="weapon-chip">${u.icon} ${shortName} <span class="lvl">Lv${lv}</span></span>`);
@@ -2659,9 +3233,7 @@
   let lastPadMenuMove = 0;
 
   function pollMenuGamepads(pads, now) {
-    const count = pads.length;
-    hudControllers.textContent = `Controllers: ${count}`;
-
+    hudControllers.textContent = `Controllers: ${pads.length}`;
     const pad = pads[0];
     if (!pad) return;
 
@@ -2682,7 +3254,7 @@
     if (state.mode === 'playing' && startBtn && room.isHost) { togglePause(); return; }
     if (state.mode === 'paused' && (startBtn || confirm) && room.isHost) { togglePause(); return; }
     if (state.mode === 'title' && (confirm || startBtn) && room.isHost) { startGame(); return; }
-    if (state.mode === 'upgrade') {
+    if (state.mode === 'upgrade' && !state.myDraftPicked) {
       if (now - lastPadMenuMove > 200) {
         if (left) { moveDraftFocus(-1); lastPadMenuMove = now; }
         else if (right) { moveDraftFocus(1); lastPadMenuMove = now; }
@@ -2742,7 +3314,6 @@
     const pads = getConnectedPads();
     pollMenuGamepads(pads, ts);
 
-    // Starfield drift
     for (const s of stars) {
       s.y += (s.speed * (state.mode === 'playing' ? 1 : 0.4) * dt) / H;
       if (s.y > 1) { s.y = 0; s.x = Math.random(); }
@@ -2756,14 +3327,12 @@
           hudTick = 0;
           renderHud();
         }
-        // Broadcast world snapshot to connected online guests (~25 Hz)
         netTick += dt;
         if (netTick >= 0.04 && state.players.some((p) => !p.isLocal)) {
           netTick = 0;
           room.sendRealtime({ type: 'SNAP', s: buildSnapshot() });
         }
       } else {
-        // Guest: stream local input to Host (~30 Hz)
         netTick += dt;
         if (netTick >= 0.033) {
           netTick = 0;
@@ -2775,7 +3344,7 @@
     if (touchDashBtn) {
       const showDash = touchCtrl.isTouchDevice && state.mode === 'playing';
       touchDashBtn.classList.toggle('visible', showDash);
-      if (!showDash && touchCtrl.active) resetTouchStick();
+      if (!showDash && touchCtrl.active) clearTouchSteer();
     }
 
     draw();

@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Astro Purge — 4-Player Space Virus Asteroids</title>
-  <meta name="description" content="Pilot starships together in 4-player game rooms, level up your fleet, unlock new weapons, and defeat space virus bosses every 10 levels." />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Astro Purge — Cartoon 4P UFO Co-op</title>
+  <meta name="description" content="Pilot cartoon UFOs together in 4-player game rooms, earn personal visual ship upgrades, and battle giant space virus bosses every 10 levels." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Inter:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -38,8 +38,11 @@
         </div>
 
         <div class="hud-group right">
-          <div class="hud-pill" id="hud-controllers">Controllers: 0</div>
-          <div class="hud-pill" id="hud-kills">Purged: 0</div>
+          <div class="hud-group-row">
+            <div class="hud-pill" id="hud-controllers">Controllers: 0</div>
+            <div class="hud-pill" id="hud-kills">Purged: 0</div>
+          </div>
+          <div id="damage-meter" aria-label="Team Damage Meter"></div>
         </div>
       </div>
 
@@ -70,10 +73,10 @@
   <!-- OVERLAY 1: 4-PLAYER GAME ROOM LOBBY -->
   <div id="title-overlay" class="overlay">
     <div class="modal-panel wide">
-      <div class="eyebrow">Couch Arcade · 4-Player Game Room</div>
-      <h1 class="modal-title">ASTRO PURGE</h1>
+      <div class="eyebrow">Couch Arcade · 4-Player Cartoon UFO Co-op</div>
+      <h1 class="modal-title" style="font-family: 'Fredoka', 'Space Grotesk', sans-serif;">ASTRO PURGE</h1>
       <p class="modal-sub">
-        Share the invite link so up to 4 friends can join this room, or add a local couch player on the same screen. Level up together and defeat a Boss every 10 levels.
+        Pilot cartoon UFOs together against grumpy space viruses! Share Team XP to earn <strong>personal visual ship upgrades</strong>, track your squad on the Damage Meter, and face a tough multi-phase Boss every 10 levels.
       </p>
 
       <!-- Room Code, Name & Invite Link Bar -->
@@ -93,10 +96,10 @@
 
       <div class="controls-box">
         <div class="ctrl-col p1">
-          <h4>Your Ship Controls (Keyboard, Gamepad, or Touch)</h4>
+          <h4>Your UFO Controls (Touch, Keyboard, or Gamepad)</h4>
           <p>
-            Move: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>, Left Stick, or <strong>Drag Screen</strong><br />
-            Fire: Auto / <kbd>Space</kbd> / <kbd>RT</kbd> · Dash: <kbd>L-Shift</kbd> / <kbd>B</kbd> / <strong>DASH btn</strong>
+            <strong>iOS / Touch:</strong> Press &amp; hold anywhere — your UFO follows your finger; lift to coast!<br />
+            <strong>Desktop / Pad:</strong> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or Left Stick · Dash: <kbd>Shift</kbd> / <kbd>B</kbd> / <strong>DASH</strong>
           </p>
         </div>
         <div class="ctrl-col p2">
@@ -114,22 +117,23 @@
         <a href="../../index.html" class="btn btn-secondary">← Back to Hub</a>
       </div>
       <p class="draft-hint" id="title-pad-hint" style="margin-top: 14px;">
-        Send the Invite Link to friends on phones/laptops, or connect Bluetooth controllers — press A / Enter to launch.
+        Send the Invite Link to friends on iPhones/laptops, or connect Bluetooth controllers — press A / Enter to launch.
       </p>
     </div>
   </div>
 
-  <!-- OVERLAY 2: SHARED LEVEL-UP UPGRADE DRAFT -->
+  <!-- OVERLAY 2: PERSONAL LEVEL-UP UPGRADE DRAFT -->
   <div id="upgrade-overlay" class="overlay hidden">
     <div class="modal-panel wide">
-      <div class="eyebrow" id="draft-eyebrow">Fleet Level Up!</div>
-      <h2 class="modal-title" id="draft-title">Choose a Shared Ship Upgrade</h2>
-      <p class="modal-sub" id="draft-sub">Upgrades empower all ships in your room together.</p>
+      <div class="eyebrow" id="draft-eyebrow">Level Up!</div>
+      <h2 class="modal-title" id="draft-title" style="font-family: 'Fredoka', 'Space Grotesk', sans-serif;">Choose Your Personal UFO Upgrade</h2>
+      <p class="modal-sub" id="draft-sub">Each pilot builds &amp; visually upgrades their own UFO!</p>
 
       <div class="upgrade-grid" id="upgrade-grid"></div>
+      <div id="draft-waiting" class="draft-waiting hidden">Upgrade locked in! Waiting for teammates to choose...</div>
 
-      <p class="draft-hint">
-        Select with Click, <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>, <kbd>←</kbd><kbd>→</kbd> + <kbd>Enter</kbd>/<kbd>Space</kbd>, or Controller D-Pad + <kbd>A</kbd>
+      <p class="draft-hint" style="margin-top: 10px;">
+        Tap a card, press <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>, <kbd>←</kbd><kbd>→</kbd> + <kbd>Enter</kbd>/<kbd>Space</kbd>, or Controller D-Pad + <kbd>A</kbd>
       </p>
     </div>
   </div>
@@ -138,7 +142,7 @@
   <div id="pause-overlay" class="overlay hidden">
     <div class="modal-panel">
       <div class="eyebrow">Mission Paused</div>
-      <h2 class="modal-title">Systems on Standby</h2>
+      <h2 class="modal-title" style="font-family: 'Fredoka', 'Space Grotesk', sans-serif;">Systems on Standby</h2>
       <p class="modal-sub">Catch your breath or pair another controller.</p>
       <div class="btn-row">
         <button type="button" class="btn btn-primary" id="btn-resume">Resume</button>
@@ -152,7 +156,7 @@
   <div id="gameover-overlay" class="overlay hidden">
     <div class="modal-panel">
       <div class="eyebrow" style="color: #fb7185;">Fleet Destroyed</div>
-      <h2 class="modal-title">Mission Over</h2>
+      <h2 class="modal-title" style="font-family: 'Fredoka', 'Space Grotesk', sans-serif;">Mission Over</h2>
       <p class="modal-sub" id="gameover-sub">The space virus swarm overwhelmed your fleet.</p>
 
       <div class="summary-grid">
@@ -170,9 +174,23 @@
         </div>
       </div>
 
+      <div id="gameover-damage-list" style="margin-bottom: 20px; text-align: left;"></div>
+
       <div class="btn-row">
         <button type="button" class="btn btn-primary" id="btn-play-again">Play Again</button>
         <a href="../../index.html" class="btn btn-secondary">Back to Hub</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- OVERLAY 5: KICKED FROM ROOM -->
+  <div id="kicked-overlay" class="overlay hidden">
+    <div class="modal-panel">
+      <div class="eyebrow" style="color: #fb7185;">Disconnected</div>
+      <h2 class="modal-title" style="font-family: 'Fredoka', 'Space Grotesk', sans-serif;">Removed from Room</h2>
+      <p class="modal-sub">The host removed you from this game room.</p>
+      <div class="btn-row">
+        <a href="../../index.html" class="btn btn-primary">← Back to Game Hub</a>
       </div>
     </div>
   </div>
