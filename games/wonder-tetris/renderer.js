@@ -982,18 +982,26 @@
       ctx.lineWidth = 2.6;
       ctx.stroke();
 
-      // Player color dot + avatar + name + score
-      ctx.font = `700 ${Math.max(11, Math.round(badgeH * 0.48))}px Fredoka, system-ui, sans-serif`;
+      // Player avatar + name + score (never overlaps even on narrow phone mini-boards!)
+      const badgeTotalW = gridW + framePad * 2;
+      ctx.font = `700 ${Math.max(10, Math.round(badgeH * 0.46))}px Fredoka, system-ui, sans-serif`;
       ctx.textBaseline = 'middle';
+      const scoreStr = Number(board.score || 0).toLocaleString();
+      const scoreW = ctx.measureText(scoreStr).width;
+      const maxLabelW = Math.max(36, badgeTotalW - scoreW - 22);
+
       ctx.textAlign = 'left';
       ctx.fillStyle = '#1e1b2e';
       const crown = isLeader ? '👑 ' : '';
-      const label = `${crown}${board.avatar || '🌟'} ${board.name}`;
-      ctx.fillText(label.slice(0, 22), gx - framePad + 8, badgeY + badgeH / 2 + 1);
+      let label = `${crown}${board.avatar || '🌟'} ${board.name}`;
+      while (label.length > 4 && ctx.measureText(label).width > maxLabelW) {
+        label = label.slice(0, -1);
+      }
+      ctx.fillText(label, gx - framePad + 7, badgeY + badgeH / 2 + 1, maxLabelW);
 
       ctx.textAlign = 'right';
       ctx.fillStyle = board.color || '#0f766e';
-      ctx.fillText(Number(board.score || 0).toLocaleString(), gx + gridW + framePad - 8, badgeY + badgeH / 2 + 1);
+      ctx.fillText(scoreStr, gx + gridW + framePad - 7, badgeY + badgeH / 2 + 1);
     }
 
     ctx.restore();

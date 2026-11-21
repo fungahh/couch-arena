@@ -85,17 +85,17 @@
       </div>
     </main>
 
-    <!-- Mobile Standalone Touch Controls -->
+    <!-- Mobile / iPad Touch Controls (Big Left / Right / Rotate, Compact Secondary Buttons!) -->
     <div id="mobile-controls" class="mobile-controls" aria-label="Touch Controls">
-      <div class="touch-cluster">
-        <button type="button" class="t-btn" id="m-left" aria-label="Move Left">◀</button>
-        <button type="button" class="t-btn" id="m-down" aria-label="Soft Drop">▼</button>
-        <button type="button" class="t-btn" id="m-right" aria-label="Move Right">▶</button>
+      <div class="touch-cluster touch-left-group">
+        <button type="button" class="t-btn t-big" id="m-left" aria-label="Move Left">◀</button>
+        <button type="button" class="t-btn t-big" id="m-right" aria-label="Move Right">▶</button>
+        <button type="button" class="t-btn t-small" id="m-down" aria-label="Soft Drop">▼</button>
       </div>
-      <div class="touch-cluster">
-        <button type="button" class="t-btn hold" id="m-hold" aria-label="Hold Piece">HOLD</button>
-        <button type="button" class="t-btn rot" id="m-rot" aria-label="Rotate">⟳</button>
-        <button type="button" class="t-btn drop" id="m-drop" aria-label="Hard Drop">⬇ DROP</button>
+      <div class="touch-cluster touch-right-group">
+        <button type="button" class="t-btn t-small hold" id="m-hold" aria-label="Hold Piece">HOLD</button>
+        <button type="button" class="t-btn t-small drop" id="m-drop" aria-label="Hard Drop">⬇ DROP</button>
+        <button type="button" class="t-btn t-big rot" id="m-rot" aria-label="Rotate">⟳</button>
       </div>
     </div>
 
@@ -124,15 +124,15 @@
       <div class="ctrl-pad-area">
         <div class="ctrl-row-main">
           <div class="ctrl-dpad">
-            <button type="button" class="pad-big-btn" id="c-left" aria-label="Left">◀<small>LEFT</small></button>
-            <button type="button" class="pad-big-btn" id="c-right" aria-label="Right">▶<small>RIGHT</small></button>
-            <button type="button" class="pad-big-btn span-2" id="c-down" aria-label="Soft Drop">▼<small>SOFT DROP</small></button>
+            <button type="button" class="pad-big-btn pad-primary" id="c-left" aria-label="Left">◀<small>LEFT</small></button>
+            <button type="button" class="pad-big-btn pad-primary" id="c-right" aria-label="Right">▶<small>RIGHT</small></button>
+            <button type="button" class="pad-big-btn pad-secondary span-2" id="c-down" aria-label="Soft Drop">▼<small>SOFT DROP</small></button>
           </div>
           <div class="ctrl-actions">
-            <button type="button" class="pad-big-btn btn-rot-ccw" id="c-rot-ccw" aria-label="Rotate Left">⟲<small>SPIN L</small></button>
-            <button type="button" class="pad-big-btn btn-rot-cw" id="c-rot-cw" aria-label="Rotate Right">⟳<small>SPIN R</small></button>
-            <button type="button" class="pad-big-btn btn-hold" id="c-hold" aria-label="Hold">⇄<small>HOLD</small></button>
-            <button type="button" class="pad-big-btn btn-hard-drop" id="c-drop" aria-label="Hard Drop">⬇<small>SLAM!</small></button>
+            <button type="button" class="pad-big-btn pad-primary btn-rot-cw span-2" id="c-rot-cw" aria-label="Rotate Right">⟳<small>ROTATE</small></button>
+            <button type="button" class="pad-big-btn pad-secondary btn-rot-ccw" id="c-rot-ccw" aria-label="Rotate Left">⟲<small>SPIN L</small></button>
+            <button type="button" class="pad-big-btn pad-secondary btn-hold" id="c-hold" aria-label="Hold">⇄<small>HOLD</small></button>
+            <button type="button" class="pad-big-btn pad-secondary btn-hard-drop span-2" id="c-drop" aria-label="Hard Drop">⬇<small>SLAM!</small></button>
           </div>
         </div>
 

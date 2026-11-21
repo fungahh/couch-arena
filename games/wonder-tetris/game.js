@@ -262,13 +262,15 @@
     stageWrap.classList.toggle('hidden', isCtrl);
     controllerShell.classList.toggle('hidden', !isCtrl);
 
-    const showTouch = isTouchDevice && !isCtrl && !isTv && state.mode === 'playing';
+    const showTouch = isTouchDevice && !isCtrl && !isTv && (state.mode === 'playing' || state.mode === 'countdown');
     document.body.classList.toggle('show-touch-bar', showTouch);
 
-    const showTargetBar = !isCtrl && !isTv && state.mode === 'playing' && state.boards.length >= 2;
+    // Only show target selector when there are 2+ rivals (saves vertical space on iPad/1v1!)
+    const showTargetBar = !isCtrl && !isTv && !isTouchDevice && state.mode === 'playing' && state.boards.length >= 3;
     targetBar.classList.toggle('hidden', !showTargetBar);
 
     btnPause.classList.toggle('hidden', state.mode !== 'playing' && state.mode !== 'paused');
+    requestAnimationFrame(() => { if (typeof resizeCanvases === 'function') resizeCanvases(); });
 
     if (isCtrl) {
       titleModal.classList.add('hidden');
@@ -737,6 +739,8 @@
   }
 
   // ---- Networking Messages ----
+  let lastReliableWorldSync = 0;
+
   function pushMySnapshot(force = false) {
     if (!state.myBoard || room.tvMode || isPhoneController()) return;
     const now = performance.now();
@@ -744,24 +748,45 @@
     state.lastSnapBroadcast = now;
     const snap = state.myBoard.serialize();
     if (room.isHost) {
-      broadcastWorldSnapshot();
+      broadcastWorldSnapshot(force);
     } else {
-      room.sendRealtime({ type: 'BOARD_SNAP', snap });
+      room.sendRealtime({ type: 'BOARD_SNAP', snap }, { urgent: force });
+      // If direct P2P isn't up yet, mirror forced lock/clear snapshots reliably so rivals always stay in sync!
+      if (force && !room.hasOpenP2p()) {
+        room.sendSignal({ type: 'BOARD_SNAP', snap });
+      }
     }
   }
 
-  function broadcastWorldSnapshot() {
+  function broadcastWorldSnapshot(forceReliable = false) {
     if (!room.isHost || state.boards.length === 0) return;
     const snaps = state.boards.map((b) => b.serialize());
     room.sendRealtime({ type: 'WORLD_SNAP', snaps });
+    const now = performance.now();
+    if (forceReliable || now - lastReliableWorldSync > 1200) {
+      lastReliableWorldSync = now;
+      room.sendSignal({ type: 'WORLD_SNAP', snaps });
+    }
   }
 
   function handleRoomMessage(msg) {
     if (!msg || !msg.type) return;
 
+    // Late-joining guest asks Host if match already started -> send MATCH_START + live snapshots!
+    if (msg.type === 'SYNC_REQ' && room.isHost) {
+      if ((state.mode === 'countdown' || state.mode === 'playing') && state.lastMatchCfg) {
+        room.sendToPlayer(msg.senderId, state.lastMatchCfg);
+        const snaps = state.boards.map((b) => b.serialize());
+        room.sendToPlayer(msg.senderId, { type: 'WORLD_SNAP', snaps });
+      }
+      return;
+    }
+
     // Guest receives Match Start
     if (msg.type === 'MATCH_START' && !room.isHost) {
-      startMatchLocal(msg);
+      if (state.mode === 'title' || state.mode === 'victory' || msg.seed !== state.lastSeed) {
+        startMatchLocal(msg);
+      }
       return;
     }
 
@@ -1226,62 +1251,82 @@
     }
   });
 
-  // ---- Canvas Sizing (Full Retina DPR) ----
+  // ---- Canvas Sizing (Full Retina DPR + iPad/iOS Safari ResizeObserver & VisualViewport!) ----
   let dpr = 1;
   let bgW = 1, bgH = 1, stageW = 1, stageH = 1;
 
   function resizeCanvases() {
     dpr = Math.min(2, window.devicePixelRatio || 1);
-    bgW = window.innerWidth;
-    bgH = window.innerHeight;
+    const vv = window.visualViewport;
+    bgW = Math.round(vv ? vv.width : window.innerWidth);
+    bgH = Math.round(vv ? vv.height : window.innerHeight);
     bgCanvas.width = Math.round(bgW * dpr);
     bgCanvas.height = Math.round(bgH * dpr);
     bgCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const rect = stageWrap.getBoundingClientRect();
-    stageW = Math.max(1, rect.width);
-    stageH = Math.max(1, rect.height);
+    stageW = Math.max(1, Math.floor(rect.width));
+    stageH = Math.max(1, Math.floor(rect.height));
     gameCanvas.width = Math.round(stageW * dpr);
     gameCanvas.height = Math.round(stageH * dpr);
     gameCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   window.addEventListener('resize', resizeCanvases);
+  window.addEventListener('orientationchange', () => setTimeout(resizeCanvases, 120));
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', resizeCanvases);
+  }
+  if (typeof ResizeObserver === 'function') {
+    const stageRo = new ResizeObserver(() => resizeCanvases());
+    stageRo.observe(stageWrap);
+  }
   resizeCanvases();
 
   // ---- Storybook Side Card Helper (Rendered on Main Canvas!) ----
   function drawStoryCard(ctx, x, y, w, h, title, accent = '#38bdf8') {
     ctx.save();
-    R.roundRectPath(ctx, x + 2, y + 5, w, h, 18);
+    R.roundRectPath(ctx, x + 2, y + 4, w, h, 16);
     ctx.fillStyle = 'rgba(30, 27, 46, 0.16)';
     ctx.fill();
 
-    R.roundRectPath(ctx, x, y, w, h, 18);
+    R.roundRectPath(ctx, x, y, w, h, 16);
     ctx.fillStyle = 'rgba(255, 253, 248, 0.96)';
     ctx.fill();
     ctx.strokeStyle = '#1e1b2e';
-    ctx.lineWidth = 2.8;
+    ctx.lineWidth = 2.6;
     ctx.stroke();
 
     // Header ribbon pill
     if (title) {
-      R.roundRectPath(ctx, x + 10, y - 12, Math.min(w - 20, 120), 23, 11);
+      const pillW = Math.min(w - 14, 118);
+      const pillX = x + (w - pillW) / 2;
+      R.roundRectPath(ctx, pillX, y - 11, pillW, 21, 10);
       ctx.fillStyle = accent;
       ctx.fill();
       ctx.strokeStyle = '#1e1b2e';
-      ctx.lineWidth = 2.2;
+      ctx.lineWidth = 2;
       ctx.stroke();
 
-      ctx.font = '700 12px Fredoka, system-ui, sans-serif';
+      ctx.font = '700 11px Fredoka, system-ui, sans-serif';
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(title, x + 10 + Math.min(w - 20, 120) / 2, y - 0.5);
+      ctx.fillText(title, pillX + pillW / 2, y - 0.5);
     }
     ctx.restore();
   }
 
-  // ---- Main Render Pipeline ----
+  function centerCountdownOver(cx, cy) {
+    if (state.mode !== 'countdown') return;
+    const rect = stageWrap.getBoundingClientRect();
+    countdownBubble.style.position = 'fixed';
+    countdownBubble.style.left = `${Math.round(rect.left + cx)}px`;
+    countdownBubble.style.top = `${Math.round(rect.top + cy)}px`;
+    countdownBubble.style.transform = 'translate(-50%, -50%)';
+  }
+
+  // ---- Main Render Pipeline (Guaranteed-Fit across iPhone, iPad Portrait/Landscape, Desktop & TV!) ----
   function renderStage() {
     if (isPhoneController()) return;
     gameCtx.clearRect(0, 0, stageW, stageH);
@@ -1313,76 +1358,95 @@
         state.boardCenters[b.id] = { cx: info.cx, cy: info.cy };
       });
 
-      // Sparky Mascot floating happily at top-right corner of TV
+      centerCountdownOver(stageW / 2, stageH / 2);
       R.drawMascot(gameCtx, stageW - 58, 56, 26, state.mascot, state.time);
       R.drawAttackArcs(gameCtx, state.attackArcs);
       return;
     }
 
-    // 2. STANDARD MODE (DESKTOP & MOBILE): HERO BOARD + STORYBOOK PANELS + LIVE RIVALS!
+    // 2. STANDARD MODE: HERO BOARD + ALWAYS-VISIBLE NEXT 3 + ALWAYS-VISIBLE LIVE RIVAL PROGRESS!
     const myB = state.myBoard || state.boards[0];
     const rivals = state.boards.filter((b) => b !== myB);
-    const isNarrow = stageW < 700;
+    const hasRivals = rivals.length > 0;
+    const isPhonePortrait = stageW < 600;
 
-    if (isNarrow) {
-      // Compact Mobile Portrait Layout
-      const topStripH = rivals.length > 0 ? 86 : 64;
-      const boardAvailH = stageH - topStripH - 16;
-      const boardAvailW = stageW - 20;
-      const info = R.drawBoard(gameCtx, myB, {
-        x: 10,
-        y: topStripH + 8,
-        w: boardAvailW,
-        h: boardAvailH,
-      }, { showFaces: true });
-      state.boardCenters[myB.id] = { cx: info.cx, cy: info.cy };
-
-      // Compact Top HUD strip (Hold + Score + Next)
+    // ---- A. NARROW PHONE PORTRAIT (< 600px) ----
+    if (isPhonePortrait) {
+      const pad = 8;
       const stripY = 6;
-      const boxH = 54;
-      drawStoryCard(gameCtx, 10, stripY, 64, boxH, null);
-      gameCtx.font = '700 10px Fredoka, sans-serif';
-      gameCtx.fillStyle = '#4c4566';
-      gameCtx.textAlign = 'center';
-      gameCtx.fillText('HOLD', 42, stripY + 12);
-      if (myB.hold) R.drawPiecePreview(gameCtx, myB.hold, 14, stripY + 14, 56, 38, state.time);
+      const stripH = 56;
 
-      const midW = Math.max(120, stageW - 156);
-      drawStoryCard(gameCtx, 80, stripY, midW, boxH, null);
-      gameCtx.font = '700 17px Fredoka, sans-serif';
+      // Top HUD Strip: HOLD + SCORE/LV + NEXT 3 UPCOMING PIECES!
+      const holdW = 58;
+      const nextW = Math.min(156, Math.max(114, Math.floor(stageW * 0.38)));
+      const midW = Math.max(88, stageW - pad * 2 - holdW - nextW - 12);
+
+      // HOLD
+      drawStoryCard(gameCtx, pad, stripY, holdW, stripH, null);
+      gameCtx.font = '700 9px Fredoka, sans-serif';
+      gameCtx.fillStyle = '#ec4899';
+      gameCtx.textAlign = 'center';
+      gameCtx.fillText('HOLD', pad + holdW / 2, stripY + 11);
+      if (myB.hold) R.drawPiecePreview(gameCtx, myB.hold, pad + 4, stripY + 13, holdW - 8, 40, state.time);
+
+      // SCORE / LEVEL / LINES
+      const midX = pad + holdW + 6;
+      drawStoryCard(gameCtx, midX, stripY, midW, stripH, null);
+      gameCtx.font = '700 16px Fredoka, sans-serif';
       gameCtx.fillStyle = '#1e1b2e';
       gameCtx.textAlign = 'center';
-      gameCtx.fillText(Number(myB.score).toLocaleString(), 80 + midW / 2, stripY + 25);
-      gameCtx.font = '700 11px Nunito, sans-serif';
+      gameCtx.fillText(Number(myB.score).toLocaleString(), midX + midW / 2, stripY + 25);
+      gameCtx.font = '700 10.5px Nunito, sans-serif';
       gameCtx.fillStyle = '#0284c7';
-      gameCtx.fillText(`Lv ${myB.level} · ${myB.lines} Lines${myB.combo >= 1 ? ` · 🌈${myB.combo + 1}x` : ''}`, 80 + midW / 2, stripY + 43);
+      gameCtx.fillText(`Lv ${myB.level} · ${myB.lines}L${myB.combo >= 1 ? ` · 🌈${myB.combo + 1}x` : ''}`, midX + midW / 2, stripY + 44);
 
-      drawStoryCard(gameCtx, stageW - 74, stripY, 64, boxH, null);
-      gameCtx.font = '700 10px Fredoka, sans-serif';
-      gameCtx.fillStyle = '#4c4566';
+      // NEXT 3 UPCOMING PIECES (Always Visible!)
+      const nextX = midX + midW + 6;
+      drawStoryCard(gameCtx, nextX, stripY, nextW, stripH, null);
+      gameCtx.font = '700 9px Fredoka, sans-serif';
+      gameCtx.fillStyle = '#0284c7';
       gameCtx.textAlign = 'center';
-      gameCtx.fillText('NEXT', stageW - 42, stripY + 12);
-      if (myB.queue[0]) R.drawPiecePreview(gameCtx, myB.queue[0], stageW - 70, stripY + 14, 56, 38, state.time);
+      gameCtx.fillText('NEXT', nextX + nextW / 2, stripY + 11);
+      const slotW = (nextW - 8) / 3;
+      for (let i = 0; i < 3; i++) {
+        const qType = myB.queue[i];
+        if (qType) {
+          R.drawPiecePreview(gameCtx, qType, nextX + 4 + i * slotW, stripY + 14, slotW, 38, state.time + i * 0.6);
+        }
+      }
 
-      // Compact Rival Badges below top strip
-      if (rivals.length > 0) {
-        const pillW = Math.min(115, (stageW - 24) / rivals.length - 6);
-        const startX = (stageW - rivals.length * (pillW + 6)) / 2;
-        rivals.forEach((rb, i) => {
-          const px = startX + i * (pillW + 6);
-          const py = stripY + boxH + 6;
-          R.roundRectPath(gameCtx, px, py, pillW, 24, 10);
-          gameCtx.fillStyle = rb.alive ? '#ffffff' : '#fee2e2';
-          gameCtx.fill();
-          gameCtx.strokeStyle = '#1e1b2e';
-          gameCtx.lineWidth = 2;
-          gameCtx.stroke();
-          gameCtx.font = '700 11px Fredoka, sans-serif';
-          gameCtx.fillStyle = '#1e1b2e';
-          gameCtx.textAlign = 'center';
-          gameCtx.textBaseline = 'middle';
-          gameCtx.fillText(`${rb.avatar} ${rb.name.slice(0, 7)} ${rb.alive ? Number(rb.score).toLocaleString() : 'KO'}`, px + pillW / 2, py + 12.5);
-          state.boardCenters[rb.id] = { cx: px + pillW / 2, cy: py + 12 };
+      // Main Play Area below top strip: Hero Board + Live Rival Board(s) right beside it!
+      const areaTop = stripY + stripH + 10;
+      const areaH = Math.max(120, stageH - areaTop - 10);
+
+      if (!hasRivals) {
+        const info = R.drawBoard(gameCtx, myB, { x: pad, y: areaTop, w: stageW - pad * 2, h: areaH }, { showFaces: true });
+        state.boardCenters[myB.id] = { cx: info.cx, cy: info.cy };
+        centerCountdownOver(info.cx, info.cy);
+      } else {
+        const gap = 10;
+        const rivalColW = Math.min(132, Math.max(92, Math.floor(stageW * 0.30)));
+        const heroAreaW = stageW - pad * 2 - rivalColW - gap;
+        const heroInfo = R.drawBoard(gameCtx, myB, { x: pad, y: areaTop, w: heroAreaW, h: areaH }, {
+          showFaces: true,
+          isLeader: myB.id === leaderId,
+        });
+        state.boardCenters[myB.id] = { cx: heroInfo.cx, cy: heroInfo.cy };
+        centerCountdownOver(heroInfo.cx, heroInfo.cy);
+
+        const rivalX = pad + heroAreaW + gap;
+        const rows = rivals.length;
+        const rHeaderSpace = 28;
+        const rGap = 10;
+        const eachH = Math.max(84, (areaH - rHeaderSpace - rGap * (rows - 1)) / rows);
+        rivals.forEach((rb, idx) => {
+          const ry = areaTop + rHeaderSpace + idx * (eachH + rGap);
+          const rInfo = R.drawBoard(gameCtx, rb, { x: rivalX, y: ry, w: rivalColW, h: eachH }, {
+            showNameHeader: true,
+            isLeader: rb.id === leaderId,
+            showFaces: false,
+          });
+          state.boardCenters[rb.id] = { cx: rInfo.cx, cy: rInfo.cy };
         });
       }
 
@@ -1390,132 +1454,187 @@
       return;
     }
 
-    // ---- Desktop / Tablet Widescreen Storybook Layout ----
-    const bottomReserve = rivals.length > 0 ? 44 : 18;
-    const maxBoardH = Math.min(stageH - bottomReserve - 20, 680);
-    const cell = Math.floor(Math.min(maxBoardH / E.VISIBLE_ROWS, (stageW * 0.42) / E.COLS));
+    // ---- B. TABLET (iPAD PORTRAIT & LANDSCAPE) & DESKTOP LAYOUT (>= 600px) ----
+    // Explicitly budget column widths so NOTHING EVER overflows or disappears on iPad Safari!
+    const outerPad = 14;
+    const colGap = stageW < 860 ? 12 : 18;
+    const topMargin = 14;
+    const bottomReserve = !isTouchDevice && state.boards.length >= 3 ? 40 : 12;
+    const usableW = stageW - outerPad * 2;
+    const usableH = Math.max(200, stageH - topMargin - bottomReserve);
+
+    const isFourCol = hasRivals && stageW >= 940;
+    const leftW = Math.round(Math.min(156, Math.max(106, usableW * 0.165)));
+    let nextColW = 0;
+    let rivalColW = 0;
+    let rightCombinedW = 0;
+
+    if (isFourCol) {
+      nextColW = Math.round(Math.min(138, Math.max(112, usableW * 0.13)));
+      rivalColW = Math.round(Math.min(340, Math.max(170, usableW * 0.28)));
+    } else if (hasRivals) {
+      // iPad Portrait (600px–939px) with Rivals: Right column holds NEXT 3 at top + Live Rival Board(s) below!
+      rightCombinedW = Math.round(Math.min(230, Math.max(156, usableW * 0.275)));
+    } else {
+      // Solo Tablet / Desktop: Balanced right column for NEXT 3
+      nextColW = Math.round(Math.min(156, Math.max(116, usableW * 0.17)));
+    }
+
+    const totalSideW = isFourCol
+      ? leftW + nextColW + rivalColW + colGap * 3
+      : hasRivals
+        ? leftW + rightCombinedW + colGap * 2
+        : leftW + nextColW + colGap * 2;
+
+    const maxHeroW = Math.max(160, usableW - totalSideW);
+    const cell = Math.max(10, Math.floor(Math.min(usableH / E.VISIBLE_ROWS, maxHeroW / E.COLS)));
     const gridW = cell * E.COLS;
     const gridH = cell * E.VISIBLE_ROWS;
 
-    // Shift main board slightly left when rivals are displayed on the right!
-    const centerShift = rivals.length > 0 ? -Math.min(110, stageW * 0.08) : 0;
-    const heroX = Math.round(stageW / 2 - gridW / 2 + centerShift);
-    const heroY = Math.round((stageH - bottomReserve - gridH) / 2);
+    // Center the whole composition cleanly inside usableW & usableH!
+    const totalGroupW = gridW + totalSideW;
+    const groupStartX = Math.round(outerPad + Math.max(0, (usableW - totalGroupW) / 2));
+    const leftX = groupStartX;
+    const heroX = leftX + leftW + colGap;
+    const heroY = Math.round(topMargin + (usableH - gridH) / 2);
 
+    // 1. HERO BOARD
     const heroInfo = R.drawBoard(gameCtx, myB, { x: heroX, y: heroY, w: gridW, h: gridH }, {
-      showFaces: true,
-      isLeader: state.boards.length >= 2 && myB.id === leaderId,
+      showFaces: cell >= 16,
+      isLeader: hasRivals && myB.id === leaderId,
     });
     state.boardCenters[myB.id] = { cx: heroInfo.cx, cy: heroInfo.cy };
+    centerCountdownOver(heroInfo.cx, heroInfo.cy);
 
-    // Center countdown bubble directly over the hero board!
-    if (state.mode === 'countdown') {
-      const rect = stageWrap.getBoundingClientRect();
-      countdownBubble.style.position = 'fixed';
-      countdownBubble.style.left = `${Math.round(rect.left + heroInfo.cx)}px`;
-      countdownBubble.style.top = `${Math.round(rect.top + heroInfo.cy)}px`;
-      countdownBubble.style.transform = 'translate(-50%, -50%)';
+    // 2. LEFT COLUMN: HOLD + STORYBOOK SCORE + SPARKY MASCOT (scales cleanly to gridH!)
+    const holdH = Math.min(96, Math.max(66, Math.floor(gridH * 0.18)));
+    const holdY = heroY + 10;
+    drawStoryCard(gameCtx, leftX, holdY, leftW, holdH, 'HOLD [C]', '#ec4899');
+    if (myB.hold) {
+      R.drawPiecePreview(gameCtx, myB.hold, leftX + 8, holdY + 14, leftW - 16, holdH - 20, state.time);
+    } else {
+      gameCtx.font = '700 12px Nunito, sans-serif';
+      gameCtx.fillStyle = '#94a3b8';
+      gameCtx.textAlign = 'center';
+      gameCtx.fillText('Empty', leftX + leftW / 2, holdY + holdH * 0.56);
     }
 
-    // LEFT PANEL: HOLD + SCOREBOARD + SPARKY MASCOT!
-    const leftW = Math.min(164, Math.max(126, heroX - 34));
-    const leftX = heroX - leftW - 22;
-    if (leftX >= 10) {
-      // HOLD Card
-      drawStoryCard(gameCtx, leftX, heroY + 6, leftW, 102, 'HOLD [C]', '#ec4899');
-      if (myB.hold) {
-        R.drawPiecePreview(gameCtx, myB.hold, leftX + 10, heroY + 22, leftW - 20, 76, state.time);
-      } else {
-        gameCtx.font = '700 12px Nunito, sans-serif';
-        gameCtx.fillStyle = '#94a3b8';
-        gameCtx.textAlign = 'center';
-        gameCtx.fillText('Empty', leftX + leftW / 2, heroY + 62);
-      }
+    const statsY = holdY + holdH + 18;
+    const statsH = Math.min(176, Math.max(124, Math.floor(gridH * 0.34)));
+    drawStoryCard(gameCtx, leftX, statsY, leftW, statsH, 'STORYBOOK', '#f59e0b');
+    const statRows = [
+      ['SCORE', Number(myB.score).toLocaleString(), '#1e1b2e'],
+      ['LEVEL', String(myB.level), '#0284c7'],
+      ['LINES', String(myB.lines), '#16a34a'],
+      ['COMBO', myB.combo >= 1 ? `${myB.combo + 1}x 🌈` : '—', '#ec4899'],
+    ];
+    const rowStep = (statsH - 26) / 4;
+    const valFont = statsH < 145 ? 14 : 17;
+    statRows.forEach(([lbl, val, col], ri) => {
+      const ry = statsY + 24 + ri * rowStep + rowStep * 0.45;
+      gameCtx.textAlign = 'left';
+      gameCtx.font = '800 10.5px Nunito, sans-serif';
+      gameCtx.fillStyle = '#64748b';
+      gameCtx.fillText(lbl, leftX + 10, ry);
+      gameCtx.textAlign = 'right';
+      gameCtx.font = `700 ${valFont}px Fredoka, sans-serif`;
+      gameCtx.fillStyle = col;
+      gameCtx.fillText(val, leftX + leftW - 10, ry + 1);
+    });
 
-      // SCORE / STATS Card
-      const statsY = heroY + 126;
-      drawStoryCard(gameCtx, leftX, statsY, leftW, 186, 'STORYBOOK', '#f59e0b');
-      const rows = [
-        ['SCORE', Number(myB.score).toLocaleString(), '#1e1b2e'],
-        ['LEVEL', String(myB.level), '#0284c7'],
-        ['LINES', String(myB.lines), '#16a34a'],
-        ['COMBO', myB.combo >= 1 ? `${myB.combo + 1}x 🌈` : '—', '#ec4899'],
-      ];
-      rows.forEach(([lbl, val, col], ri) => {
-        const ry = statsY + 34 + ri * 38;
-        gameCtx.textAlign = 'left';
-        gameCtx.font = '800 11px Nunito, sans-serif';
-        gameCtx.fillStyle = '#64748b';
-        gameCtx.fillText(lbl, leftX + 14, ry);
-        gameCtx.textAlign = 'right';
-        gameCtx.font = '700 18px Fredoka, sans-serif';
-        gameCtx.fillStyle = col;
-        gameCtx.fillText(val, leftX + leftW - 14, ry + 1);
-      });
-
-      // Sparky the Animated Disney Star Mascot!
-      const mascotY = Math.min(heroY + gridH - 42, statsY + 260);
-      if (mascotY - (statsY + 186) > 36) {
-        R.drawMascot(gameCtx, leftX + leftW / 2, mascotY, 32, state.mascot, state.time);
-      }
+    // Sparky Mascot below Storybook card if vertical room allows!
+    const mascotSpaceTop = statsY + statsH + 14;
+    const mascotSpaceH = (heroY + gridH) - mascotSpaceTop;
+    if (mascotSpaceH >= 74) {
+      const mRad = Math.min(30, Math.max(20, Math.floor(mascotSpaceH * 0.24)));
+      R.drawMascot(gameCtx, leftX + leftW / 2, mascotSpaceTop + mascotSpaceH * 0.62, mRad, state.mascot, state.time);
     }
 
-    // RIGHT PANEL: NEXT 3 QUEUE + LIVE RIVAL MINI-BOARDS!
-    const rightX = heroX + gridW + 22;
-    const nextW = Math.min(148, Math.max(114, stageW - rightX - 18));
-    if (rightX + nextW <= stageW - 6) {
-      drawStoryCard(gameCtx, rightX, heroY + 6, nextW, 224, 'NEXT UP', '#38bdf8');
+    // 3. RIGHT SIDE: ALWAYS-VISIBLE NEXT 3 UPCOMING PIECES + LIVE RIVAL PROGRESS BOARD(S)!
+    const rightX = heroX + gridW + colGap;
+    const targetPreview = hasRivals ? pickTargetBoard(myB.id) : null;
+
+    if (isFourCol) {
+      // 4-Column Layout (iPad Landscape & Desktop with Rivals):
+      // Column 3: NEXT UP (3 vertical pieces scaled cleanly to gridH!)
+      const nextH = Math.min(230, Math.max(168, Math.floor(gridH * 0.46)));
+      drawStoryCard(gameCtx, rightX, heroY + 10, nextColW, nextH, 'NEXT UP', '#38bdf8');
+      const itemH = (nextH - 22) / 3;
       for (let i = 0; i < 3; i++) {
         const qType = myB.queue[i];
         if (qType) {
-          R.drawPiecePreview(gameCtx, qType, rightX + 10, heroY + 24 + i * 66, nextW - 20, 62, state.time + i * 0.7);
+          R.drawPiecePreview(gameCtx, qType, rightX + 8, heroY + 24 + i * itemH, nextColW - 16, itemH - 2, state.time + i * 0.7);
         }
       }
-    }
 
-    // Live Rival Mini-Boards! (Positioned cleanly so the smiling golden sun shines above!)
-    if (rivals.length > 0) {
-      const rivalStartX = rightX + nextW + 20;
-      const availRivalW = stageW - rivalStartX - 18;
+      // Column 4: Live Rival Board(s) (positioned below the smiling golden sun when 1 rival!)
+      const rivalStartX = rightX + nextColW + colGap;
       const cols = rivals.length <= 2 ? 1 : 2;
       const rows = Math.ceil(rivals.length / cols);
+      const rGap = 16;
+      const topSkyClearance = rivals.length === 1 && gridH >= 480 ? Math.min(104, gridH * 0.17) : 34;
+      const maxAreaH = Math.max(140, gridH - topSkyClearance);
+      const rCellW = (rivalColW - rGap * (cols - 1)) / cols;
+      const rCellH = (maxAreaH - rGap * (rows - 1)) / rows;
 
-      if (availRivalW >= 120) {
-        const rGap = 18;
-        const topSkyClearance = rivals.length === 1 ? Math.min(118, gridH * 0.2) : 44;
-        const maxAreaH = gridH - topSkyClearance;
-        const cellW = (availRivalW - rGap * (cols - 1)) / cols;
-        const cellH = (maxAreaH - rGap * (rows - 1)) / rows;
-        const targetPreview = pickTargetBoard(myB.id);
-
-        rivals.forEach((rb, idx) => {
-          const c = idx % cols;
-          const r = Math.floor(idx / cols);
-          const rx = rivalStartX + c * (cellW + rGap);
-          const ry = heroY + topSkyClearance + r * (cellH + rGap);
-          const rInfo = R.drawBoard(gameCtx, rb, { x: rx, y: ry, w: cellW, h: cellH }, {
-            showNameHeader: true,
-            isLeader: rb.id === leaderId,
-            isTargeted: state.targetMode !== 'random' && targetPreview && targetPreview.id === rb.id,
-            showFaces: cellW >= 140,
-          });
-          state.boardCenters[rb.id] = { cx: rInfo.cx, cy: rInfo.cy };
+      rivals.forEach((rb, idx) => {
+        const c = idx % cols;
+        const r = Math.floor(idx / cols);
+        const rx = rivalStartX + c * (rCellW + rGap);
+        const ry = heroY + topSkyClearance + r * (rCellH + rGap);
+        const rInfo = R.drawBoard(gameCtx, rb, { x: rx, y: ry, w: rCellW, h: rCellH }, {
+          showNameHeader: true,
+          isLeader: rb.id === leaderId,
+          isTargeted: state.targetMode !== 'random' && targetPreview && targetPreview.id === rb.id,
+          showFaces: rCellW >= 140,
         });
-      } else {
-        // Put rival mini-boards cleanly stacked below NEXT UP card on medium screens
-        const miniTop = heroY + 250;
-        const availH = heroY + gridH - miniTop;
-        if (availH >= 110) {
-          const eachW = (nextW - 8) / Math.min(2, rivals.length);
-          rivals.slice(0, 2).forEach((rb, i) => {
-            const rInfo = R.drawBoard(gameCtx, rb, {
-              x: rightX + i * (eachW + 8),
-              y: miniTop + 26,
-              w: eachW,
-              h: availH - 28,
-            }, { showNameHeader: true, isLeader: rb.id === leaderId, showFaces: false });
-            state.boardCenters[rb.id] = { cx: rInfo.cx, cy: rInfo.cy };
-          });
+        state.boardCenters[rb.id] = { cx: rInfo.cx, cy: rInfo.cy };
+      });
+    } else if (hasRivals) {
+      // 3-Column Layout (iPad Portrait 600px–939px with Rivals!):
+      // Top of Right Column: Compact horizontal NEXT 3 card (all 3 upcoming pieces clearly visible!)
+      const nextH = Math.min(92, Math.max(74, Math.floor(gridH * 0.16)));
+      const nextY = heroY + 10;
+      drawStoryCard(gameCtx, rightX, nextY, rightCombinedW, nextH, 'NEXT UP', '#38bdf8');
+      const slotW = (rightCombinedW - 12) / 3;
+      for (let i = 0; i < 3; i++) {
+        const qType = myB.queue[i];
+        if (qType) {
+          R.drawPiecePreview(gameCtx, qType, rightX + 6 + i * slotW, nextY + 18, slotW, nextH - 24, state.time + i * 0.7);
+        }
+      }
+
+      // Bottom of Right Column: Full Live Animated Rival Board(s) (Your girlfriend sees YOUR live board!)
+      const rivalTop = nextY + nextH + 42; // leaves clean room for rival nameplate!
+      const rivalAreaH = Math.max(130, (heroY + gridH) - rivalTop);
+      const cols = rivals.length >= 3 ? 2 : 1;
+      const rows = Math.ceil(rivals.length / cols);
+      const rGap = 14;
+      const rCellW = (rightCombinedW - rGap * (cols - 1)) / cols;
+      const rCellH = (rivalAreaH - rGap * (rows - 1)) / rows;
+
+      rivals.forEach((rb, idx) => {
+        const c = idx % cols;
+        const r = Math.floor(idx / cols);
+        const rx = rightX + c * (rCellW + rGap);
+        const ry = rivalTop + r * (rCellH + rGap);
+        const rInfo = R.drawBoard(gameCtx, rb, { x: rx, y: ry, w: rCellW, h: rCellH }, {
+          showNameHeader: true,
+          isLeader: rb.id === leaderId,
+          isTargeted: state.targetMode !== 'random' && targetPreview && targetPreview.id === rb.id,
+          showFaces: rCellW >= 150,
+        });
+        state.boardCenters[rb.id] = { cx: rInfo.cx, cy: rInfo.cy };
+      });
+    } else {
+      // Solo Tablet / Desktop: Clean NEXT UP (3 pieces) on the right
+      const nextH = Math.min(230, Math.max(168, Math.floor(gridH * 0.48)));
+      drawStoryCard(gameCtx, rightX, heroY + 10, nextColW, nextH, 'NEXT UP', '#38bdf8');
+      const itemH = (nextH - 22) / 3;
+      for (let i = 0; i < 3; i++) {
+        const qType = myB.queue[i];
+        if (qType) {
+          R.drawPiecePreview(gameCtx, qType, rightX + 8, heroY + 24 + i * itemH, nextColW - 16, itemH - 2, state.time + i * 0.7);
         }
       }
     }
@@ -1694,6 +1813,15 @@
     hudRoomCode.textContent = room.roomCode;
     renderTitleRoster(room.getOrderedPlayers());
     syncShellViews();
+    if (!room.isHost) {
+      // Request active match state in case Host launched right before our browser finished loading!
+      const pingSync = () => {
+        if (state.mode === 'title') room.sendSignal({ type: 'SYNC_REQ' });
+      };
+      setTimeout(pingSync, 500);
+      setTimeout(pingSync, 1600);
+      setTimeout(pingSync, 3200);
+    }
     if (!autostartParam) {
       clearBootSplash();
     } else if (!room.isHost) {
