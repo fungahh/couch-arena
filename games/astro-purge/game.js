@@ -34,6 +34,7 @@
 
   // ---- DOM Elements ----
   const hudEl = document.getElementById('hud');
+  const hudWave = document.getElementById('hud-wave');
   const hudLevel = document.getElementById('hud-level');
   const hudScore = document.getElementById('hud-score');
   const hudXpFill = document.getElementById('hud-xp-fill');
@@ -85,6 +86,9 @@
   const bossWarningEl = document.getElementById('boss-warning');
   const bossWarningTitle = document.getElementById('boss-warning-title');
   const bossWarningSub = document.getElementById('boss-warning-sub');
+  const waveBannerEl = document.getElementById('wave-banner');
+  const waveBannerTitle = document.getElementById('wave-banner-title');
+  const waveBannerSub = document.getElementById('wave-banner-sub');
 
   const titleOverlay = document.getElementById('title-overlay');
   const upgradeOverlay = document.getElementById('upgrade-overlay');
@@ -180,6 +184,15 @@
     missile() { this.tone(320, 680, 0.11, 'sine', 0.055); this.noise(0.08, 0.035, 1400); },
     zap() { this.tone(940, 420, 0.085, 'square', 0.055); },
     slice() { this.tone(1180, 520, 0.09, 'triangle', 0.07); this.noise(0.05, 0.04, 2400); },
+    shield() { this.tone(880, 1480, 0.11, 'sine', 0.08); this.tone(1320, 1760, 0.08, 'triangle', 0.05); },
+    wave() {
+      this.tone(392, 523.25, 0.12, 'triangle', 0.085);
+      setTimeout(() => this.tone(523.25, 659.25, 0.18, 'triangle', 0.09), 90);
+    },
+    bossBoom() {
+      this.noise(0.22, 0.11, 750);
+      this.tone(150, 42, 0.22, 'sawtooth', 0.1);
+    },
     nova() { this.tone(260, 52, 0.34, 'sine', 0.13); this.noise(0.24, 0.08, 700); },
     hit() { this.tone(210, 80, 0.045, 'square', 0.04); },
     pop() { this.tone(240, 58, 0.14, 'sawtooth', 0.075); this.noise(0.11, 0.065, 950); },
@@ -626,14 +639,19 @@
     score: 0,
     kills: 0,
     bossesDefeated: 0,
+    wave: 1,
+    waveKills: 0,
+    waveTarget: 12,
     level: 1,
     xp: 0,
-    xpNeeded: 75,
+    xpNeeded: 140,
     shake: 0,
+    hurtVignette: 0,
     spawnTimer: 0,
     bossActive: false,
     bossWarningTimer: 0,
-    pendingBossLevel: null,
+    bossRewardDelay: 0,
+    pendingBossWave: null,
     pendingDrafts: [],
     // Personal draft tracking
     activeDraftMap: {}, // playerId -> { choices: [Upgrade], picked: bool, isBoss: bool }
@@ -680,6 +698,9 @@
       thrustPower: 0,
       puffTimer: 0,
       muzzleFlash: 0,
+      fireKick: 0,
+      hurtRecoil: 0,
+      shieldFlash: 0,
       radius: 19,
       hp: 100,
       maxHp: 100,
@@ -881,8 +902,10 @@
       SFX.levelUp();
     } else if (msg.type === 'SNAP') {
       applySnapshot(msg.s);
+    } else if (msg.type === 'WAVE_BANNER') {
+      showWaveBanner(msg.title, msg.sub);
     } else if (msg.type === 'BOSS_WARN') {
-      bossWarningTitle.textContent = '⚠ BIO-HAZARD BOSS DETECTED';
+      bossWarningTitle.textContent = '⚠ GIANT SPACE VIRUS BOSS!';
       bossWarningSub.textContent = msg.sub;
       bossWarningEl.classList.remove('hidden');
       SFX.bossWarn();
@@ -903,6 +926,7 @@
       draftSub.textContent = msg.sub;
       draftWaitingEl.classList.add('hidden');
       renderDraftCards(msg.myUpgrades || defaultUpgrades());
+      upgradeOverlay.scrollTop = 0;
       upgradeOverlay.classList.remove('hidden');
       SFX.levelUp();
     } else if (msg.type === 'DRAFT_STATUS') {
@@ -921,6 +945,7 @@
       state.mode = msg.paused ? 'paused' : 'playing';
       pauseOverlay.classList.toggle('hidden', !msg.paused);
     } else if (msg.type === 'GAME_OVER') {
+      state.wave = msg.wave || state.wave;
       state.level = msg.level;
       state.score = msg.score;
       state.bossesDefeated = msg.bosses;
@@ -936,13 +961,16 @@
     const ny = (v) => Math.round((v / H) * 1000) / 1000;
     const boss = state.enemies.find((e) => e.isBoss);
     return {
+      wv: state.wave,
+      wk: state.waveKills,
+      wt: state.waveTarget,
       lv: state.level,
       sc: state.score,
       kl: state.kills,
       xp: Math.round(state.xp),
       xn: state.xpNeeded,
       ba: state.bossActive ? 1 : 0,
-      b: boss ? { n: boss.name, h: Math.ceil(boss.hp), m: boss.maxHp, ph: boss.phase || 1 } : null,
+      b: boss && !boss.dying ? { n: boss.name, h: Math.ceil(boss.hp), m: boss.maxHp, ph: boss.phase || 1 } : null,
       p: state.players.map((p) => [
         p.id,
         p.slot,
@@ -964,6 +992,8 @@
         p.dashTimer > 0 ? 1 : 0,
         Math.round(p.vx || 0),
         Math.round(p.vy || 0),
+        p.hurtRecoil > 0 ? 1 : 0,
+        p.shieldFlash > 0 ? 1 : 0,
       ]),
       e: state.enemies.slice(0, 44).map((e) => [
         e.type,
@@ -975,10 +1005,11 @@
         e.hitFlash > 0 ? 1 : 0,
         e.chillTimer > 0 ? 1 : 0,
         e.phase || 1,
+        e.dying ? 1 : 0,
       ]),
       bl: state.bullets.slice(0, 65).map((b) => [nx(b.x), ny(b.y), Math.round(b.radius), b.color, b.kind === 'missile' ? 1 : 0]),
       eb: state.enemyBullets.slice(0, 60).map((b) => [nx(b.x), ny(b.y), Math.round(b.radius), b.color]),
-      pk: state.pickups.slice(0, 45).map((pk) => [pk.kind === 'xp' ? 0 : 1, nx(pk.x), ny(pk.y), pk.pulling ? 1 : 0]),
+      pk: state.pickups.slice(0, 60).map((pk) => [pk.kind === 'xp' ? 0 : 1, nx(pk.x), ny(pk.y), pk.pulling ? 1 : 0, pk.tier || 1]),
     };
   }
 
@@ -986,19 +1017,26 @@
     if (!s) return;
     if (s.xp > state.xp) SFX.xp();
     if (s.kl > state.kills) SFX.pop();
-    const prevHpSum = state.players.reduce((acc, p) => acc + (p.hp || 0), 0);
-    const nextHpSum = (s.p || []).reduce((acc, arr) => acc + (arr[5] || 0), 0);
-    if (prevHpSum > 0 && nextHpSum < prevHpSum) SFX.hurt();
 
+    const prevMap = {};
+    state.players.forEach((pl) => { prevMap[pl.id] = pl; });
+    const prevMe = prevMap[room.myId];
+    const nextMeArr = (s.p || []).find((arr) => arr[0] === room.myId);
+    if (prevMe && nextMeArr && nextMeArr[5] < prevMe.hp) {
+      SFX.hurt();
+      state.hurtVignette = 0.48;
+      state.shake = Math.max(state.shake, 9);
+    }
+
+    state.wave = s.wv || 1;
+    state.waveKills = s.wk || 0;
+    state.waveTarget = s.wt || 12;
     state.level = s.lv;
     state.score = s.sc;
     state.kills = s.kl;
     state.xp = s.xp;
     state.xpNeeded = s.xn;
     state.bossActive = Boolean(s.ba);
-
-    const prevMap = {};
-    state.players.forEach((pl) => { prevMap[pl.id] = pl; });
 
     state.players = s.p.map((arr) => {
       const pal = PLAYER_COLORS[arr[1] % PLAYER_COLORS.length];
@@ -1026,9 +1064,12 @@
         dashTimer: arr[17] ? 0.15 : 0,
         vx: arr[18] || 0,
         vy: arr[19] || 0,
+        hurtRecoil: arr[20] ? 0.25 : 0,
+        shieldFlash: arr[21] ? 0.3 : 0,
         puffTimer: prev ? prev.puffTimer || 0 : 0,
         muzzleFlash: 0,
-        invuln: 0,
+        fireKick: 0,
+        invuln: arr[20] ? 0.2 : 0,
         droneAngle: arr[11],
       };
     });
@@ -1045,6 +1086,7 @@
       hitFlash: arr[6] ? 0.08 : 0,
       chillTimer: arr[7] ? 1 : 0,
       phase: arr[8] || 1,
+      dying: Boolean(arr[9]),
       shape: arr[0].startsWith('asteroid') ? getCachedRockShape(arr[3]) : null,
     }));
 
@@ -1068,12 +1110,13 @@
       x: arr[1] * W,
       y: arr[2] * H,
       pulling: Boolean(arr[3]),
+      tier: arr[4] || 1,
       vx: 0,
       vy: 0,
     }));
 
     if (s.b) {
-      bossNameEl.textContent = `LV ${state.level} · ${s.b.n}${s.b.ph >= 2 ? ' [ENRAGED]' : ''}`;
+      bossNameEl.textContent = `WAVE ${state.wave} · ${s.b.n}${s.b.ph >= 2 ? ' [ENRAGED]' : ''}`;
       bossBarWrap.classList.remove('hidden');
       const pct = clamp((s.b.h / s.b.m) * 100, 0, 100);
       bossHpFill.style.width = pct.toFixed(1) + '%';
@@ -1146,6 +1189,38 @@
     state.floatTexts.push({ x, y, vy: -42, text, color, life: 0.85, maxLife: 0.85 });
   }
 
+  let waveBannerTimer = null;
+
+  function waveQuotaFor(wv) {
+    // Distinct Wave progression: steadily growing quota per wave
+    return Math.round(10 + wv * 3.2);
+  }
+
+  function waveSubtitleFor(wv) {
+    if (wv === 1) return 'Clear space viruses to advance waves! Boss arrives at Wave 10.';
+    if (wv % 10 === 9) return 'Final wave before the Giant Space Virus Boss!';
+    if (wv === 2) return 'Mitosis Splitters spotted — Emerald XP Gems drop!';
+    if (wv === 3) return 'Spore Turrets incoming — watch for red hazard globs!';
+    if (wv === 5) return 'Armored Capsid Elites — big Golden XP Gems!';
+    return `Eliminate ${waveQuotaFor(wv)} space viruses to clear Wave ${wv}!`;
+  }
+
+  function showWaveBanner(title, sub) {
+    if (!waveBannerEl) return;
+    waveBannerTitle.textContent = title;
+    waveBannerSub.textContent = sub || '';
+    waveBannerEl.classList.remove('hidden');
+    // Re-trigger cartoon bounce animation
+    waveBannerEl.style.animation = 'none';
+    void waveBannerEl.offsetWidth;
+    waveBannerEl.style.animation = '';
+    SFX.wave();
+    if (waveBannerTimer) clearTimeout(waveBannerTimer);
+    waveBannerTimer = setTimeout(() => {
+      waveBannerEl.classList.add('hidden');
+    }, 2400);
+  }
+
   // ---- Start / Reset (Host Authoritative) ----
   function startGame() {
     if (!room.isHost) return;
@@ -1158,14 +1233,19 @@
     state.score = 0;
     state.kills = 0;
     state.bossesDefeated = 0;
+    state.wave = 1;
+    state.waveKills = 0;
+    state.waveTarget = waveQuotaFor(1);
     state.level = 1;
     state.xp = 0;
-    state.xpNeeded = 75;
+    state.xpNeeded = 140;
     state.shake = 0;
+    state.hurtVignette = 0;
     state.spawnTimer = 0.4;
     state.bossActive = false;
     state.bossWarningTimer = 0;
-    state.pendingBossLevel = null;
+    state.pendingBossWave = null;
+    state.bossRewardDelay = 0;
     state.pendingDrafts = [];
     state.activeDraftMap = {};
     state.localDraftQueue = [];
@@ -1189,12 +1269,17 @@
     gameoverOverlay.classList.add('hidden');
     bossWarningEl.classList.add('hidden');
     bossBarWrap.classList.add('hidden');
+    if (waveBannerEl) waveBannerEl.classList.add('hidden');
     hudEl.classList.remove('hidden');
 
-    for (let i = 0; i < 5; i++) spawnEnemy('asteroid_lg');
+    for (let i = 0; i < 4; i++) spawnEnemy('asteroid_lg');
     for (let i = 0; i < 4; i++) spawnEnemy('corona');
 
     room.sendSignal({ type: 'GAME_START' });
+    const wTitle = 'WAVE 1';
+    const wSub = waveSubtitleFor(1);
+    showWaveBanner(wTitle, wSub);
+    room.sendSignal({ type: 'WAVE_BANNER', title: wTitle, sub: wSub });
     SFX.levelUp();
     renderHud();
   }
@@ -1208,6 +1293,7 @@
     gameoverOverlay.classList.add('hidden');
     bossBarWrap.classList.add('hidden');
     bossWarningEl.classList.add('hidden');
+    if (waveBannerEl) waveBannerEl.classList.add('hidden');
     titleOverlay.classList.remove('hidden');
   }
 
@@ -1232,10 +1318,10 @@
 
   function spawnEnemy(type, customPos = null) {
     const pos = customPos || edgeSpawnPos();
-    const lv = state.level;
+    const wv = state.wave;
     const coopHp = 1 + Math.max(0, state.players.length - 1) * 0.45;
-    const hpScale = (1 + (lv - 1) * 0.34 + Math.pow(lv - 1, 1.25) * 0.05) * coopHp;
-    const speedScale = 1 + Math.min(1.25, (lv - 1) * 0.045);
+    const hpScale = (1 + (wv - 1) * 0.3 + Math.pow(wv - 1, 1.2) * 0.05) * coopHp;
+    const speedScale = 1 + Math.min(1.25, (wv - 1) * 0.045);
     const angleToCenter = Math.atan2(H * 0.5 - pos.y, W * 0.5 - pos.x) + rand(-0.45, 0.45);
 
     if (type === 'asteroid_lg' || type === 'asteroid_md' || type === 'asteroid_sm') {
@@ -1252,7 +1338,8 @@
         rot: rand(0, Math.PI * 2),
         rotSpeed: rand(-1.3, 1.3),
         shape: makeAsteroidShape(r),
-        xp: type === 'asteroid_lg' ? 14 : type === 'asteroid_md' ? 9 : 6,
+        xp: type === 'asteroid_lg' ? 26 : type === 'asteroid_md' ? 14 : 9,
+        xpTier: type === 'asteroid_lg' ? 2 : 1,
         score: type === 'asteroid_lg' ? 40 : type === 'asteroid_md' ? 25 : 15,
         damage: type === 'asteroid_lg' ? 22 : 16,
         color: '#64748b',
@@ -1264,11 +1351,11 @@
     }
 
     const defs = {
-      corona: { r: 18, hp: 36, sp: 88, rotSp: 1.1, xp: 12, sc: 35, dmg: 18, col: '#e11d48' },
-      mitosis: { r: 22, hp: 54, sp: 70, rotSp: 0.9, xp: 16, sc: 50, dmg: 20, col: '#84cc16' },
-      microbe: { r: 12, hp: 18, sp: 148, rotSp: 2.5, xp: 7, sc: 20, dmg: 14, col: '#a3e635' },
-      shooter: { r: 20, hp: 48, sp: 76, rotSp: -1.4, xp: 18, sc: 65, dmg: 18, col: '#ea580c' },
-      capsid: { r: 29, hp: 135, sp: 56, rotSp: 0.5, xp: 28, sc: 110, dmg: 26, col: '#9333ea' },
+      corona:  { r: 18, hp: 36,  sp: 88,  rotSp: 1.1,  xp: 14, tier: 1, sc: 35,  dmg: 18, col: '#e11d48' },
+      microbe: { r: 12, hp: 18,  sp: 148, rotSp: 2.5,  xp: 10, tier: 1, sc: 20,  dmg: 14, col: '#a3e635' },
+      mitosis: { r: 22, hp: 56,  sp: 70,  rotSp: 0.9,  xp: 30, tier: 2, sc: 55,  dmg: 20, col: '#84cc16' },
+      shooter: { r: 20, hp: 50,  sp: 76,  rotSp: -1.4, xp: 34, tier: 2, sc: 65,  dmg: 18, col: '#ea580c' },
+      capsid:  { r: 29, hp: 145, sp: 56,  rotSp: 0.5,  xp: 78, tier: 3, sc: 125, dmg: 26, col: '#9333ea' },
     };
     const d = defs[type];
     if (!d) return;
@@ -1282,6 +1369,7 @@
       rot: rand(0, Math.PI * 2),
       rotSpeed: d.rotSp,
       xp: d.xp,
+      xpTier: d.tier,
       score: d.sc,
       damage: d.dmg,
       color: d.col,
@@ -1291,27 +1379,46 @@
   }
 
   function pickWaveEnemyType() {
-    const lv = state.level;
+    const wv = state.wave;
     const r = Math.random();
-    if (lv >= 6 && r < 0.16) return 'capsid';
-    if (lv >= 3 && r < 0.36) return 'shooter';
-    if (lv >= 2 && r < 0.54) return 'mitosis';
-    if (lv >= 4 && r < 0.68) return 'microbe';
+    if (wv >= 5 && r < 0.16) return 'capsid';
+    if (wv >= 3 && r < 0.36) return 'shooter';
+    if (wv >= 2 && r < 0.56) return 'mitosis';
+    if (wv >= 4 && r < 0.70) return 'microbe';
     if (r < 0.84) return 'corona';
     return 'asteroid_lg';
   }
 
-  // ---- TOUGH MULTI-PHASE BOSSES (Every 10 Levels!) ----
-  function triggerBossSequence(bossLevel) {
+  function advanceWave() {
+    state.wave += 1;
+    state.waveKills = 0;
+    state.waveTarget = waveQuotaFor(state.wave);
+
+    if (state.wave % 10 === 0) {
+      triggerBossSequence(state.wave);
+    } else {
+      const title = `WAVE ${state.wave}`;
+      const sub = waveSubtitleFor(state.wave);
+      showWaveBanner(title, sub);
+      room.sendSignal({ type: 'WAVE_BANNER', title, sub });
+      // Spawn a fresh wave burst immediately so the wave transition feels clear!
+      const burst = Math.min(5, 2 + Math.floor(state.wave / 3));
+      for (let i = 0; i < burst; i++) spawnEnemy(pickWaveEnemyType());
+    }
+    renderHud();
+  }
+
+  // ---- TOUGH MULTI-PHASE BOSSES (Every 10 Waves!) ----
+  function triggerBossSequence(bossWave) {
     state.bossActive = true;
-    state.pendingBossLevel = bossLevel;
+    state.pendingBossWave = bossWave;
     state.bossWarningTimer = 2.6;
 
-    const tier = Math.floor(bossLevel / 10);
+    const tier = Math.floor(bossWave / 10);
     const variant = (tier - 1) % 3;
     const names = ['BARON CORONA-CHOMP', 'HYDRA SLIME-QUEEN', 'KING PANDEMIC-REX'];
     const name = tier > 3 ? `${names[variant]} MK-${tier}` : names[variant];
-    const sub = `LEVEL ${bossLevel} — ${name} INCOMING!`;
+    const sub = `WAVE ${bossWave} BOSS — ${name} INCOMING!`;
 
     bossWarningTitle.textContent = '⚠ GIANT SPACE VIRUS BOSS!';
     bossWarningSub.textContent = sub;
@@ -1321,20 +1428,22 @@
     renderHud();
   }
 
-  function spawnBoss(bossLevel) {
-    const tier = Math.floor(bossLevel / 10);
+  function spawnBoss(bossWave) {
+    const tier = Math.floor(bossWave / 10);
     const variant = (tier - 1) % 3;
     const names = ['BARON CORONA-CHOMP', 'HYDRA SLIME-QUEEN', 'KING PANDEMIC-REX'];
     const name = tier > 3 ? `${names[variant]} MK-${tier}` : names[variant];
     const coopScale = 1 + Math.max(0, state.players.length - 1) * 0.65;
-    // Much tankier so bosses are real epic multi-phase fights!
-    const maxHp = Math.round((4200 + (tier - 1) * 3800) * coopScale);
+    const maxHp = Math.round((4400 + (tier - 1) * 3900) * coopScale);
 
     const boss = {
       type: 'boss',
       isBoss: true,
       variant, tier, name,
       phase: 1,
+      dying: false,
+      dyingTimer: 0,
+      boomTick: 0,
       x: W * 0.5, y: -100, vx: 0, vy: 0,
       radius: 62,
       hp: maxHp, maxHp,
@@ -1348,47 +1457,39 @@
     };
 
     state.enemies.push(boss);
-    bossNameEl.textContent = `LV ${bossLevel} · ${name}`;
+    bossNameEl.textContent = `WAVE ${bossWave} · ${name}`;
     bossBarWrap.classList.remove('hidden');
     updateBossBar(boss);
   }
 
   function updateBossBar(boss) {
-    if (!boss || boss.hp <= 0) {
+    if (!boss || boss.hp <= 0 || boss.dying) {
       bossBarWrap.classList.add('hidden');
       return;
     }
     const pct = clamp((boss.hp / boss.maxHp) * 100, 0, 100);
     bossHpFill.style.width = pct.toFixed(1) + '%';
     bossHpText.textContent = `${Math.ceil(boss.hp)} / ${boss.maxHp}`;
-    bossNameEl.textContent = `LV ${state.level} · ${boss.name}${boss.phase >= 2 ? ' [ENRAGED!]' : ''}`;
+    bossNameEl.textContent = `WAVE ${state.wave} · ${boss.name}${boss.phase >= 2 ? ' [ENRAGED!]' : ''}`;
   }
 
-  // ---- Shared Team XP -> PERSONAL Upgrade Drafts! ----
+  // ---- Harder Team Leveling -> PERSONAL Upgrade Drafts (Separate from Waves!) ----
   function addTeamXp(amount) {
     const maxMag = Math.max(0, ...state.players.map((p) => p.upgrades.magnet_core || 0));
     const mult = 1 + maxMag * 0.15;
     state.xp += amount * mult;
 
-    if (state.bossActive) {
-      state.xp = Math.min(state.xp, state.xpNeeded - 1);
-      return;
-    }
-
     while (state.xp >= state.xpNeeded) {
       state.xp -= state.xpNeeded;
       state.level += 1;
-      state.xpNeeded = Math.round(75 + state.level * 30 + Math.pow(state.level, 1.4) * 7);
+      // Steeper, more rewarding XP curve so gaining levels feels earned
+      state.xpNeeded = Math.round(140 + state.level * 85 + Math.pow(state.level, 1.65) * 20);
       SFX.levelUp();
-
       state.pendingDrafts.push({ isBossReward: false, level: state.level });
-      if (state.level % 10 === 0) {
-        triggerBossSequence(state.level);
-        break;
-      }
     }
 
-    if (state.pendingDrafts.length > 0 && state.mode === 'playing') {
+    // Don't interrupt the Boss XP fountain until it finishes sucking into players
+    if (state.pendingDrafts.length > 0 && state.mode === 'playing' && state.bossRewardDelay <= 0) {
       openNextPersonalDraft();
     }
   }
@@ -1411,10 +1512,14 @@
     state.activeDraftMap = {};
     state.localDraftQueue = [];
 
-    const eyebrow = req.isBossReward ? 'Boss Defeated · Personal Supply Drop!' : `Team Level ${req.level}!`;
-    const title = req.isBossReward ? 'Pick Your Boss UFO Evolution' : 'Upgrade Your Personal UFO';
+    const eyebrow = req.isBossReward
+      ? `Boss Defeated · Extra Bonus (${req.bonusIndex || 1}/${req.bonusTotal || 2})!`
+      : `Team Level ${req.level}!`;
+    const title = req.isBossReward
+      ? `Boss Bonus Upgrade ${req.bonusIndex || 1} of ${req.bonusTotal || 2}`
+      : 'Upgrade Your Personal UFO';
     const sub = req.isBossReward
-      ? 'Full Hull Repair! Pick a personal weapon upgrade to bolt onto your saucer.'
+      ? 'Boss Victory grants 2 Personal Bonus Upgrades + Full Hull Repair!'
       : 'Every pilot chooses their own personal UFO upgrade!';
 
     for (const p of state.players) {
@@ -1440,6 +1545,7 @@
       }
     }
 
+    upgradeOverlay.scrollTop = 0;
     showNextLocalDraft(eyebrow, title, sub);
     checkAllDraftsPicked();
   }
@@ -1598,6 +1704,7 @@
     let best = null;
     let bestD = maxRange;
     for (const e of state.enemies) {
+      if (e.dying) continue;
       const d = dist(x, y, e.x, e.y);
       if (d < bestD) { bestD = d; best = e; }
     }
@@ -1627,7 +1734,8 @@
         life: 1.05,
       });
     }
-    p.muzzleFlash = 0.08;
+    p.muzzleFlash = 0.09;
+    p.fireKick = 0.085;
     SFX.shoot();
   }
 
@@ -1642,12 +1750,15 @@
     const baseDmg = 34 + lv * 16;
 
     state.beams.push({ x1: p.x, y1: p.y, x2, y2, width, color: '#38bdf8', life: 0.22, maxLife: 0.22 });
+    p.fireKick = 0.12;
+    p.muzzleFlash = 0.12;
 
     const dx = x2 - p.x;
     const dy = y2 - p.y;
     const lenSq = dx * dx + dy * dy;
     for (let i = state.enemies.length - 1; i >= 0; i--) {
       const e = state.enemies[i];
+      if (e.dying) continue;
       const t = clamp(((e.x - p.x) * dx + (e.y - p.y) * dy) / lenSq, 0, 1);
       if (dist(p.x + t * dx, p.y + t * dy, e.x, e.y) <= e.radius + width * 0.6) {
         damageEnemy(e, baseDmg, '#38bdf8', p);
@@ -1674,6 +1785,7 @@
         life: 3.0,
       });
     }
+    p.fireKick = 0.09;
     SFX.missile();
   }
 
@@ -1688,7 +1800,7 @@
       let best = null;
       let bestD = j === 0 ? 310 : 210;
       for (const e of state.enemies) {
-        if (hitSet.has(e) || e.hp <= 0) continue;
+        if (hitSet.has(e) || e.hp <= 0 || e.dying) continue;
         const d = dist(curX, curY, e.x, e.y);
         if (d < bestD) { bestD = d; best = e; }
       }
@@ -1711,15 +1823,24 @@
     const baseDmg = 26 + lv * 14;
     state.novas.push({ x: p.x, y: p.y, r: 18, maxR, color: p.glow, life: 0.36, maxLife: 0.36 });
 
+    let blockedCount = 0;
     for (let i = state.enemyBullets.length - 1; i >= 0; i--) {
       const b = state.enemyBullets[i];
       if (dist(p.x, p.y, b.x, b.y) <= maxR) {
-        spawnParticles(b.x, b.y, '#fb7185', 4, 90, 2.5);
+        spawnParticles(b.x, b.y, '#38bdf8', 5, 110, 3, 'star');
         state.enemyBullets.splice(i, 1);
+        blockedCount++;
       }
+    }
+    if (blockedCount > 0) {
+      p.shieldFlash = 0.36;
+      state.novas.push({ x: p.x, y: p.y, r: 24, maxR: 54, color: '#7dd3fc', life: 0.25, maxLife: 0.25 });
+      spawnFloatText(p.x, p.y - 38, blockedCount > 1 ? `SHIELDED x${blockedCount}!` : 'SHIELDED!', '#7dd3fc');
+      SFX.shield();
     }
     for (let i = state.enemies.length - 1; i >= 0; i--) {
       const e = state.enemies[i];
+      if (e.dying) continue;
       const d = dist(p.x, p.y, e.x, e.y);
       if (d <= maxR + e.radius) {
         damageEnemy(e, baseDmg, p.glow, p);
@@ -1732,9 +1853,9 @@
     SFX.nova();
   }
 
-  // ---- Enemy Damage & Death (With Damage Meter Tracking & Boss Armor Cap) ----
-  function damageEnemy(e, baseDmg, color = '#f8fafc', sourcePlayer = null) {
-    if (e.hp <= 0) return;
+  // ---- Enemy Damage & Death (With Hit-Confirm Animations, Boss Finale & Tiered XP!) ----
+  function damageEnemy(e, baseDmg, color = '#f8fafc', sourcePlayer = null, hitX = null, hitY = null) {
+    if (e.hp <= 0 || e.dying) return;
     let { dmg, isCrit } = rollPlayerDamage(sourcePlayer, baseDmg);
 
     // Boss burst-armor cap so bosses are real battles and never insta-melt
@@ -1745,8 +1866,29 @@
 
     const dealt = Math.min(e.hp, dmg);
     e.hp -= dmg;
-    e.hitFlash = 0.09;
-    e.hitBounce = 0.2;
+    e.hitFlash = 0.11;
+    e.hitBounce = 0.24;
+
+    // Expressive hit-confirm animation where the attack lands!
+    const ix = hitX !== null ? hitX : e.x + rand(-e.radius * 0.35, e.radius * 0.35);
+    const iy = hitY !== null ? hitY : e.y + rand(-e.radius * 0.35, e.radius * 0.35);
+    state.novas.push({
+      x: ix,
+      y: iy,
+      r: 3,
+      maxR: isCrit ? 30 : e.isBoss ? 24 : 18,
+      color: isCrit ? '#fde047' : color,
+      life: 0.14,
+      maxLife: 0.14,
+    });
+    spawnParticles(ix, iy, isCrit ? '#fde047' : color, isCrit ? 6 : 3, isCrit ? 190 : 135, isCrit ? 3.8 : 2.6, 'star');
+
+    // Subtle cartoon knockback nudge so enemies visibly react when hit
+    if (sourcePlayer && !e.isBoss && !e.type.startsWith('asteroid')) {
+      const d = dist(sourcePlayer.x, sourcePlayer.y, e.x, e.y) || 1;
+      e.vx += ((e.x - sourcePlayer.x) / d) * 32;
+      e.vy += ((e.y - sourcePlayer.y) / d) * 32;
+    }
 
     if (sourcePlayer) {
       sourcePlayer.damage += dealt;
@@ -1770,11 +1912,92 @@
       spawnFloatText(e.x + rand(-10, 10), e.y - e.radius * 0.6, isCrit ? `POW! ${dmg}!` : `${dmg}`, isCrit ? '#fde047' : color);
     }
     if (e.isBoss) updateBossBar(e);
-    if (e.hp <= 0) killEnemy(e);
-    else SFX.hit();
+
+    if (e.hp <= 0) {
+      if (e.isBoss) {
+        // Trigger satisfying multi-explosion cartoon Boss Death Sequence!
+        e.hp = 0;
+        e.dying = true;
+        e.dyingTimer = 2.15;
+        e.boomTick = 0;
+        state.enemyBullets = [];
+        state.shake = 16;
+        bossBarWrap.classList.add('hidden');
+        spawnCartoonBurst(e.x, e.y, '#fde047', true);
+        spawnFloatText(e.x, e.y - 72, `${e.name} DEFEATED!!`, '#fde047');
+        SFX.bossBoom();
+      } else {
+        killEnemy(e);
+      }
+    } else {
+      SFX.hit();
+    }
   }
 
   const COMIC_WORDS = ['POP!', 'ZAP!', 'BAM!', 'POW!', 'BOING!', 'SPLAT!'];
+
+  function finishBossDeath(e) {
+    const idx = state.enemies.indexOf(e);
+    if (idx !== -1) state.enemies.splice(idx, 1);
+
+    state.kills += 1;
+    state.score += e.score;
+    state.bossActive = false;
+    state.bossesDefeated += 1;
+    state.shake = 26;
+    state.enemyBullets = [];
+    bossBarWrap.classList.add('hidden');
+
+    // Grand finale explosion + golden shockwaves!
+    spawnCartoonBurst(e.x, e.y, e.color, true);
+    spawnCartoonBurst(e.x + rand(-35, 35), e.y + rand(-35, 35), '#fde047', true);
+    spawnCartoonBurst(e.x + rand(-35, 35), e.y + rand(-35, 35), '#f472b6', true);
+    state.novas.push({ x: e.x, y: e.y, r: 22, maxR: 280, color: '#fde047', life: 0.65, maxLife: 0.65 });
+    state.novas.push({ x: e.x, y: e.y, r: 10, maxR: 210, color: '#f472b6', life: 0.52, maxLife: 0.52 });
+    spawnFloatText(e.x, e.y - 24, 'KABOOM!! +2 BONUS UPGRADES!', '#fde047');
+    SFX.bossDead();
+
+    // Erupt a joyful fountain of glowing Boss XP orbs that vacuum straight into players!
+    const orbCount = 26;
+    const perOrbXp = Math.round(16 + (e.tier || 1) * 7);
+    for (let k = 0; k < orbCount; k++) {
+      const a = (k / orbCount) * Math.PI * 2 + rand(-0.18, 0.18);
+      const sp = rand(180, 420);
+      state.pickups.push({
+        kind: 'xp',
+        tier: 4,
+        autoMagnet: true,
+        magnetDelay: rand(0.18, 0.55),
+        x: e.x + Math.cos(a) * 18,
+        y: e.y + Math.sin(a) * 18,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp,
+        value: perOrbXp,
+        life: 20,
+        pulling: false,
+      });
+    }
+
+    // Full Hull Repair & Revive all pilots!
+    state.players.forEach((p) => {
+      p.downed = false;
+      p.reviveProgress = 0;
+      p.hp = p.maxHp;
+      p.invuln = 2.6;
+      p.shieldFlash = 0.5;
+    });
+
+    // Grant TWO Boss Bonus Personal Upgrades after the XP fountain sweeps into players!
+    state.pendingDrafts.push({ isBossReward: true, bonusIndex: 1, bonusTotal: 2, level: state.level });
+    state.pendingDrafts.push({ isBossReward: true, bonusIndex: 2, bonusTotal: 2, level: state.level });
+    state.bossRewardDelay = 1.7;
+
+    // Advance cleanly past the Boss Wave
+    state.wave += 1;
+    state.waveKills = 0;
+    state.waveTarget = waveQuotaFor(state.wave);
+    renderHud();
+  }
 
   function killEnemy(e) {
     const idx = state.enemies.indexOf(e);
@@ -1800,52 +2023,94 @@
     }
 
     if (e.isBoss) {
-      state.bossActive = false;
-      state.bossesDefeated += 1;
-      state.shake = 20;
-      state.enemyBullets = [];
-      bossBarWrap.classList.add('hidden');
-      SFX.bossDead();
-      spawnFloatText(e.x, e.y, `${e.name} PURGED!`, '#fde047');
-
-      state.players.forEach((p) => {
-        p.downed = false;
-        p.reviveProgress = 0;
-        p.hp = p.maxHp;
-        p.invuln = 2.0;
-      });
-
-      state.pendingDrafts.push({ isBossReward: true, level: state.level });
-      openNextPersonalDraft();
+      finishBossDeath(e);
       return;
     }
 
     SFX.pop();
+    const xpTier = e.xpTier || 1;
     state.pickups.push({
-      kind: 'xp', x: e.x, y: e.y, vx: rand(-35, 35), vy: rand(-35, 35), value: e.xp, life: 16, pulling: false,
+      kind: 'xp',
+      tier: xpTier,
+      x: e.x,
+      y: e.y,
+      vx: rand(-45, 45),
+      vy: rand(-45, 45),
+      value: e.xp,
+      life: 18,
+      pulling: false,
     });
     if (Math.random() < 0.05) {
       state.pickups.push({
-        kind: 'heal', x: e.x + rand(-10, 10), y: e.y + rand(-10, 10), vx: rand(-25, 25), vy: rand(-25, 25), value: 26, life: 16, pulling: false,
+        kind: 'heal',
+        tier: 1,
+        x: e.x + rand(-10, 10),
+        y: e.y + rand(-10, 10),
+        vx: rand(-25, 25),
+        vy: rand(-25, 25),
+        value: 26,
+        life: 16,
+        pulling: false,
       });
+    }
+
+    // Track Wave kills independently of Team Level!
+    if (!state.bossActive) {
+      state.waveKills += 1;
+      if (state.waveKills >= state.waveTarget) {
+        advanceWave();
+      }
     }
   }
 
-  // ---- Player Damage & Game Over ----
+  // ---- Player Damage, Shielding & Game Over ----
   function hurtPlayer(p, amount) {
-    if (p.downed || p.invuln > 0 || p.dashTimer > 0) return;
-    p.hp = Math.max(0, p.hp - amount);
+    if (p.downed) return;
+    // Clear cartoon Shield-Dodge animation when phasing through an attack during Dash!
+    if (p.dashTimer > 0) {
+      p.shieldFlash = 0.34;
+      state.novas.push({ x: p.x, y: p.y, r: 14, maxR: 46, color: '#7dd3fc', life: 0.24, maxLife: 0.24 });
+      spawnParticles(p.x, p.y, '#7dd3fc', 7, 150, 3.2, 'star');
+      spawnFloatText(p.x, p.y - 34, 'DODGED!', '#7dd3fc');
+      SFX.shield();
+      return;
+    }
+    if (p.invuln > 0) return;
+
+    // Armor plating gives a clear visual shield absorption flash + 10% damage reduction per level
+    const armorLv = p.upgrades.hull_plating || 0;
+    let finalAmt = amount;
+    if (armorLv > 0) {
+      const reduced = Math.max(4, Math.round(amount * Math.max(0.55, 1 - armorLv * 0.1)));
+      const saved = amount - reduced;
+      finalAmt = reduced;
+      p.shieldFlash = 0.32;
+      state.novas.push({ x: p.x, y: p.y, r: 16, maxR: 48, color: '#38bdf8', life: 0.24, maxLife: 0.24 });
+      if (saved > 0) {
+        spawnFloatText(p.x, p.y - 46, `SHIELD -${saved}`, '#7dd3fc');
+      }
+    }
+
+    p.hp = Math.max(0, p.hp - finalAmt);
     p.invuln = 0.85;
-    state.shake = Math.max(state.shake, 9);
-    spawnParticles(p.x, p.y, p.color, 14, 170, 3.5);
+    p.hurtRecoil = 0.34;
+    state.shake = Math.max(state.shake, 11);
+    if (p.id === room.myId) {
+      state.hurtVignette = Math.min(0.75, Math.max(state.hurtVignette, 0.52));
+    }
+
+    // Dramatic red impact ring + cartoon sparks + OUCH text!
+    state.novas.push({ x: p.x, y: p.y, r: 10, maxR: 56, color: '#ef4444', life: 0.28, maxLife: 0.28 });
+    spawnCartoonBurst(p.x, p.y, '#ef4444', false);
+    spawnFloatText(p.x, p.y - 30, `OUCH! -${finalAmt}`, '#fb7185');
     SFX.hurt();
 
     if (p.hp <= 0) {
       p.downed = true;
       p.reviveProgress = 0;
-      spawnParticles(p.x, p.y, '#fb7185', 26, 220, 4.5);
+      spawnCartoonBurst(p.x, p.y, '#fb7185', true);
       if (state.players.length >= 2) {
-        spawnFloatText(p.x, p.y - 28, `${p.name} DOWN! FLY NEAR TO REVIVE`, '#fb7185');
+        spawnFloatText(p.x, p.y - 32, `${p.name} DOWN! FLY NEAR TO REVIVE`, '#fb7185');
       }
       if (!state.players.some((pl) => !pl.downed)) {
         triggerGameOver();
@@ -1861,6 +2126,7 @@
       .map((p) => ({ name: p.name, color: p.color, damage: Math.round(p.damage) }));
     room.sendSignal({
       type: 'GAME_OVER',
+      wave: state.wave,
       level: state.level,
       score: state.score,
       bosses: state.bossesDefeated,
@@ -1873,13 +2139,13 @@
   function showGameOverUI(dmgSummary = []) {
     clearTouchSteer();
     state.mode = 'gameover';
-    sumLevel.textContent = String(state.level);
+    sumLevel.textContent = `W${state.wave} / Lv${state.level}`;
     sumScore.textContent = state.score.toLocaleString();
     sumBosses.textContent = String(state.bossesDefeated);
     gameoverSub.textContent =
       state.bossesDefeated > 0
-        ? `Your UFO squad reached Level ${state.level} and purged ${state.bossesDefeated} space virus boss${state.bossesDefeated > 1 ? 'es' : ''}!`
-        : `Your UFO squad reached Level ${state.level} and purged ${state.kills} space viruses.`;
+        ? `Your UFO squad reached Wave ${state.wave} (Level ${state.level}) and purged ${state.bossesDefeated} space virus boss${state.bossesDefeated > 1 ? 'es' : ''}!`
+        : `Your UFO squad reached Wave ${state.wave} (Level ${state.level}) and purged ${state.kills} space viruses.`;
 
     const totalDmg = Math.max(1, dmgSummary.reduce((acc, d) => acc + d.damage, 0));
     gameoverDamageList.innerHTML = dmgSummary.length
@@ -1929,17 +2195,31 @@
       state.bossWarningTimer -= dt;
       if (state.bossWarningTimer <= 0) {
         bossWarningEl.classList.add('hidden');
-        if (state.pendingBossLevel !== null) {
-          spawnBoss(state.pendingBossLevel);
-          state.pendingBossLevel = null;
+        if (state.pendingBossWave !== null) {
+          spawnBoss(state.pendingBossWave);
+          state.pendingBossWave = null;
         }
       }
     }
 
-    // Spawner (Harder & More Action-Packed)
+    // Wait briefly while Boss XP fountain gets sucked into players before opening the 2x Bonus Upgrade Draft!
+    if (state.bossRewardDelay > 0) {
+      state.bossRewardDelay -= dt;
+      const anyBossXpLeft = state.pickups.some((pk) => pk.autoMagnet);
+      if (state.bossRewardDelay <= 0 || (!anyBossXpLeft && state.bossRewardDelay < 1.25)) {
+        state.bossRewardDelay = 0;
+        if (state.pendingDrafts.length > 0 && state.mode === 'playing') {
+          openNextPersonalDraft();
+          return;
+        }
+      }
+    }
+
+    // Spawner (Wave-scaled & Action-Packed)
     state.spawnTimer -= dt;
-    const maxEnemies = state.bossActive ? 12 : Math.min(42, 11 + state.level * 2 + state.players.length * 3);
-    if (state.spawnTimer <= 0 && state.bossWarningTimer <= 0 && state.enemies.length < maxEnemies) {
+    const bossDying = state.enemies.some((e) => e.isBoss && e.dying);
+    const maxEnemies = state.bossActive ? 12 : Math.min(42, 11 + state.wave * 2 + state.players.length * 3);
+    if (state.spawnTimer <= 0 && state.bossWarningTimer <= 0 && !bossDying && state.bossRewardDelay <= 0 && state.enemies.length < maxEnemies) {
       const type = pickWaveEnemyType();
       if (type === 'microbe') {
         const base = edgeSpawnPos();
@@ -1949,7 +2229,7 @@
       } else {
         spawnEnemy(type);
       }
-      const baseInterval = state.bossActive ? 2.4 : Math.max(0.32, 1.38 - state.level * 0.055);
+      const baseInterval = state.bossActive ? 2.4 : Math.max(0.32, 1.38 - state.wave * 0.055);
       state.spawnTimer = baseInterval / (1 + (state.players.length - 1) * 0.25);
     }
 
@@ -1957,6 +2237,9 @@
     for (const p of state.players) {
       if (p.invuln > 0) p.invuln -= dt;
       if (p.muzzleFlash > 0) p.muzzleFlash = Math.max(0, p.muzzleFlash - dt);
+      if (p.fireKick > 0) p.fireKick = Math.max(0, p.fireKick - dt);
+      if (p.hurtRecoil > 0) p.hurtRecoil = Math.max(0, p.hurtRecoil - dt);
+      if (p.shieldFlash > 0) p.shieldFlash = Math.max(0, p.shieldFlash - dt);
       if (p.dashCooldown > 0) p.dashCooldown = Math.max(0, p.dashCooldown - dt);
       if (p.dashTimer > 0) p.dashTimer = Math.max(0, p.dashTimer - dt);
 
@@ -1972,6 +2255,7 @@
             p.reviveProgress = 0;
             p.hp = Math.round(p.maxHp * 0.55);
             p.invuln = 2.0;
+            p.shieldFlash = 0.45;
             spawnCartoonBurst(p.x, p.y, p.glow, false);
             spawnFloatText(p.x, p.y - 26, 'REVIVED!', '#5eead4');
             SFX.levelUp();
@@ -2019,6 +2303,7 @@
         p.thrustPower = 1.4;
         p.dashTimer = 0.22;
         p.dashCooldown = dashCdMax;
+        p.shieldFlash = 0.22;
         spawnCartoonBurst(p.x, p.y, p.glow, false);
         SFX.dash();
       }
@@ -2072,16 +2357,17 @@
       }
 
       // Personal Weapons
+      const hasLiveEnemies = state.enemies.some((e) => !e.dying);
       p.fireTimer -= dt;
       const pulseInterval = Math.max(0.11, 0.24 - ((p.upgrades.pulse_cannon || 1) - 1) * 0.025);
-      if (((state.autoFire && state.enemies.length > 0) || inp.fire) && p.fireTimer <= 0) {
+      if (((state.autoFire && hasLiveEnemies) || inp.fire) && p.fireTimer <= 0) {
         firePulseCannon(p);
         p.fireTimer = pulseInterval;
       }
 
       if (p.upgrades.plasma_rail > 0) {
         p.railTimer -= dt;
-        if (p.railTimer <= 0 && state.enemies.length > 0) {
+        if (p.railTimer <= 0 && hasLiveEnemies) {
           firePlasmaRail(p);
           p.railTimer = Math.max(1.3, 3.3 - p.upgrades.plasma_rail * 0.35);
         }
@@ -2089,7 +2375,7 @@
 
       if (p.upgrades.homing_missiles > 0) {
         p.missileTimer -= dt;
-        if (p.missileTimer <= 0 && state.enemies.length > 0) {
+        if (p.missileTimer <= 0 && hasLiveEnemies) {
           fireHomingMissiles(p);
           p.missileTimer = Math.max(1.2, 2.7 - p.upgrades.homing_missiles * 0.25);
         }
@@ -2097,7 +2383,7 @@
 
       if (p.upgrades.chain_lightning > 0) {
         p.teslaTimer -= dt;
-        if (p.teslaTimer <= 0 && state.enemies.length > 0) {
+        if (p.teslaTimer <= 0 && hasLiveEnemies) {
           fireChainLightning(p);
           p.teslaTimer = Math.max(0.75, 1.85 - p.upgrades.chain_lightning * 0.18);
         }
@@ -2121,6 +2407,7 @@
           const oy = p.y + Math.sin(oa) * orbRadius;
           for (let i = state.enemies.length - 1; i >= 0; i--) {
             const e = state.enemies[i];
+            if (e.dying) continue;
             if (dist(ox, oy, e.x, e.y) < e.radius + 17) {
               if (!e._orbCd || state.time - e._orbCd > 0.2) {
                 e._orbCd = state.time;
@@ -2134,14 +2421,18 @@
                 spawnParticles(hitX, hitY, '#fde047', 7, 210, 4.2, 'star');
                 spawnParticles(hitX, hitY, '#ffffff', 4, 140, 5.5, 'puff');
                 SFX.slice();
-                damageEnemy(e, 16 + p.upgrades.orbital_blades * 6, '#fde047', p);
+                damageEnemy(e, 16 + p.upgrades.orbital_blades * 6, '#fde047', p, hitX, hitY);
               }
             }
           }
           for (let i = state.enemyBullets.length - 1; i >= 0; i--) {
             const b = state.enemyBullets[i];
             if (dist(ox, oy, b.x, b.y) < b.radius + 17) {
-              spawnParticles(b.x, b.y, '#fde047', 4, 90, 3, 'star');
+              p.shieldFlash = 0.26;
+              state.novas.push({ x: b.x, y: b.y, r: 4, maxR: 26, color: '#7dd3fc', life: 0.18, maxLife: 0.18 });
+              spawnParticles(b.x, b.y, '#7dd3fc', 6, 125, 3.2, 'star');
+              if (Math.random() < 0.35) spawnFloatText(b.x, b.y - 12, 'BLOCKED!', '#7dd3fc');
+              SFX.shield();
               state.enemyBullets.splice(i, 1);
             }
           }
@@ -2185,11 +2476,12 @@
           const lenSq = dx * dx + dy * dy || 1;
           for (let i = state.enemies.length - 1; i >= 0; i--) {
             const e = state.enemies[i];
+            if (e.dying) continue;
             const t = clamp(((e.x - p1.x) * dx + (e.y - p1.y) * dy) / lenSq, 0, 1);
             if (dist(p1.x + t * dx, p1.y + t * dy, e.x, e.y) <= e.radius + 9) {
               if (!e._tetherCd || state.time - e._tetherCd > 0.16) {
                 e._tetherCd = state.time;
-                damageEnemy(e, 14 + tetherLv * 8, '#fcd34d', owner);
+                damageEnemy(e, 14 + tetherLv * 8, '#fcd34d', owner, p1.x + t * dx, p1.y + t * dy);
               }
             }
           }
@@ -2226,10 +2518,11 @@
 
       for (let j = state.enemies.length - 1; j >= 0; j--) {
         const e = state.enemies[j];
+        if (e.dying) continue;
         if (dist(b.x, b.y, e.x, e.y) <= b.radius + e.radius) {
           const owner = state.players.find((pl) => pl.id === b.ownerId) || null;
-          damageEnemy(e, b.damage, b.color, owner);
-          spawnParticles(b.x, b.y, b.color, 4, 90, 2.5);
+          damageEnemy(e, b.damage, b.color, owner, b.x, b.y);
+          spawnParticles(b.x, b.y, b.color, b.kind === 'missile' ? 8 : 5, b.kind === 'missile' ? 165 : 115, b.kind === 'missile' ? 4 : 2.8, 'puff');
           state.bullets.splice(i, 1);
           break;
         }
@@ -2279,11 +2572,39 @@
       return Math.max(8, Math.round(player.maxHp * pct));
     }
 
+    const BOSS_BOOM_WORDS = ['BOOM!', 'POW!', 'CRACK!', 'KRAKOOM!', 'ZAP!'];
+
     for (let i = state.enemies.length - 1; i >= 0; i--) {
       const e = state.enemies[i];
       if (e.hitFlash > 0) e.hitFlash -= dt;
       if (e.hitBounce > 0) e.hitBounce = Math.max(0, e.hitBounce - dt);
       if (e.chillTimer > 0) e.chillTimer -= dt;
+
+      // Satisfying Multi-Explosion Cartoon Boss Death Sequence!
+      if (e.isBoss && e.dying) {
+        e.dyingTimer -= dt;
+        e.boomTick -= dt;
+        e.rot += 5.5 * dt;
+        e.hitFlash = Math.floor(state.time * 18) % 2 === 0 ? 0.08 : 0;
+        if (e.boomTick <= 0) {
+          e.boomTick = 0.17;
+          const bx = e.x + rand(-e.radius * 0.85, e.radius * 0.85);
+          const by = e.y + rand(-e.radius * 0.85, e.radius * 0.85);
+          spawnCartoonBurst(bx, by, Math.random() < 0.5 ? '#fde047' : e.color, false);
+          state.novas.push({ x: bx, y: by, r: 6, maxR: 54, color: '#fde047', life: 0.24, maxLife: 0.24 });
+          state.shake = Math.max(state.shake, 10);
+          if (Math.random() < 0.55) {
+            const w = BOSS_BOOM_WORDS[Math.floor(Math.random() * BOSS_BOOM_WORDS.length)];
+            spawnFloatText(bx, by - 14, w, '#fde047');
+          }
+          SFX.bossBoom();
+        }
+        if (e.dyingTimer <= 0) {
+          finishBossDeath(e);
+        }
+        continue;
+      }
+
       e.rot += (e.rotSpeed || 0) * dt;
       const slow = e.chillTimer > 0 ? 1 - (e.chillPower || 0.25) : 1;
 
@@ -2317,7 +2638,7 @@
               x: e.x, y: e.y, vx: Math.cos(ang) * 255, vy: Math.sin(ang) * 255,
               radius: 7.5, damage: 17, color: '#ef4444', life: 3.6,
             });
-            e.fireTimer = Math.max(1.05, 2.2 - state.level * 0.045);
+            e.fireTimer = Math.max(1.05, 2.2 - state.wave * 0.045);
           }
         } else {
           e.vx += (Math.cos(ang) * e.speed - e.vx) * dt * 2.6;
@@ -2359,7 +2680,6 @@
           if (p.invuln <= 0 && p.dashTimer <= 0) {
             const colDmg = getCollisionDamage(e, p);
             hurtPlayer(p, colDmg);
-            spawnFloatText(p.x, p.y - 34, `-${colDmg} HP!`, '#fb7185');
           }
         }
       }
@@ -2384,37 +2704,43 @@
       }
     }
 
-    // Pickups (Animated Magnetic Pull + Absorption Burst)
+    // Pickups (Tiered XP Gems + Boss Super-Magnet Vacuum + Absorption Burst!)
+    const XP_TIER_COLORS = ['#38bdf8', '#38bdf8', '#4ade80', '#fbbf24', '#f472b6'];
     for (let i = state.pickups.length - 1; i >= 0; i--) {
       const pk = state.pickups[i];
       pk.life -= dt;
       if (pk.life <= 0) { state.pickups.splice(i, 1); continue; }
-      pk.vx *= Math.pow(0.08, dt);
-      pk.vy *= Math.pow(0.08, dt);
+      if (pk.magnetDelay > 0) pk.magnetDelay -= dt;
+      pk.vx *= Math.pow(pk.autoMagnet && pk.magnetDelay > 0 ? 0.3 : 0.08, dt);
+      pk.vy *= Math.pow(pk.autoMagnet && pk.magnetDelay > 0 ? 0.3 : 0.08, dt);
 
+      const superPull = pk.autoMagnet && (!pk.magnetDelay || pk.magnetDelay <= 0);
       let nearest = null;
       let bestD = Infinity;
       for (const p of livingPlayers) {
-        const pMag = 120 * (1 + (p.upgrades.magnet_core || 0) * 0.45);
+        const pMag = superPull ? Infinity : 120 * (1 + (p.upgrades.magnet_core || 0) * 0.45);
         const d = dist(pk.x, pk.y, p.x, p.y);
         if (d < pMag && d < bestD) { bestD = d; nearest = p; }
       }
       if (nearest) {
         pk.pulling = true;
         const ang = Math.atan2(nearest.y - pk.y, nearest.x - pk.x);
-        pk.vx += Math.cos(ang) * 540 * dt * 4.5;
-        pk.vy += Math.sin(ang) * 540 * dt * 4.5;
-        if (bestD < nearest.radius + 16) {
-          const orbColor = pk.kind === 'xp' ? '#38bdf8' : '#4ade80';
+        const pullForce = superPull ? 980 * dt * 5.2 : 540 * dt * 4.5;
+        pk.vx += Math.cos(ang) * pullForce;
+        pk.vy += Math.sin(ang) * pullForce;
+        if (bestD < nearest.radius + (superPull ? 22 : 16)) {
+          const tier = pk.tier || 1;
+          const orbColor = pk.kind === 'xp' ? (XP_TIER_COLORS[tier] || '#38bdf8') : '#4ade80';
           state.novas.push({
             x: nearest.x, y: nearest.y, r: 8,
-            maxR: pk.kind === 'xp' ? 40 : 56,
-            color: orbColor, life: 0.24, maxLife: 0.24,
+            maxR: pk.kind === 'xp' ? (36 + tier * 8) : 56,
+            color: orbColor, life: 0.26, maxLife: 0.26,
           });
-          spawnParticles(nearest.x, nearest.y, orbColor, pk.kind === 'xp' ? 9 : 16, 155, 3);
+          spawnParticles(nearest.x, nearest.y, orbColor, pk.kind === 'xp' ? (7 + tier * 2) : 16, 165, tier >= 3 ? 4 : 3, tier >= 3 ? 'star' : 'dot');
 
           if (pk.kind === 'xp') {
             addTeamXp(pk.value);
+            if (tier >= 3) spawnFloatText(nearest.x, nearest.y - 24, `+${pk.value} XP!`, orbColor);
             SFX.xp();
           } else {
             state.players.forEach((pl) => {
@@ -2437,6 +2763,21 @@
   // Runs on BOTH Host and Guest every frame for silky 60fps Disney cartoon visuals!
   function updateVisualEffects(dt) {
     state.time += dt;
+    if (state.hurtVignette > 0) state.hurtVignette = Math.max(0, state.hurtVignette - dt * 1.35);
+    if (!room.isHost && state.shake > 0) state.shake = Math.max(0, state.shake - dt * 28);
+
+    // Guest-side Boss dying fireworks so teammates see the full cartoon explosion show!
+    if (!room.isHost && state.mode === 'playing') {
+      for (const e of state.enemies) {
+        if (e.isBoss && e.dying && Math.random() < dt * 7) {
+          const bx = e.x + rand(-e.radius * 0.85, e.radius * 0.85);
+          const by = e.y + rand(-e.radius * 0.85, e.radius * 0.85);
+          spawnCartoonBurst(bx, by, Math.random() < 0.5 ? '#fde047' : e.color, false);
+          state.shake = Math.max(state.shake, 7);
+          SFX.bossBoom();
+        }
+      }
+    }
 
     // Shooting stars streaking occasionally across the cartoon night sky
     nextShootingStar -= dt;
@@ -2735,49 +3076,73 @@
       }
     }
 
-    // Animated XP & Heal Orbs
+    // Animated Tiered XP Gems & Heal Orbs (tougher enemies drop bigger, brighter, higher-value gems!)
+    const XP_STYLES = [
+      null,
+      { col: '#38bdf8', inner: '#e0f2fe', glow: 'rgba(56, 189, 248, 0.32)', sz: 6.2 },
+      { col: '#4ade80', inner: '#dcfce7', glow: 'rgba(74, 222, 128, 0.36)', sz: 8.6 },
+      { col: '#fbbf24', inner: '#fef9c3', glow: 'rgba(251, 191, 36, 0.44)', sz: 10.8 },
+      { col: '#f472b6', inner: '#fef08a', glow: 'rgba(244, 114, 182, 0.54)', sz: 12.2 },
+    ];
     for (const pk of state.pickups) {
-      const pulse = 1 + Math.sin(state.time * 8 + pk.x * 0.05) * 0.16;
-      const col = pk.kind === 'xp' ? '#38bdf8' : '#22c55e';
-      const glowCol = pk.kind === 'xp' ? 'rgba(56, 189, 248, 0.3)' : 'rgba(34, 197, 94, 0.34)';
+      const tier = pk.kind === 'xp' ? clamp(pk.tier || 1, 1, 4) : 1;
+      const st = pk.kind === 'xp' ? XP_STYLES[tier] : { col: '#22c55e', inner: '#dcfce7', glow: 'rgba(34, 197, 94, 0.34)', sz: 7 };
+      const pulse = 1 + Math.sin(state.time * (tier >= 4 ? 13 : 8) + pk.x * 0.05) * (tier >= 3 ? 0.2 : 0.15);
 
       if (pk.pulling && (Math.abs(pk.vx || 0) > 35 || Math.abs(pk.vy || 0) > 35)) {
-        ctx.strokeStyle = col;
-        ctx.globalAlpha = 0.6;
-        ctx.lineWidth = 3.5;
+        ctx.strokeStyle = tier === 4 ? '#fde047' : st.col;
+        ctx.globalAlpha = tier === 4 ? 0.85 : 0.65;
+        ctx.lineWidth = tier >= 3 ? 5 : 3.5;
         ctx.lineCap = 'round';
         ctx.beginPath();
         ctx.moveTo(pk.x, pk.y);
-        ctx.lineTo(pk.x - pk.vx * 0.055, pk.y - pk.vy * 0.055);
+        const trailLen = tier === 4 ? 0.085 : 0.055;
+        ctx.lineTo(pk.x - pk.vx * trailLen, pk.y - pk.vy * trailLen);
         ctx.stroke();
         ctx.globalAlpha = 1;
       }
 
-      ctx.fillStyle = glowCol;
+      ctx.fillStyle = st.glow;
       ctx.beginPath();
-      ctx.arc(pk.x, pk.y, (pk.pulling ? 13 : 9.5) * pulse, 0, Math.PI * 2);
+      ctx.arc(pk.x, pk.y, (pk.pulling ? st.sz * 2.15 : st.sz * 1.6) * pulse, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.save();
       ctx.translate(pk.x, pk.y);
       ctx.scale(pulse * (pk.pulling ? 1.2 : 1), pulse * (pk.pulling ? 1.2 : 1));
       ctx.strokeStyle = '#090d16';
-      ctx.lineWidth = 1.8;
+      ctx.lineWidth = tier >= 3 ? 2.2 : 1.8;
       if (pk.kind === 'xp') {
-        ctx.rotate(state.time * 3 + pk.y * 0.02);
-        ctx.fillStyle = '#38bdf8';
+        ctx.rotate(state.time * (tier >= 3 ? 4.2 : 3) + pk.y * 0.02);
+        ctx.fillStyle = st.col;
+        const s = st.sz;
         ctx.beginPath();
-        ctx.moveTo(0, -7);
-        ctx.lineTo(6, 0);
-        ctx.lineTo(0, 7);
-        ctx.lineTo(-6, 0);
+        if (tier >= 3) {
+          // Faceted octagonal / star-cut high-value gem for Elites & Bosses
+          for (let k = 0; k < 8; k++) {
+            const a = (k / 8) * Math.PI * 2;
+            const r = k % 2 === 0 ? s * 1.12 : s * 0.78;
+            if (k === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+            else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+          }
+        } else {
+          ctx.moveTo(0, -s * 1.15);
+          ctx.lineTo(s * 0.95, 0);
+          ctx.lineTo(0, s * 1.15);
+          ctx.lineTo(-s * 0.95, 0);
+        }
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
-        ctx.fillStyle = '#e0f2fe';
-        ctx.beginPath();
-        ctx.arc(0, 0, 2.2, 0, Math.PI * 2);
-        ctx.fill();
+
+        ctx.fillStyle = st.inner;
+        if (tier >= 3) {
+          drawFourPointStar(0, 0, s * 0.65);
+        } else {
+          ctx.beginPath();
+          ctx.arc(0, 0, s * 0.36, 0, Math.PI * 2);
+          ctx.fill();
+        }
       } else {
         ctx.fillStyle = '#4ade80';
         ctx.beginPath();
@@ -2916,6 +3281,15 @@
     ctx.globalAlpha = 1;
 
     ctx.restore();
+
+    // Clear Screen-Edge Red Vignette Flash when YOU take damage!
+    if (state.hurtVignette > 0.01 && state.mode === 'playing') {
+      const vg = ctx.createRadialGradient(W * 0.5, H * 0.5, Math.min(W, H) * 0.25, W * 0.5, H * 0.5, Math.max(W, H) * 0.72);
+      vg.addColorStop(0, 'rgba(239, 68, 68, 0)');
+      vg.addColorStop(1, `rgba(239, 68, 68, ${(state.hurtVignette * 0.72).toFixed(3)})`);
+      ctx.fillStyle = vg;
+      ctx.fillRect(0, 0, W, H);
+    }
 
     // Cute Cartoon Finger-Follow Target Reticle (only while finger is pressed down!)
     if (touchCtrl.active && state.mode === 'playing') {
@@ -3153,16 +3527,26 @@
     if (p.muzzleFlash > 0) {
       ctx.save();
       ctx.fillStyle = '#fef08a';
-      drawFourPointStar(Math.cos(p.angle) * 24, Math.sin(p.angle) * 24, 11);
+      drawFourPointStar(Math.cos(p.angle) * 24, Math.sin(p.angle) * 24, 13);
       ctx.restore();
     }
 
-    // Cartoon rubber-hose squash-and-stretch wobble + steering lean!
+    // Firing recoil kick + Hurt damage shake + Cartoon rubber-hose squash-and-stretch wobble!
+    const hurtAmt = clamp((p.hurtRecoil || 0) / 0.34, 0, 1);
+    const kickAmt = clamp((p.fireKick || 0) / 0.085, 0, 1);
+    if (kickAmt > 0) {
+      ctx.translate(-Math.cos(p.angle) * kickAmt * 3.8, -Math.sin(p.angle) * kickAmt * 3.8);
+    }
+    if (hurtAmt > 0) {
+      ctx.translate(Math.sin(state.time * 72) * hurtAmt * 6, Math.cos(state.time * 64) * hurtAmt * 4);
+    }
+
     const bob = Math.sin(state.time * 9 + p.slot) * 0.065;
     const speedStretch = clamp(Math.hypot(p.vx || 0, p.vy || 0) * 0.00022, 0, 0.08);
-    const tilt = clamp((p.vx || 0) * 0.0007, -0.28, 0.28);
+    const hurtSquash = hurtAmt > 0 ? Math.sin(hurtAmt * Math.PI) * 0.22 : 0;
+    const tilt = clamp((p.vx || 0) * 0.0007, -0.28, 0.28) + (hurtAmt > 0 ? Math.sin(state.time * 55) * 0.25 * hurtAmt : 0);
     ctx.rotate(tilt);
-    ctx.scale(1 + bob + speedStretch, 1 - bob - speedStretch * 0.5);
+    ctx.scale(1 + bob + speedStretch + hurtSquash, 1 - bob - speedStretch * 0.5 - hurtSquash * 0.7);
 
     // Visual Upgrade: Oversized Twin Cartoon Booster Bells (thrusters)
     if (up.thrusters > 0) {
@@ -3221,9 +3605,10 @@
       });
     }
 
-    // Main Cartoon UFO Saucer Rim
-    ctx.fillStyle = p.color;
-    ctx.strokeStyle = '#090d16';
+    // Main Cartoon UFO Saucer Rim (flashes crimson-white on damage recoil!)
+    const hurtBlink = hurtAmt > 0 && Math.floor(state.time * 24) % 2 === 0;
+    ctx.fillStyle = hurtBlink ? '#ef4444' : p.color;
+    ctx.strokeStyle = hurtBlink ? '#fef08a' : '#090d16';
     ctx.lineWidth = 3.2;
     ctx.beginPath();
     ctx.ellipse(0, 3, 23, 10.5, 0, 0, Math.PI * 2);
@@ -3274,7 +3659,7 @@
     }
 
     // Big Glossy Cartoon Glass UFO Dome
-    ctx.fillStyle = 'rgba(186, 230, 253, 0.84)';
+    ctx.fillStyle = hurtBlink ? 'rgba(254, 202, 202, 0.9)' : 'rgba(186, 230, 253, 0.84)';
     ctx.strokeStyle = '#090d16';
     ctx.lineWidth = 2.8;
     ctx.beginPath();
@@ -3283,7 +3668,7 @@
     ctx.fill();
     ctx.stroke();
 
-    // Expressive Disney-style Alien Pilot inside dome (blinks, smiles, looks at enemies!)
+    // Expressive Disney-style Alien Pilot inside dome (blinks, smiles, looks at enemies, winces on hit!)
     const pilotBob = Math.sin(state.time * 10 + p.slot * 2) * 1.1;
     const isBlinking = Math.sin(state.time * 1.9 + p.slot * 2.7) > 0.96;
     const lookX = Math.cos(p.angle) * 2.2;
@@ -3298,7 +3683,16 @@
     ctx.fill();
     ctx.stroke();
 
-    if (isBlinking) {
+    if (hurtAmt > 0.1) {
+      // Cartoon OUCH! '> <' squint eyes when hit!
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 1.9;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-5.5, -7.2 + pilotBob); ctx.lineTo(-2.2, -5.4 + pilotBob); ctx.lineTo(-5.5, -3.6 + pilotBob);
+      ctx.moveTo(5.5, -7.2 + pilotBob); ctx.lineTo(2.2, -5.4 + pilotBob); ctx.lineTo(5.5, -3.6 + pilotBob);
+      ctx.stroke();
+    } else if (isBlinking) {
       // Cute curved happy blink eyes
       ctx.strokeStyle = '#090d16';
       ctx.lineWidth = 1.8;
@@ -3331,10 +3725,14 @@
       ctx.fill();
     }
 
-    // Little happy cartoon smile (turns into excited 'O' mouth during Dash!)
+    // Little happy cartoon smile (turns into OUCH wavy frown when hit, or excited 'O' during Dash!)
     ctx.strokeStyle = '#090d16';
     ctx.lineWidth = 1.5;
-    if (p.dashTimer > 0) {
+    if (hurtAmt > 0.1) {
+      ctx.beginPath();
+      ctx.arc(0, -0.5 + pilotBob, 2.4, Math.PI * 1.15, Math.PI * 1.85);
+      ctx.stroke();
+    } else if (p.dashTimer > 0) {
       ctx.fillStyle = '#090d16';
       ctx.beginPath();
       ctx.arc(0, -1.6 + pilotBob, 1.8, 0, Math.PI * 2);
@@ -3391,6 +3789,37 @@
 
     ctx.restore();
 
+    // Clear Cartoon Energy Shield Bubble when Armored or Shielding/Blocking/Dashing!
+    const shieldAmt = clamp((p.shieldFlash || 0) / 0.34, 0, 1);
+    if (shieldAmt > 0.02 || up.hull_plating > 0) {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      const rad = 29 + shieldAmt * 7 + Math.sin(state.time * 7) * 1.2;
+      ctx.fillStyle = shieldAmt > 0.02
+        ? `rgba(125, 211, 252, ${(0.16 + shieldAmt * 0.28).toFixed(3)})`
+        : 'rgba(56, 189, 248, 0.09)';
+      ctx.strokeStyle = shieldAmt > 0.02
+        ? `rgba(224, 242, 254, ${(0.5 + shieldAmt * 0.5).toFixed(3)})`
+        : 'rgba(125, 211, 252, 0.35)';
+      ctx.lineWidth = shieldAmt > 0.02 ? 3.5 : 1.8;
+      ctx.beginPath();
+      ctx.arc(0, 0, rad, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      if (shieldAmt > 0.1) {
+        // Cartoon glossy bubble sheen + sparkle
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+        ctx.lineWidth = 2.6;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.arc(0, 0, rad - 4, Math.PI * 1.15, Math.PI * 1.48);
+        ctx.stroke();
+        ctx.fillStyle = '#ffffff';
+        drawFourPointStar(Math.cos(state.time * 10) * rad, Math.sin(state.time * 10) * rad, 7 * shieldAmt);
+      }
+      ctx.restore();
+    }
+
     // Floating Color-Coded Cartoon HP Bar directly above each UFO!
     const hpRatio = clamp((p.hp || 0) / Math.max(1, p.maxHp || 100), 0, 1);
     const barW = 46;
@@ -3437,16 +3866,23 @@
     ctx.restore();
   }
 
-  // ---- Old-School Cartoon Space Viruses & Bosses (Wiggling & Chomping!) ----
+  // ---- Old-School Cartoon Space Viruses & Bosses (Wiggling, Chomping & Hit-Reacting!) ----
   function drawEnemy(e) {
     ctx.save();
-    ctx.translate(e.x, e.y);
+    const dyingShakeX = e.dying ? rand(-8, 8) : 0;
+    const dyingShakeY = e.dying ? rand(-8, 8) : 0;
+    ctx.translate(e.x + dyingShakeX, e.y + dyingShakeY);
 
     const flash = e.hitFlash > 0;
     const chilled = e.chillTimer > 0;
-    const bounce = e.hitBounce ? Math.sin((e.hitBounce / 0.2) * Math.PI) * 0.22 : 0;
-    const squash = 1 + Math.sin(state.time * 7.5 + e.x * 0.03) * 0.08 + bounce;
-    ctx.scale(squash, 2 - squash);
+    const bounce = e.hitBounce ? Math.sin((e.hitBounce / 0.24) * Math.PI) * 0.28 : 0;
+    if (e.isBoss && e.dying) {
+      const swell = 1.12 + Math.sin(state.time * 28) * 0.14;
+      ctx.scale(swell, 2.24 - swell);
+    } else {
+      const squash = 1 + Math.sin(state.time * 7.5 + e.x * 0.03) * 0.08 + bounce;
+      ctx.scale(squash, 2 - squash);
+    }
 
     if (e.type.startsWith('asteroid')) {
       ctx.rotate(e.rot);
@@ -3526,7 +3962,22 @@
       ctx.fill();
       ctx.stroke();
 
-      if (!flash) {
+      if (e.dying) {
+        // Cartoon defeated X_X dizzy eyes + wide shocked mouth during Boss Death Finale!
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 5;
+        ctx.lineCap = 'round';
+        [-20, 20].forEach((ex) => {
+          ctx.beginPath();
+          ctx.moveTo(ex - 10, -18); ctx.lineTo(ex + 10, 0);
+          ctx.moveTo(ex + 10, -18); ctx.lineTo(ex - 10, 0);
+          ctx.stroke();
+        });
+        ctx.fillStyle = '#090d16';
+        ctx.beginPath();
+        ctx.ellipse(0, 24, 18, 16, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (!flash) {
         ctx.fillStyle = 'rgba(255,255,255,0.18)';
         ctx.beginPath();
         ctx.ellipse(-18, -28, 22, 10, -0.45, 0, Math.PI * 2);
@@ -3617,70 +4068,89 @@
       ctx.fill();
       ctx.stroke();
 
-      // Animated Grumpy Cartoon Face (Blinking Eyes + Chomping Mini Mouth!)
-      if (!flash && e.radius >= 13) {
+      // Animated Cartoon Face — Startled 'O' shock face when hit, grumpy face normally!
+      if (e.radius >= 13) {
         const er = Math.max(2.8, e.radius * 0.23);
         const ex = e.radius * 0.34;
-        const blink = Math.sin(state.time * 2.4 + e.x * 0.05) > 0.96;
-        if (blink) {
+        if (flash) {
+          // Startled cartoon hit-flinch face!
+          ctx.fillStyle = '#090d16';
+          ctx.beginPath();
+          ctx.arc(-ex, -2, er * 0.9, 0, Math.PI * 2);
+          ctx.arc(ex, -2, er * 0.9, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(-ex, -2, er * 0.35, 0, Math.PI * 2);
+          ctx.arc(ex, -2, er * 0.35, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#090d16';
+          ctx.beginPath();
+          ctx.arc(0, e.radius * 0.35, e.radius * 0.24, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          const blink = Math.sin(state.time * 2.4 + e.x * 0.05) > 0.96;
+          if (blink) {
+            ctx.strokeStyle = '#090d16';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(-ex - er, -2); ctx.lineTo(-ex + er, -2);
+            ctx.moveTo(ex - er, -2); ctx.lineTo(ex + er, -2);
+            ctx.stroke();
+          } else {
+            ctx.fillStyle = '#fef08a';
+            ctx.strokeStyle = '#090d16';
+            ctx.lineWidth = 1.7;
+            ctx.beginPath();
+            ctx.arc(-ex, -2, er, 0, Math.PI * 2);
+            ctx.arc(ex, -2, er, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#090d16';
+            ctx.beginPath();
+            ctx.arc(-ex, -2, er * 0.45, 0, Math.PI * 2);
+            ctx.arc(ex, -2, er * 0.45, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          // Grumpy brows
           ctx.strokeStyle = '#090d16';
           ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.moveTo(-ex - er, -2); ctx.lineTo(-ex + er, -2);
-          ctx.moveTo(ex - er, -2); ctx.lineTo(ex + er, -2);
+          ctx.moveTo(-ex - er, -2 - er);
+          ctx.lineTo(-ex + er, -2 - er * 0.25);
+          ctx.moveTo(ex + er, -2 - er);
+          ctx.lineTo(ex - er, -2 - er * 0.25);
           ctx.stroke();
-        } else {
-          ctx.fillStyle = '#fef08a';
-          ctx.strokeStyle = '#090d16';
-          ctx.lineWidth = 1.7;
-          ctx.beginPath();
-          ctx.arc(-ex, -2, er, 0, Math.PI * 2);
-          ctx.arc(ex, -2, er, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
+          // Little animated grumble mouth
+          const mOpen = 1.5 + Math.abs(Math.sin(state.time * 7 + e.y * 0.04)) * 2.5;
           ctx.fillStyle = '#090d16';
           ctx.beginPath();
-          ctx.arc(-ex, -2, er * 0.45, 0, Math.PI * 2);
-          ctx.arc(ex, -2, er * 0.45, 0, Math.PI * 2);
+          ctx.ellipse(0, e.radius * 0.36, e.radius * 0.28, mOpen, 0, 0, Math.PI * 2);
           ctx.fill();
         }
-        // Grumpy brows
-        ctx.strokeStyle = '#090d16';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(-ex - er, -2 - er);
-        ctx.lineTo(-ex + er, -2 - er * 0.25);
-        ctx.moveTo(ex + er, -2 - er);
-        ctx.lineTo(ex - er, -2 - er * 0.25);
-        ctx.stroke();
-        // Little animated grumble mouth
-        const mOpen = 1.5 + Math.abs(Math.sin(state.time * 7 + e.y * 0.04)) * 2.5;
-        ctx.fillStyle = '#090d16';
-        ctx.beginPath();
-        ctx.ellipse(0, e.radius * 0.36, e.radius * 0.28, mOpen, 0, 0, Math.PI * 2);
-        ctx.fill();
       }
     }
 
     ctx.restore();
   }
 
-  // ---- HUD Rendering (Including Live Team Damage Meter!) ----
+  // ---- HUD Rendering (Distinct Waves vs Team Level + Live Damage Meter!) ----
   function renderHud() {
-    hudLevel.textContent = `LEVEL ${state.level}`;
+    if (hudWave) hudWave.textContent = `WAVE ${state.wave}`;
+    hudLevel.textContent = `LV ${state.level}`;
     hudScore.textContent = `${state.score.toLocaleString()} PTS`;
     hudKills.textContent = `Purged: ${state.kills}`;
 
     const xpPct = clamp((state.xp / Math.max(1, state.xpNeeded)) * 100, 0, 100);
     hudXpFill.style.width = xpPct.toFixed(1) + '%';
 
-    const nextBoss = Math.ceil((state.level + 0.01) / 10) * 10;
-    const levelsLeft = nextBoss - state.level;
+    const nextBossWave = Math.ceil((state.wave + 0.01) / 10) * 10;
+    const waveLeft = Math.max(0, state.waveTarget - state.waveKills);
     if (state.bossActive) {
-      hudBossHint.textContent = 'BOSS ENCOUNTER ACTIVE!';
+      hudBossHint.textContent = `BOSS WAVE ${state.wave} ACTIVE!`;
       hudBossHint.classList.add('boss-now');
     } else {
-      hudBossHint.textContent = `Boss in ${levelsLeft} level${levelsLeft === 1 ? '' : 's'} (Lv ${nextBoss})`;
+      hudBossHint.textContent = `Wave ${state.wave} · ${waveLeft} left · Boss @ Wave ${nextBossWave}`;
       hudBossHint.classList.remove('boss-now');
     }
 

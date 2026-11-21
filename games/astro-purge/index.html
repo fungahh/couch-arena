@@ -32,13 +32,14 @@
 
         <div class="hud-center">
           <div class="level-row">
-            <span class="level-badge" id="hud-level">LEVEL 1</span>
+            <span class="wave-badge" id="hud-wave">WAVE 1</span>
+            <span class="level-badge" id="hud-level">LV 1</span>
             <span class="score-text" id="hud-score">0 PTS</span>
           </div>
           <div class="xp-track">
             <div class="xp-fill" id="hud-xp-fill"></div>
           </div>
-          <div class="next-boss-hint" id="hud-boss-hint">Boss in 9 levels (Lv 10)</div>
+          <div class="next-boss-hint" id="hud-boss-hint">Wave 1 · 12 left · Boss at Wave 10</div>
         </div>
 
         <div class="hud-group right">
@@ -53,7 +54,7 @@
       <!-- Boss Health Bar -->
       <div id="boss-bar-wrap" class="hidden">
         <div class="boss-header">
-          <span id="boss-name">ALPHA CORONA-LEVIATHAN</span>
+          <span id="boss-name">BARON CORONA-CHOMP</span>
           <span id="boss-hp-text">100%</span>
         </div>
         <div class="boss-hp-track">
@@ -68,10 +69,16 @@
     </div>
   </div>
 
+  <!-- WAVE ANNOUNCEMENT BANNER -->
+  <div id="wave-banner" class="hidden" role="status" aria-live="polite">
+    <h2 id="wave-banner-title">WAVE 1</h2>
+    <p id="wave-banner-sub">INCOMING SPACE VIRUSES!</p>
+  </div>
+
   <!-- BOSS WARNING BANNER -->
   <div id="boss-warning" class="hidden" role="alert">
-    <h2 id="boss-warning-title">⚠ BIO-HAZARD BOSS DETECTED</h2>
-    <p id="boss-warning-sub">LEVEL 10 — ALPHA CORONA-LEVIATHAN INCOMING</p>
+    <h2 id="boss-warning-title">⚠ GIANT SPACE VIRUS BOSS!</h2>
+    <p id="boss-warning-sub">WAVE 10 — BARON CORONA-CHOMP INCOMING</p>
   </div>
 
   <!-- OVERLAY 1: 4-PLAYER GAME ROOM LOBBY -->
@@ -80,7 +87,7 @@
       <div class="eyebrow">Couch Arcade · 4-Player Cartoon UFO Co-op</div>
       <h1 class="modal-title" style="font-family: 'Fredoka', 'Space Grotesk', sans-serif;">ASTRO PURGE</h1>
       <p class="modal-sub">
-        Pilot cartoon UFOs together against grumpy space viruses! Share Team XP to earn <strong>personal visual ship upgrades</strong>, track your squad on the Damage Meter, and face a tough multi-phase Boss every 10 levels.
+        Pilot cartoon UFOs together across escalating <strong>Waves</strong> of grumpy space viruses! Collect tiered XP gems for <strong>personal visual upgrades</strong>, and defeat a giant Boss every 10 Waves for a <strong>Double Bonus Upgrade</strong>!
       </p>
 
       <!-- Room Code, Name & Invite Link Bar -->
