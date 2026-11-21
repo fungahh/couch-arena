@@ -332,15 +332,15 @@
     },
     {
       id: 'plasma_rail',
-      name: 'Dome Laser Dish',
+      name: 'Dome Railgun',
       tag: 'Weapon',
       tagClass: 'weapon',
       icon: '💠',
       maxLevel: 5,
       describe: (nextLv) =>
         nextLv === 1
-          ? 'Mounts a crystalline laser dish on your UFO dome that zaps piercing beams.'
-          : `Laser Dish Lv ${nextLv}: +30% beam power, thicker beam, faster recharge.`,
+          ? 'Mounts a heavy railgun dish that always locks onto the strongest enemy on the map with a full-arena piercing beam!'
+          : `Dome Railgun Lv ${nextLv}: Massive armor-piercing blast (+35% vs Bosses/Elites), wider beam & faster recharge.`,
     },
     {
       id: 'homing_missiles',
@@ -363,8 +363,8 @@
       maxLevel: 5,
       describe: (nextLv) =>
         nextLv === 1
-          ? 'Deploys 3 supercharged tight-orbit razor star-saws that shred viruses & slice red globs!'
-          : `Super Star-Saws Lv ${nextLv}: ${nextLv + 2} glowing razor stars spinning faster with heavy slice damage!`,
+          ? 'Deploys 6 supercharged tight-orbit razor star-saws that shred viruses & slice red globs!'
+          : `Super Star-Saws Lv ${nextLv}: ${(nextLv + 2) * 2} glowing razor stars spinning faster with heavy slice damage!`,
     },
     {
       id: 'chain_lightning',
@@ -446,8 +446,8 @@
       describe: (nextLv, isCoop) =>
         isCoop
           ? nextLv === 1
-            ? 'Creates a crackling plasma link between your UFO and nearby teammates!'
-            : `Plasma Link Lv ${nextLv}: Longer tether range and +35% slice damage.`
+            ? 'Links your UFO to nearby teammates: slices viruses, slowly heals linked buddies (+4 HP/s), & boosts damage for both (+16%)!'
+            : `Plasma Link Lv ${nextLv}: Stronger beam visuals & slice damage, +${(2.5 + nextLv * 1.6).toFixed(1)} HP/s partner regen, +${12 + nextLv * 4}% team DMG (doubles when linked both ways!).`
           : nextLv === 1
             ? 'Deploys a cute mini UFO Wingman Drone that orbits and fires at viruses!'
             : `Wingman Drone Lv ${nextLv}: Faster drone blasts and +35% damage.`,
@@ -1388,8 +1388,13 @@
       invuln: 1.5,
       dashCooldown: 0,
       dashTimer: 0,
+      dashInvuln: 0,
+      _dodgeFxCd: 0,
+      linkDmgBoost: 0,
+      linkCount: 0,
+      linkHealFxTimer: 0,
       fireTimer: 0,
-      railTimer: 2.2,
+      railTimer: 2.0,
       missileTimer: 2.0,
       teslaTimer: 1.4,
       novaTimer: 4.5,
@@ -2142,6 +2147,14 @@
       bl: state.bullets.slice(0, 65).map((b) => [nx(b.x), ny(b.y), Math.round(b.radius), b.color, b.kind === 'missile' ? 1 : 0]),
       eb: state.enemyBullets.slice(0, 60).map((b) => [nx(b.x), ny(b.y), Math.round(b.radius), b.color, b.bouncy ? 1 : 0, b.unblockable ? 1 : 0]),
       pk: state.pickups.slice(0, 60).map((pk) => [pk.kind === 'xp' ? 0 : 1, nx(pk.x), ny(pk.y), pk.pulling ? 1 : 0, pk.tier || 1]),
+      bm: state.beams.slice(0, 14).map((b) => [
+        nx(b.x1), ny(b.y1), nx(b.x2), ny(b.y2),
+        Math.round(b.width), b.color,
+        b.jagged ? 1 : (b.kind === 'rail' ? 2 : 0),
+        Math.round(clamp(b.life / Math.max(0.01, b.maxLife), 0, 1) * 100) / 100,
+        b.tx !== undefined && b.tx !== null ? nx(b.tx) : null,
+        b.ty !== undefined && b.ty !== null ? ny(b.ty) : null,
+      ]),
     };
   }
 
@@ -2289,6 +2302,21 @@
       vy: 0,
     }));
 
+    state.beams = (s.bm || []).map((arr) => ({
+      x1: arr[0] * W,
+      y1: arr[1] * H,
+      x2: arr[2] * W,
+      y2: arr[3] * H,
+      width: arr[4],
+      color: arr[5],
+      jagged: arr[6] === 1,
+      kind: arr[6] === 2 ? 'rail' : 'beam',
+      life: arr[7],
+      maxLife: 1,
+      tx: arr[8] !== null && arr[8] !== undefined ? arr[8] * W : null,
+      ty: arr[9] !== null && arr[9] !== undefined ? arr[9] * H : null,
+    }));
+
     if (s.b) {
       renderBossBarUI(state.wave, s.b.n, s.b.h, s.b.m, s.b.ph);
       renderBossCastUI(state.bossCast);
@@ -2327,7 +2355,8 @@
   function rollPlayerDamage(p, base) {
     const oc = p ? (p.upgrades.overclock || 0) : 0;
     const ap = p ? (p.upgrades.apex_power || 0) : 0;
-    const mult = 1 + oc * 0.22 + ap * 0.1;
+    const linkBoost = p ? (p.linkDmgBoost || 0) : 0;
+    const mult = (1 + oc * 0.22 + ap * 0.1) * (1 + linkBoost);
     const isCrit = Math.random() < Math.min(0.75, oc * 0.08 + ap * 0.025);
     const dmg = Math.round(base * mult * (isCrit ? 1.8 : 1));
     return { dmg, isCrit };
@@ -3071,6 +3100,23 @@
     return best;
   }
 
+  function findStrongestEnemy(x, y) {
+    let best = null;
+    let bestScore = -1;
+    let bestDist = Infinity;
+    for (const e of state.enemies) {
+      if (e.dying || e.hp <= 0) continue;
+      const strength = (e.isBoss ? 1e12 : 0) + e.hp * 1000 + (e.maxHp || e.hp) * 10 + (e.isElite ? 500 : 0);
+      const d = dist(x, y, e.x, e.y);
+      if (strength > bestScore || (strength === bestScore && d < bestDist)) {
+        bestScore = strength;
+        bestDist = d;
+        best = e;
+      }
+    }
+    return best;
+  }
+
   function firePulseCannon(p) {
     const lv = p.upgrades.pulse_cannon || 1;
     const count = lv;
@@ -3101,27 +3147,54 @@
 
   function firePlasmaRail(p) {
     const lv = p.upgrades.plasma_rail;
-    const target = findNearestEnemy(p.x, p.y, 700);
+    // Always lock onto the strongest enemy anywhere on the map (Boss > highest-HP Elite/Virus)!
+    const target = findStrongestEnemy(p.x, p.y);
     const ang = target ? Math.atan2(target.y - p.y, target.x - p.x) : p.angle;
-    const len = Math.max(W, H) * 0.9;
+    const len = Math.hypot(W, H) + 120;
     const x2 = p.x + Math.cos(ang) * len;
     const y2 = p.y + Math.sin(ang) * len;
-    const width = 10 + lv * 3;
-    const baseDmg = 34 + lv * 16;
+    const width = 14 + lv * 4;
+    const baseDmg = 68 + lv * 34;
 
-    state.beams.push({ x1: p.x, y1: p.y, x2, y2, width, color: '#38bdf8', life: 0.22, maxLife: 0.22 });
-    p.fireKick = 0.12;
-    p.muzzleFlash = 0.12;
+    state.beams.push({
+      x1: p.x, y1: p.y, x2, y2,
+      width,
+      color: '#38bdf8',
+      kind: 'rail',
+      tx: target ? target.x : null,
+      ty: target ? target.y : null,
+      life: 0.30,
+      maxLife: 0.30,
+    });
+    p.fireKick = 0.16;
+    p.muzzleFlash = 0.16;
+    state.shake = Math.max(state.shake, 4 + lv * 0.8);
 
     const dx = x2 - p.x;
     const dy = y2 - p.y;
-    const lenSq = dx * dx + dy * dy;
+    const lenSq = dx * dx + dy * dy || 1;
     for (let i = state.enemies.length - 1; i >= 0; i--) {
       const e = state.enemies[i];
       if (e.dying) continue;
       const t = clamp(((e.x - p.x) * dx + (e.y - p.y) * dy) / lenSq, 0, 1);
-      if (dist(p.x + t * dx, p.y + t * dy, e.x, e.y) <= e.radius + width * 0.6) {
-        damageEnemy(e, baseDmg, '#38bdf8', p);
+      if (dist(p.x + t * dx, p.y + t * dy, e.x, e.y) <= e.radius + width * 0.65) {
+        const hitDmg = (e.isBoss || e.isElite) ? Math.round(baseDmg * 1.35) : baseDmg;
+        damageEnemy(e, hitDmg, '#7dd3fc', p, e.x, e.y, true);
+        spawnParticles(e.x, e.y, '#7dd3fc', 6, 210, 3.8, 'star');
+      }
+    }
+
+    // Focused high-energy railgun impact shockwave on the locked strongest target!
+    if (target && !target.dying) {
+      const splashR = 44 + lv * 8;
+      state.novas.push({ x: target.x, y: target.y, r: 10, maxR: splashR, color: '#38bdf8', life: 0.26, maxLife: 0.26 });
+      spawnParticles(target.x, target.y, '#e0f2fe', 9, 230, 4.2, 'star');
+      for (let i = state.enemies.length - 1; i >= 0; i--) {
+        const e = state.enemies[i];
+        if (e === target || e.dying) continue;
+        if (dist(target.x, target.y, e.x, e.y) <= splashR + e.radius) {
+          damageEnemy(e, Math.round(baseDmg * 0.4), '#38bdf8', p, e.x, e.y);
+        }
       }
     }
     SFX.rail();
@@ -3247,7 +3320,7 @@
     SFX.phaseShift();
   }
 
-  function damageEnemy(e, baseDmg, color = '#f8fafc', sourcePlayer = null, hitX = null, hitY = null) {
+  function damageEnemy(e, baseDmg, color = '#f8fafc', sourcePlayer = null, hitX = null, hitY = null, isHeavyRail = false) {
     if (e.hp <= 0 || e.dying) return;
     if (e.isBoss && e.phaseInvuln > 0) {
       // Brief phase-shift barrier deflects hits with a clear cartoon spark
@@ -3259,9 +3332,10 @@
 
     let { dmg, isCrit } = rollPlayerDamage(sourcePlayer, baseDmg);
 
-    // Boss burst-armor cap so bosses are real epic battles and never insta-melt
+    // Boss burst-armor cap so bosses are real epic battles (Dome Railgun punches extra hard!)
     if (e.isBoss) {
-      const maxHit = Math.max(45, Math.round(e.maxHp * 0.012));
+      const capPct = isHeavyRail ? 0.022 : 0.012;
+      const maxHit = Math.max(isHeavyRail ? 95 : 45, Math.round(e.maxHp * capPct));
       dmg = Math.min(dmg, maxHit);
     }
 
@@ -3507,13 +3581,16 @@
   // ---- Player Damage, Shielding & Game Over / Victory ----
   function hurtPlayer(p, amount) {
     if (p.downed || state.victory) return;
-    // Clear cartoon Shield-Dodge animation when phasing through an attack during Dash!
-    if (p.dashTimer > 0) {
-      p.shieldFlash = 0.34;
-      state.novas.push({ x: p.x, y: p.y, r: 14, maxR: 46, color: '#7dd3fc', life: 0.24, maxLife: 0.24 });
-      spawnParticles(p.x, p.y, '#7dd3fc', 7, 150, 3.2, 'star');
-      spawnFloatText(p.x, p.y - 34, 'DODGED!', '#7dd3fc');
-      SFX.shield();
+    // Complete Dash Phase-Immunity against ANY damage source (enemies, bullets, beams, hazards, safe-zone blasts)!
+    if (p.dashTimer > 0 || p.dashInvuln > 0) {
+      p.shieldFlash = 0.36;
+      if (!p._dodgeFxCd || p._dodgeFxCd <= 0) {
+        p._dodgeFxCd = 0.22;
+        state.novas.push({ x: p.x, y: p.y, r: 14, maxR: 50, color: '#7dd3fc', life: 0.24, maxLife: 0.24 });
+        spawnParticles(p.x, p.y, '#7dd3fc', 7, 160, 3.2, 'star');
+        spawnFloatText(p.x, p.y - 34, 'IMMUNE!', '#7dd3fc');
+        SFX.shield();
+      }
       return;
     }
     if (p.invuln > 0) return;
@@ -3762,6 +3839,9 @@
       if (p.shieldFlash > 0) p.shieldFlash = Math.max(0, p.shieldFlash - dt);
       if (p.dashCooldown > 0) p.dashCooldown = Math.max(0, p.dashCooldown - dt);
       if (p.dashTimer > 0) p.dashTimer = Math.max(0, p.dashTimer - dt);
+      if (p.dashInvuln > 0) p.dashInvuln = Math.max(0, p.dashInvuln - dt);
+      if (p._dodgeFxCd > 0) p._dodgeFxCd = Math.max(0, p._dodgeFxCd - dt);
+      if (p.linkHealFxTimer > 0) p.linkHealFxTimer = Math.max(0, p.linkHealFxTimer - dt);
 
       const hasteMult = Math.pow(0.93, p.upgrades.apex_haste || 0);
       const speedBoost = 1 + (p.upgrades.thrusters || 0) * 0.13;
@@ -3818,25 +3898,29 @@
         const dx = moveX || Math.cos(p.angle);
         const dy = moveY || Math.sin(p.angle);
         const dm = Math.hypot(dx, dy) || 1;
-        p.vx = (dx / dm) * 780;
-        p.vy = (dy / dm) * 780;
+        // High-velocity Phase Dash: faster, further forward burst + 100% damage immunity!
+        const dashSpeed = Math.round(1080 * (1 + (p.upgrades.thrusters || 0) * 0.04));
+        p.vx = (dx / dm) * dashSpeed;
+        p.vy = (dy / dm) * dashSpeed;
         p.thrustAngle = Math.atan2(-dy, -dx);
-        p.thrustPower = 1.4;
-        p.dashTimer = 0.22;
+        p.thrustPower = 1.65;
+        p.dashTimer = 0.27;
+        p.dashInvuln = 0.37; // Full 0.27s dash + 0.10s landing phase-immunity grace!
         p.dashCooldown = dashCdMax;
-        p.shieldFlash = 0.22;
-        spawnCartoonBurst(p.x, p.y, p.glow, false);
+        p.shieldFlash = 0.36;
+        state.novas.push({ x: p.x, y: p.y, r: 10, maxR: 48, color: '#7dd3fc', life: 0.22, maxLife: 0.22 });
+        spawnCartoonBurst(p.x, p.y, '#7dd3fc', false);
         SFX.dash();
       }
 
       const moveMag = Math.hypot(moveX, moveY);
       p.thrusting = moveMag > 0.08;
-      if (p.thrusting) {
+      if (p.thrusting && p.dashTimer <= 0) {
         // Thruster exhaust points OPPOSITE the direction you are steering!
         p.thrustAngle = Math.atan2(-moveY, -moveX);
         p.thrustPower = clamp(moveMag, 0.35, 1);
       } else if (p.dashTimer > 0) {
-        p.thrustPower = 1.35;
+        p.thrustPower = 1.6;
       } else {
         p.thrustPower = Math.max(0, (p.thrustPower || 0) - dt * 5);
       }
@@ -3901,7 +3985,7 @@
         p.railTimer -= dt;
         if (p.railTimer <= 0 && hasLiveEnemies) {
           firePlasmaRail(p);
-          p.railTimer = Math.max(0.95, (3.3 - p.upgrades.plasma_rail * 0.35) * hasteMult);
+          p.railTimer = Math.max(0.75, (2.65 - p.upgrades.plasma_rail * 0.32) * hasteMult);
         }
       }
 
@@ -3929,11 +4013,11 @@
         }
       }
 
-      // UPGRADED Super Star-Saws at exact 40% orbit radius (116px)!
+      // UPGRADED Super Star-Saws at exact 40% orbit radius (116px) — DOUBLED star count (6..14)!
       if (p.upgrades.orbital_blades > 0) {
         const orbLv = p.upgrades.orbital_blades;
         const orbRadius = STAR_SAW_RADIUS;
-        const orbCount = orbLv + 2; // 3..7 supercharged razor star-saws!
+        const orbCount = (orbLv + 2) * 2; // 6, 8, 10, 12, 14 supercharged razor star-saws!
         const sawHitR = 20 + orbLv * 1.3;
         p.orbitAngle += (2.9 + orbLv * 0.42) * dt;
         for (let k = 0; k < orbCount; k++) {
@@ -3995,17 +4079,57 @@
       }
     }
 
-    // Co-op Plasma Tether between teammates if either player has tether_beam
+    // Co-op Plasma Link: Partner HP Regen + Damage Boost for BOTH + Level-Scaled Beam Slicing!
+    for (const p of state.players) {
+      p.linkDmgBoost = 0;
+      p.linkCount = 0;
+    }
     if (state.players.length >= 2) {
       for (let a = 0; a < state.players.length; a++) {
         for (let b = a + 1; b < state.players.length; b++) {
           const p1 = state.players[a];
           const p2 = state.players[b];
-          const tetherLv = Math.max(p1.upgrades.tether_beam || 0, p2.upgrades.tether_beam || 0);
+          const lv1 = p1.upgrades.tether_beam || 0;
+          const lv2 = p2.upgrades.tether_beam || 0;
+          const tetherLv = Math.max(lv1, lv2);
           if (tetherLv <= 0 || p1.downed || p2.downed) continue;
-          const maxRange = 290 + tetherLv * 55;
+          const isMutual = lv1 > 0 && lv2 > 0;
+          const combinedLv = lv1 + lv2;
+          const maxRange = 300 + tetherLv * 60 + (isMutual ? 70 : 0);
           if (dist(p1.x, p1.y, p2.x, p2.y) > maxRange) continue;
-          const owner = (p1.upgrades.tether_beam || 0) >= (p2.upgrades.tether_beam || 0) ? p1 : p2;
+
+          p1.linkCount += 1;
+          p2.linkCount += 1;
+
+          // Damage boost for BOTH linked teammates (stronger when BOTH have Plasma Link, plus multi-link resonance!)
+          const pairBoost = isMutual ? (0.20 + combinedLv * 0.035) : (0.12 + tetherLv * 0.04);
+          p1.linkDmgBoost = Math.min(0.70, Math.max(p1.linkDmgBoost, pairBoost) + (p1.linkCount > 1 ? 0.06 : 0));
+          p2.linkDmgBoost = Math.min(0.70, Math.max(p2.linkDmgBoost, pairBoost) + (p2.linkCount > 1 ? 0.06 : 0));
+
+          // Slow HP regeneration for the OTHER player powered by the caster's Plasma Link level!
+          if (lv1 > 0 && p2.hp < p2.maxHp) {
+            const regen = (2.5 + lv1 * 1.6) * dt;
+            p2.hp = Math.min(p2.maxHp, p2.hp + regen);
+            if (p2.linkHealFxTimer <= 0) {
+              p2.linkHealFxTimer = 1.25;
+              spawnParticles(p2.x, p2.y, '#4ade80', 4, 80, 3, 'star');
+              spawnFloatText(p2.x, p2.y - 34, '+HP', '#4ade80');
+            }
+          }
+          if (lv2 > 0 && p1.hp < p1.maxHp) {
+            const regen = (2.5 + lv2 * 1.6) * dt;
+            p1.hp = Math.min(p1.maxHp, p1.hp + regen);
+            if (p1.linkHealFxTimer <= 0) {
+              p1.linkHealFxTimer = 1.25;
+              spawnParticles(p1.x, p1.y, '#4ade80', 4, 80, 3, 'star');
+              spawnFloatText(p1.x, p1.y - 34, '+HP', '#4ade80');
+            }
+          }
+
+          // Beam enemy slicing (scales with level & mutual double-link!)
+          const owner = lv1 >= lv2 ? p1 : p2;
+          const sliceRadius = 10 + tetherLv * 2 + (isMutual ? 4 : 0);
+          const sliceDmg = 16 + tetherLv * 9 + (isMutual ? combinedLv * 4 : 0);
           const dx = p2.x - p1.x;
           const dy = p2.y - p1.y;
           const lenSq = dx * dx + dy * dy || 1;
@@ -4013,10 +4137,10 @@
             const e = state.enemies[i];
             if (e.dying) continue;
             const t = clamp(((e.x - p1.x) * dx + (e.y - p1.y) * dy) / lenSq, 0, 1);
-            if (dist(p1.x + t * dx, p1.y + t * dy, e.x, e.y) <= e.radius + 9) {
-              if (!e._tetherCd || state.time - e._tetherCd > 0.16) {
+            if (dist(p1.x + t * dx, p1.y + t * dy, e.x, e.y) <= e.radius + sliceRadius) {
+              if (!e._tetherCd || state.time - e._tetherCd > 0.15) {
                 e._tetherCd = state.time;
-                damageEnemy(e, 14 + tetherLv * 8, '#fcd34d', owner, p1.x + t * dx, p1.y + t * dy);
+                damageEnemy(e, sliceDmg, isMutual ? '#fef08a' : '#fcd34d', owner, p1.x + t * dx, p1.y + t * dy);
               }
             }
           }
@@ -4266,13 +4390,18 @@
         e.y += e.vy * slow * dt;
       }
 
-      // Solid Player <-> Enemy Collision (never pass through enemies, asteroids, or bosses!)
+      // Solid Player <-> Enemy Collision (Dashing UFOs phase cleanly right through enemies & bosses!)
       for (const p of livingPlayers) {
         const dx = p.x - e.x;
         const dy = p.y - e.y;
         const d = Math.hypot(dx, dy) || 0.001;
         const minDist = e.radius + p.radius;
         if (d < minDist) {
+          if (p.dashTimer > 0 || p.dashInvuln > 0) {
+            hurtPlayer(p, 0); // Triggers throttled IMMUNE! cyan phase-dodge ring without losing dash momentum!
+            continue;
+          }
+
           const nx = dx / d;
           const ny = dy / d;
           const overlap = minDist - d + 1.5;
@@ -4293,7 +4422,7 @@
             e.vy = -ny * 190;
           }
 
-          if (p.invuln <= 0 && p.dashTimer <= 0) {
+          if (p.invuln <= 0) {
             const colDmg = getCollisionDamage(e, p);
             hurtPlayer(p, colDmg);
           }
@@ -4326,6 +4455,10 @@
       }
       for (const p of livingPlayers) {
         if (dist(b.x, b.y, p.x, p.y) < b.radius + p.radius - 3) {
+          if (p.dashTimer > 0 || p.dashInvuln > 0) {
+            hurtPlayer(p, 0); // Phase cleanly through projectiles with IMMUNE feedback!
+            continue;
+          }
           const hitDmg = scaleThreatDamage(b.damage || 18, p, Boolean(b.isHeavy || b.unblockable));
           hurtPlayer(p, hitDmg);
           state.enemyBullets.splice(i, 1);
@@ -5372,18 +5505,307 @@
       ctx.globalAlpha = 1;
     }
 
-    // Co-op Plasma Tether lines
+    // Upgraded Co-op Plasma Link: Level-Scaled Visuals + Clear 1P / 2P Dual / 3P+ Web Origin + Heal & Damage Boost FX!
     if (state.players.length >= 2) {
+      const linkEdges = [];
+      const adj = new Map();
+      const linkMetaByPlayer = new Map(); // id -> { count, isEmitter, emitLv, receivingHeal }
+
       for (let a = 0; a < state.players.length; a++) {
         for (let b = a + 1; b < state.players.length; b++) {
           const p1 = state.players[a];
           const p2 = state.players[b];
-          const tetherLv = Math.max(p1.upgrades.tether_beam || 0, p2.upgrades.tether_beam || 0);
+          const lv1 = p1.upgrades.tether_beam || 0;
+          const lv2 = p2.upgrades.tether_beam || 0;
+          const tetherLv = Math.max(lv1, lv2);
           if (tetherLv <= 0 || p1.downed || p2.downed) continue;
-          if (dist(p1.x, p1.y, p2.x, p2.y) <= 290 + tetherLv * 55) {
-            drawJaggedLine(p1.x, p1.y, p2.x, p2.y, '#fde047', 4.5);
+          const isMutual = lv1 > 0 && lv2 > 0;
+          const maxRange = 300 + tetherLv * 60 + (isMutual ? 70 : 0);
+          if (dist(p1.x, p1.y, p2.x, p2.y) > maxRange) continue;
+          linkEdges.push({ p1, p2, lv1, lv2, tetherLv, isMutual, combinedLv: lv1 + lv2 });
+          if (!adj.has(p1.id)) adj.set(p1.id, []);
+          if (!adj.has(p2.id)) adj.set(p2.id, []);
+          adj.get(p1.id).push(p2.id);
+          adj.get(p2.id).push(p1.id);
+
+          const pairBoost = isMutual ? (0.20 + (lv1 + lv2) * 0.035) : (0.12 + tetherLv * 0.04);
+          const m1 = linkMetaByPlayer.get(p1.id) || { count: 0, emitLv: lv1, receivingHeal: false, boost: 0 };
+          const m2 = linkMetaByPlayer.get(p2.id) || { count: 0, emitLv: lv2, receivingHeal: false, boost: 0 };
+          m1.count += 1;
+          m2.count += 1;
+          m1.boost = Math.min(0.70, Math.max(m1.boost, pairBoost) + (m1.count > 1 ? 0.06 : 0));
+          m2.boost = Math.min(0.70, Math.max(m2.boost, pairBoost) + (m2.count > 1 ? 0.06 : 0));
+          if (lv2 > 0) m1.receivingHeal = true;
+          if (lv1 > 0) m2.receivingHeal = true;
+          linkMetaByPlayer.set(p1.id, m1);
+          linkMetaByPlayer.set(p2.id, m2);
+        }
+      }
+
+      // Compute connected link network size per player (to clearly highlight 3P–5P Plasma Webs!)
+      const compSizeById = new Map();
+      const compMembers = [];
+      const visited = new Set();
+      for (const id of adj.keys()) {
+        if (visited.has(id)) continue;
+        const q = [id];
+        const comp = [];
+        visited.add(id);
+        while (q.length > 0) {
+          const cur = q.shift();
+          comp.push(cur);
+          for (const nxt of (adj.get(cur) || [])) {
+            if (!visited.has(nxt)) {
+              visited.add(nxt);
+              q.push(nxt);
+            }
           }
         }
+        compMembers.push(comp);
+        for (const cid of comp) compSizeById.set(cid, comp.length);
+      }
+
+      // 3+ Player Plasma Link Web: Subtle golden-prismatic resonance field + squad web badge!
+      for (const comp of compMembers) {
+        if (comp.length < 3) continue;
+        const pts = comp.map((id) => state.players.find((pl) => pl.id === id)).filter(Boolean);
+        if (pts.length < 3) continue;
+        const cx = pts.reduce((acc, p) => acc + p.x, 0) / pts.length;
+        const cy = pts.reduce((acc, p) => acc + p.y, 0) / pts.length;
+        const sorted = pts.slice().sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
+        ctx.save();
+        const webPulse = 0.09 + Math.sin(state.time * 6) * 0.035;
+        ctx.fillStyle = `rgba(250, 204, 21, ${webPulse.toFixed(3)})`;
+        ctx.beginPath();
+        sorted.forEach((pt, idx) => {
+          if (idx === 0) ctx.moveTo(pt.x, pt.y);
+          else ctx.lineTo(pt.x, pt.y);
+        });
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Level-scaled color palettes for Lv 1 -> Lv 5 (+ Dual Overdrive!)
+      const LINK_TIERS = [
+        null,
+        { glow: 'rgba(56, 189, 248, 0.34)', core: '#7dd3fc', accent: '#fde047', width: 4.0 },
+        { glow: 'rgba(34, 211, 238, 0.42)', core: '#22d3ee', accent: '#facc15', width: 5.4 },
+        { glow: 'rgba(52, 211, 153, 0.48)', core: '#34d399', accent: '#fef08a', width: 6.8 },
+        { glow: 'rgba(192, 132, 252, 0.54)', core: '#c084fc', accent: '#fef08a', width: 8.2 },
+        { glow: 'rgba(244, 114, 182, 0.62)', core: '#f472b6', accent: '#ffffff', width: 9.8 },
+      ];
+
+      for (const edge of linkEdges) {
+        const { p1, p2, lv1, lv2, tetherLv, isMutual, combinedLv } = edge;
+        const compSize = compSizeById.get(p1.id) || 2;
+        const tier = LINK_TIERS[clamp(tetherLv, 1, 5)];
+        const src = lv1 >= lv2 ? p1 : p2;
+        const dst = src === p1 ? p2 : p1;
+        const dx = dst.x - src.x;
+        const dy = dst.y - src.y;
+        const dLen = Math.hypot(dx, dy) || 1;
+        const ux = dx / dLen;
+        const uy = dy / dLen;
+        const nx = -uy;
+        const ny = ux;
+        const beamW = tier.width + (isMutual ? 2.4 : 0) + (compSize >= 3 ? 1.2 : 0);
+
+        ctx.save();
+        // 1. Outer plasma energy aura (gradient shows 1-way caster -> heal-green OR 2-way pilot colors!)
+        const grad = ctx.createLinearGradient(src.x, src.y, dst.x, dst.y);
+        if (isMutual) {
+          grad.addColorStop(0, src.color);
+          grad.addColorStop(0.5, '#fef08a');
+          grad.addColorStop(1, dst.color);
+        } else {
+          grad.addColorStop(0, src.color);
+          grad.addColorStop(0.55, tier.core);
+          grad.addColorStop(1, '#4ade80');
+        }
+        ctx.strokeStyle = tier.glow;
+        ctx.lineWidth = beamW * 2.15;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(src.x, src.y);
+        ctx.lineTo(dst.x, dst.y);
+        ctx.stroke();
+
+        // 2. Main beam spine + level-scaled jagged lightning / braided helices!
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = beamW;
+        ctx.beginPath();
+        ctx.moveTo(src.x, src.y);
+        ctx.lineTo(dst.x, dst.y);
+        ctx.stroke();
+
+        // Crackling lightning arc (1 strand at Lv1-2, braided sine helix at Lv3+, twin counter-helices for Dual/Lv4+!)
+        const waveStrands = isMutual ? 2 : (tetherLv >= 4 ? 2 : (tetherLv >= 2 ? 1 : 0));
+        if (waveStrands === 0) {
+          drawJaggedLine(src.x, src.y, dst.x, dst.y, tier.accent, 2.2);
+        } else {
+          const segs = Math.max(12, Math.min(26, Math.floor(dLen / 18)));
+          const amp = (4.5 + tetherLv * 1.4) * (isMutual ? 1.2 : 1);
+          for (let s = 0; s < waveStrands; s++) {
+            const dir = s === 0 ? 1 : -1;
+            const phase = state.time * (9 + tetherLv * 1.8) * dir + s * Math.PI;
+            ctx.strokeStyle = isMutual ? (s === 0 ? src.color : dst.color) : (s === 0 ? tier.accent : '#ffffff');
+            ctx.lineWidth = isMutual ? 3.2 : (s === 0 ? 2.8 : 2.1);
+            ctx.beginPath();
+            for (let i = 0; i <= segs; i++) {
+              const t = i / segs;
+              const env = Math.sin(t * Math.PI); // pin cleanly to both UFOs
+              const off = Math.sin(t * Math.PI * (3 + tetherLv) - phase) * amp * env;
+              const px = src.x + dx * t + nx * off;
+              const py = src.y + dy * t + ny * off;
+              if (i === 0) ctx.moveTo(px, py);
+              else ctx.lineTo(px, py);
+            }
+            ctx.stroke();
+          }
+          // Bright white-hot plasma center wire at Lv 3+ or Mutual!
+          if (tetherLv >= 3 || isMutual) {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+            ctx.lineWidth = isMutual ? 2.8 : 2.0;
+            ctx.beginPath();
+            ctx.moveTo(src.x, src.y);
+            ctx.lineTo(dst.x, dst.y);
+            ctx.stroke();
+          }
+        }
+
+        // 3. Directional Energy Chevrons & Green Healing Orbs (1-Way: src -> dst ONLY; 2-Way Mutual: BOTH directions!)
+        const pulseCount = Math.max(2, Math.min(5, Math.floor(dLen / 85)));
+        const ang = Math.atan2(dy, dx);
+        for (let i = 0; i < pulseCount; i++) {
+          const tFwd = ((state.time * (0.85 + tetherLv * 0.1) + i / pulseCount) % 1);
+          const hx = src.x + dx * tFwd;
+          const hy = src.y + dy * tFwd;
+          // Green healing bead flowing toward dst
+          ctx.fillStyle = '#4ade80';
+          ctx.strokeStyle = '#090d16';
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          ctx.arc(hx, hy, 3.8 + tetherLv * 0.35, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+
+          // Crisp directional chevron arrow showing beam flow!
+          ctx.save();
+          ctx.translate(hx, hy);
+          ctx.rotate(ang);
+          ctx.strokeStyle = '#fef9c3';
+          ctx.lineWidth = 2.2;
+          ctx.beginPath();
+          ctx.moveTo(-5, -5);
+          ctx.lineTo(2, 0);
+          ctx.lineTo(-5, 5);
+          ctx.stroke();
+          ctx.restore();
+
+          if (isMutual) {
+            const tRev = 1 - ((state.time * (0.85 + tetherLv * 0.1) + (i + 0.5) / pulseCount) % 1);
+            const rx = src.x + dx * tRev;
+            const ry = src.y + dy * tRev;
+            ctx.fillStyle = '#4ade80';
+            ctx.strokeStyle = '#090d16';
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            ctx.arc(rx, ry, 3.8 + tetherLv * 0.35, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.save();
+            ctx.translate(rx, ry);
+            ctx.rotate(ang + Math.PI);
+            ctx.strokeStyle = '#fef9c3';
+            ctx.lineWidth = 2.2;
+            ctx.beginPath();
+            ctx.moveTo(-5, -5);
+            ctx.lineTo(2, 0);
+            ctx.lineTo(-5, 5);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+
+        // 4. Midpoint Indicator: Resonance Starburst (for Mutual 2P+) + Clear Level/Source Tag!
+        const mx = (src.x + dst.x) * 0.5;
+        const my = (src.y + dst.y) * 0.5;
+        if (isMutual) {
+          ctx.save();
+          ctx.translate(mx, my);
+          ctx.rotate(state.time * 4.2);
+          ctx.fillStyle = '#fef08a';
+          ctx.strokeStyle = '#090d16';
+          ctx.lineWidth = 2;
+          drawFourPointStar(0, 0, 12 + Math.min(6, combinedLv * 0.6));
+          ctx.restore();
+        }
+        const badgeLabel = compSize >= 3
+          ? (isMutual ? `⚡${compSize}P ×2 LV${combinedLv}` : `⚡${compSize}P LV${tetherLv}`)
+          : (isMutual ? `⚡×2 LV${combinedLv}` : `LV${tetherLv} →+HP`);
+        ctx.font = '800 10.5px "Space Grotesk", sans-serif';
+        ctx.textAlign = 'center';
+        const bw = ctx.measureText(badgeLabel).width + 12;
+        const by = my - (isMutual ? 18 : 13);
+        ctx.fillStyle = 'rgba(9, 13, 22, 0.82)';
+        ctx.strokeStyle = isMutual ? '#fde047' : tier.core;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.roundRect(mx - bw * 0.5, by - 9, bw, 16, 8);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = isMutual ? '#fef08a' : '#e0f2fe';
+        ctx.fillText(badgeLabel, mx, by + 2.5);
+        ctx.restore();
+      }
+
+      // 5. Per-Player Emitter Rings (shows WHO is casting Plasma Link + their Level pips!) & +DMG Buff Ring!
+      for (const [pid, meta] of linkMetaByPlayer.entries()) {
+        const pl = state.players.find((x) => x.id === pid);
+        if (!pl || pl.downed) continue;
+        const compSize = compSizeById.get(pid) || 2;
+        ctx.save();
+        ctx.translate(pl.x, pl.y);
+        if (meta.emitLv > 0) {
+          // Emitter collar ring in pilot's own color with orbiting level pips (1..5 pips!)
+          ctx.strokeStyle = pl.color;
+          ctx.lineWidth = 2.6;
+          ctx.setLineDash([6, 4]);
+          ctx.beginPath();
+          ctx.arc(0, 0, 31, state.time * 2.2, state.time * 2.2 + Math.PI * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          for (let k = 0; k < meta.emitLv; k++) {
+            const pa = state.time * 2.6 + (k / meta.emitLv) * Math.PI * 2;
+            ctx.fillStyle = '#fef08a';
+            ctx.strokeStyle = '#090d16';
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            ctx.arc(Math.cos(pa) * 31, Math.sin(pa) * 31, 3.6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+          }
+        }
+        if (meta.receivingHeal) {
+          // Gentle green regen halo on players receiving Plasma Link HP regen!
+          ctx.strokeStyle = 'rgba(74, 222, 128, 0.65)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(0, 0, 26 + Math.sin(state.time * 8) * 1.5, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        // Subtle golden +DMG resonance chevron badge on linked UFOs!
+        const boostPct = Math.round((meta.boost || pl.linkDmgBoost || 0.16) * 100);
+        ctx.font = '800 9.5px "Space Grotesk", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 3;
+        const tag = meta.receivingHeal ? `▲+${boostPct}% · +HP` : `▲+${boostPct}% DMG`;
+        ctx.strokeText(tag, 0, 44);
+        ctx.fillStyle = meta.receivingHeal ? '#86efac' : '#fde047';
+        ctx.fillText(tag, 0, 44);
+        ctx.restore();
       }
     }
 
@@ -5554,12 +5976,52 @@
       ctx.restore();
     }
 
-    // Beams
+    // Beams (Upgraded Dome Railgun + Chain Lightning!)
     for (const b of state.beams) {
-      const a = b.life / b.maxLife;
+      const a = clamp(b.life / Math.max(0.01, b.maxLife), 0, 1);
+      ctx.save();
       ctx.globalAlpha = a;
       if (b.jagged) {
         drawJaggedLine(b.x1, b.y1, b.x2, b.y2, b.color, b.width);
+      } else if (b.kind === 'rail') {
+        ctx.lineCap = 'round';
+        // Outer electric cyan-violet railgun aura
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.34)';
+        ctx.lineWidth = (b.width * 1.95) * a;
+        ctx.beginPath();
+        ctx.moveTo(b.x1, b.y1);
+        ctx.lineTo(b.x2, b.y2);
+        ctx.stroke();
+
+        // Crisp cartoon ink outline
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = (b.width + 6) * a;
+        ctx.stroke();
+
+        // Blazing plasma rail body
+        ctx.strokeStyle = b.color || '#38bdf8';
+        ctx.lineWidth = b.width * a;
+        ctx.stroke();
+
+        // White-hot blinding railgun core
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = Math.max(3, b.width * 0.44 * a);
+        ctx.stroke();
+
+        // Muzzle blast star at UFO dish
+        ctx.fillStyle = '#e0f2fe';
+        drawFourPointStar(b.x1, b.y1, (14 + b.width * 0.45) * a);
+
+        // Locked-on Strongest Target impact burst reticle!
+        if (b.tx !== null && b.tx !== undefined && b.ty !== null && b.ty !== undefined) {
+          ctx.strokeStyle = '#fef08a';
+          ctx.lineWidth = 3 * a;
+          ctx.beginPath();
+          ctx.arc(b.tx, b.ty, (18 + (1 - a) * 24), 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.fillStyle = '#ffffff';
+          drawFourPointStar(b.tx, b.ty, (16 + b.width * 0.4) * a);
+        }
       } else {
         ctx.strokeStyle = '#090d16';
         ctx.lineWidth = (b.width + 4) * a;
@@ -5572,7 +6034,7 @@
         ctx.lineWidth = b.width * a;
         ctx.stroke();
       }
-      ctx.globalAlpha = 1;
+      ctx.restore();
     }
 
     // Cuphead / WoW Boss Sweeping Lasers & Rotating Plasma Cross!
@@ -5957,12 +6419,12 @@
       ctx.stroke();
     }
 
-    // Visual Upgrade: UPGRADED Super Star-Saws at Tight 40% Orbit Radius (116px)!
+    // Visual Upgrade: UPGRADED Super Star-Saws at Tight 40% Orbit Radius (116px) — DOUBLED count (6..14)!
     if (up.orbital_blades > 0) {
       const orbLv = up.orbital_blades;
       const orbRadius = STAR_SAW_RADIUS;
-      const orbCount = orbLv + 2;
-      const bladeR = 17 + orbLv * 1.4;
+      const orbCount = (orbLv + 2) * 2;
+      const bladeR = 15 + orbLv * 1.1;
 
       // Glowing plasma orbit track
       ctx.save();
@@ -5978,10 +6440,10 @@
         const oa = p.orbitAngle + (k / orbCount) * Math.PI * 2;
         // Glowing golden-plasma swoosh trail arc behind each spinning star!
         ctx.strokeStyle = orbLv >= 3 ? 'rgba(251, 191, 36, 0.52)' : 'rgba(253, 224, 71, 0.36)';
-        ctx.lineWidth = orbLv >= 3 ? 6.5 : 4.5;
+        ctx.lineWidth = orbLv >= 3 ? 5.8 : 4.2;
         ctx.lineCap = 'round';
         ctx.beginPath();
-        ctx.arc(0, 0, orbRadius, oa - 0.34, oa - 0.04);
+        ctx.arc(0, 0, orbRadius, oa - 0.24, oa - 0.04);
         ctx.stroke();
 
         const ox = Math.cos(oa) * orbRadius;
@@ -6380,19 +6842,40 @@
 
     ctx.restore();
 
-    // Clear Cartoon Energy Shield Bubble when Armored or Shielding/Blocking/Dashing!
-    const shieldAmt = clamp((p.shieldFlash || 0) / 0.34, 0, 1);
+    // Clear Cartoon Energy Shield Bubble & Phase-Immunity Dash Shell!
+    const isDashing = (p.dashTimer || 0) > 0;
+    const shieldAmt = isDashing ? 1 : clamp((p.shieldFlash || 0) / 0.34, 0, 1);
     if (shieldAmt > 0.02 || up.hull_plating > 0) {
       ctx.save();
       ctx.translate(p.x, p.y);
+      if (isDashing) {
+        // High-speed cyan phase-dash streak lines trailing behind the UFO!
+        const ea = p.thrustAngle !== undefined ? p.thrustAngle : Math.PI / 2;
+        ctx.save();
+        ctx.rotate(ea);
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.78)';
+        ctx.lineCap = 'round';
+        [-18, -8, 8, 18].forEach((sy, idx) => {
+          ctx.lineWidth = idx === 1 || idx === 2 ? 3.2 : 2.2;
+          ctx.beginPath();
+          ctx.moveTo(18, sy);
+          ctx.lineTo(54 + (idx % 2) * 16, sy * 1.15);
+          ctx.stroke();
+        });
+        ctx.restore();
+      }
       const rad = 29 + shieldAmt * 7 + Math.sin(state.time * 7) * 1.2;
-      ctx.fillStyle = shieldAmt > 0.02
-        ? `rgba(125, 211, 252, ${(0.16 + shieldAmt * 0.28).toFixed(3)})`
-        : 'rgba(56, 189, 248, 0.09)';
-      ctx.strokeStyle = shieldAmt > 0.02
-        ? `rgba(224, 242, 254, ${(0.5 + shieldAmt * 0.5).toFixed(3)})`
-        : 'rgba(125, 211, 252, 0.35)';
-      ctx.lineWidth = shieldAmt > 0.02 ? 3.5 : 1.8;
+      ctx.fillStyle = isDashing
+        ? 'rgba(56, 189, 248, 0.34)'
+        : shieldAmt > 0.02
+          ? `rgba(125, 211, 252, ${(0.16 + shieldAmt * 0.28).toFixed(3)})`
+          : 'rgba(56, 189, 248, 0.09)';
+      ctx.strokeStyle = isDashing
+        ? '#e0f2fe'
+        : shieldAmt > 0.02
+          ? `rgba(224, 242, 254, ${(0.5 + shieldAmt * 0.5).toFixed(3)})`
+          : 'rgba(125, 211, 252, 0.35)';
+      ctx.lineWidth = isDashing ? 4.2 : shieldAmt > 0.02 ? 3.5 : 1.8;
       ctx.beginPath();
       ctx.arc(0, 0, rad, 0, Math.PI * 2);
       ctx.fill();
