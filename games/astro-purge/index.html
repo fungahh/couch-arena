@@ -38,6 +38,7 @@
           <button type="button" class="hud-pill hud-btn" id="btn-hud-invite" title="Copy Room Invite Link">Room: ------ · Copy Link</button>
           <button type="button" class="hud-pill hud-btn" id="btn-pause" title="Pause (P / Esc / Start)">Pause</button>
           <button type="button" class="hud-pill hud-btn mobile-hide" id="btn-autofire" title="Toggle Auto-Fire (T)">Auto-Fire: ON</button>
+          <button type="button" class="hud-pill hud-btn" id="btn-hud-ping" title="Ping your UFO location or call for Ress (Q)">📍 Ping</button>
           <button type="button" class="hud-pill hud-btn" id="btn-mute" title="Toggle Sound (M)">SFX: ON</button>
           <button type="button" class="hud-pill hud-btn" id="btn-fullscreen" title="Toggle Fullscreen / Clean HUD">⛶</button>
         </div>
@@ -171,8 +172,9 @@
   <!-- DEDICATED PHONE GAMEPAD CONTROLLER UI (When connected as a Phone Controller!) -->
   <div id="controller-ui" class="controller-ui hidden" aria-label="Phone Gamepad Controller">
     <div class="ctrl-topbar">
-      <div class="ctrl-pilot-pill">
+      <div class="ctrl-pilot-pill" id="ctrl-pilot-pill">
         <span class="ctrl-color-dot" id="ctrl-color-dot"></span>
+        <span class="ctrl-slot-tag" id="ctrl-slot-tag">P1</span>
         <span class="ctrl-pilot-name" id="ctrl-pilot-name">Pilot</span>
         <span class="ctrl-meta" id="ctrl-meta">W1 · LV1</span>
       </div>
@@ -190,7 +192,7 @@
     </div>
 
     <div class="ctrl-pad-wrap">
-      <!-- Left Steering Zone (Virtual Joystick OR Trackpad!) -->
+      <!-- Steering Zone (Virtual Joystick OR Trackpad — right-edge in horizontal!) -->
       <div id="ctrl-steer-pad" class="ctrl-steer-pad">
         <div class="ctrl-steer-label" id="ctrl-steer-label">HOLD &amp; STEER UFO (VIRTUAL JOYSTICK)</div>
         <div id="ctrl-stick-base" class="ctrl-stick-base">
@@ -204,21 +206,28 @@
         </div>
       </div>
 
-      <!-- Right Action Zone (Big Tactile Arcade DASH Button + Mini Upgrades) -->
+      <!-- Action Zone (Big Tactile Arcade DASH + PING / RESS Button + Mini Upgrades) -->
       <div class="ctrl-action-pad">
-        <button type="button" id="ctrl-dash-btn" class="ctrl-dash-btn">
-          <span class="ctrl-dash-title">DASH</span>
-          <span class="ctrl-dash-sub" id="ctrl-dash-sub">READY!</span>
-        </button>
+        <div class="ctrl-btn-cluster">
+          <button type="button" id="ctrl-dash-btn" class="ctrl-dash-btn">
+            <span class="ctrl-dash-title">DASH</span>
+            <span class="ctrl-dash-sub" id="ctrl-dash-sub">READY!</span>
+          </button>
+          <button type="button" id="ctrl-ping-btn" class="ctrl-ping-btn" aria-label="Ping my UFO or call for revive">
+            <span class="ctrl-ping-icon" id="ctrl-ping-icon">📍</span>
+            <span class="ctrl-ping-title" id="ctrl-ping-title">PING</span>
+            <span class="ctrl-ping-sub" id="ctrl-ping-sub">FIND ME</span>
+          </button>
+        </div>
         <div class="ctrl-autofire-note">⚡ Auto-Fire ON · Watch the TV!</div>
         <div class="ctrl-weapons-mini" id="ctrl-weapons-mini"></div>
       </div>
     </div>
 
     <div id="ctrl-hurt-flash" class="ctrl-hurt-flash"></div>
-    <div id="ctrl-downed-banner" class="ctrl-downed-banner hidden">
-      💥 UFO DOWNED! Tell a teammate on TV to fly near you to revive!
-    </div>
+    <button type="button" id="ctrl-downed-banner" class="ctrl-downed-banner hidden">
+      🆘 UFO DOWNED! Tap here or PING to call for RESS!
+    </button>
   </div>
 
   <!-- OVERLAY 2: PERSONAL LEVEL-UP UPGRADE DRAFT -->

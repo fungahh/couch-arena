@@ -115,8 +115,11 @@
   const tvBigCode = document.getElementById('tv-big-code');
   const btnTvFullscreen = document.getElementById('btn-tv-fullscreen');
 
+  const btnHudPing = document.getElementById('btn-hud-ping');
   const controllerUi = document.getElementById('controller-ui');
+  const ctrlPilotPill = document.getElementById('ctrl-pilot-pill');
   const ctrlColorDot = document.getElementById('ctrl-color-dot');
+  const ctrlSlotTag = document.getElementById('ctrl-slot-tag');
   const ctrlPilotName = document.getElementById('ctrl-pilot-name');
   const ctrlMeta = document.getElementById('ctrl-meta');
   const ctrlHpFill = document.getElementById('ctrl-hp-fill');
@@ -132,6 +135,10 @@
   const ctrlTrackDot = document.getElementById('ctrl-track-dot');
   const ctrlDashBtn = document.getElementById('ctrl-dash-btn');
   const ctrlDashSub = document.getElementById('ctrl-dash-sub');
+  const ctrlPingBtn = document.getElementById('ctrl-ping-btn');
+  const ctrlPingIcon = document.getElementById('ctrl-ping-icon');
+  const ctrlPingTitle = document.getElementById('ctrl-ping-title');
+  const ctrlPingSub = document.getElementById('ctrl-ping-sub');
   const ctrlWeaponsMini = document.getElementById('ctrl-weapons-mini');
   const ctrlHurtFlash = document.getElementById('ctrl-hurt-flash');
   const ctrlDownedBanner = document.getElementById('ctrl-downed-banner');
@@ -275,6 +282,15 @@
     voidBoom() {
       this.noise(0.18, 0.09, 600);
       this.tone(190, 55, 0.2, 'sawtooth', 0.1);
+    },
+    ping() {
+      this.tone(740, 1046.5, 0.11, 'sine', 0.1);
+      setTimeout(() => this.tone(1046.5, 1318.5, 0.15, 'sine', 0.095), 95);
+    },
+    sosPing() {
+      this.tone(880, 660, 0.12, 'triangle', 0.12);
+      setTimeout(() => this.tone(880, 660, 0.12, 'triangle', 0.12), 140);
+      setTimeout(() => this.tone(1046.5, 784, 0.2, 'triangle', 0.13), 280);
     },
   };
 
@@ -454,6 +470,8 @@
         toggleAutofire();
       } else if (code === 'KeyM') {
         toggleMute();
+      } else if (code === 'KeyQ' || code === 'KeyF') {
+        triggerMyPing();
       }
     } else if (state.mode === 'paused') {
       if ((code === 'Escape' || code === 'KeyP') && room.isHost) togglePause();
@@ -602,7 +620,10 @@
     phonePad.my = 0;
     phonePad.dash = false;
     phonePad.pointerId = null;
-    if (ctrlStickBase) ctrlStickBase.classList.remove('active');
+    if (ctrlStickBase) {
+      ctrlStickBase.classList.remove('active');
+      ctrlStickBase.style.transform = 'translate(0px, 0px)';
+    }
     if (ctrlStickKnob) ctrlStickKnob.style.transform = 'translate(0px, 0px)';
     if (ctrlTrackDot) ctrlTrackDot.style.transform = 'translate(0px, 0px)';
     if (ctrlDashBtn) ctrlDashBtn.classList.remove('pressed');
@@ -617,7 +638,7 @@
     if (ctrlSteerLabel) {
       ctrlSteerLabel.textContent = isTrack
         ? 'SLIDE TO STEER UFO (TRACKPAD MODE)'
-        : 'HOLD & STEER UFO (VIRTUAL JOYSTICK)';
+        : 'TOUCH ANYWHERE ON RIGHT TO STEER UFO';
     }
     if (ctrlStickBase) ctrlStickBase.classList.toggle('hidden', isTrack);
     if (ctrlTrackVisual) ctrlTrackVisual.classList.toggle('hidden', !isTrack);
@@ -638,25 +659,27 @@
     const updateSteerFromPoint = (clientX, clientY) => {
       const dx = clientX - phonePad.originX;
       const dy = clientY - phonePad.originY;
-      const maxR = phonePad.mode === 'trackpad' ? 54 : 60;
+      // Shorter, super-responsive 42px throw radius so gentle thumb motions hit full speed easily!
+      const maxR = phonePad.mode === 'trackpad' ? 38 : 42;
       const d = Math.hypot(dx, dy);
       const clampedD = Math.min(d, maxR);
-      const nx = d > 0.001 ? (dx / d) * (clampedD / maxR) : 0;
-      const ny = d > 0.001 ? (dy / d) * (clampedD / maxR) : 0;
-      const dead = 0.12;
-      if (Math.hypot(nx, ny) < dead) {
+      const rawMag = d > 0.001 ? clampedD / maxR : 0;
+      const dead = 0.07;
+      if (rawMag < dead) {
         phonePad.mx = 0;
         phonePad.my = 0;
       } else {
-        phonePad.mx = Math.round(nx * 100) / 100;
-        phonePad.my = Math.round(ny * 100) / 100;
+        const rescaled = Math.pow((rawMag - dead) / (1 - dead), 0.85);
+        phonePad.mx = Math.round((dx / d) * rescaled * 100) / 100;
+        phonePad.my = Math.round((dy / d) * rescaled * 100) / 100;
       }
-      const visX = (d > 0.001 ? (dx / d) * clampedD : 0);
-      const visY = (d > 0.001 ? (dy / d) * clampedD : 0);
+      const visScale = phonePad.mode === 'stick' ? 1.15 : 0.95;
+      const visX = (d > 0.001 ? (dx / d) * clampedD * visScale : 0);
+      const visY = (d > 0.001 ? (dy / d) * clampedD * visScale : 0);
       if (phonePad.mode === 'stick' && ctrlStickKnob) {
         ctrlStickKnob.style.transform = `translate(${visX.toFixed(1)}px, ${visY.toFixed(1)}px)`;
       } else if (ctrlTrackDot) {
-        ctrlTrackDot.style.transform = `translate(${(visX * 0.85).toFixed(1)}px, ${(visY * 0.85).toFixed(1)}px)`;
+        ctrlTrackDot.style.transform = `translate(${visX.toFixed(1)}px, ${visY.toFixed(1)}px)`;
       }
     };
 
@@ -669,10 +692,21 @@
       if (ctrlSteerPad.setPointerCapture) {
         try { ctrlSteerPad.setPointerCapture(e.pointerId); } catch (err) {}
       }
-      // In Stick mode, anchor to the touch-down point (floating stick feel!) so thumb never has to hunt!
+      // Visually glide the joystick ring right under where the thumb touched down!
       phonePad.originX = e.clientX;
       phonePad.originY = e.clientY;
-      if (ctrlStickBase) ctrlStickBase.classList.add('active');
+      if (phonePad.mode === 'stick' && ctrlStickBase) {
+        ctrlStickBase.style.transform = 'translate(0px, 0px)';
+        const baseRect = ctrlStickBase.getBoundingClientRect();
+        const padRect = ctrlSteerPad.getBoundingClientRect();
+        const restCx = baseRect.left + baseRect.width / 2;
+        const restCy = baseRect.top + baseRect.height / 2;
+        const margin = baseRect.width * 0.42;
+        const clampedX = clamp(e.clientX, padRect.left + margin, padRect.right - margin);
+        const clampedY = clamp(e.clientY, padRect.top + margin, padRect.bottom - margin);
+        ctrlStickBase.style.transform = `translate(${(clampedX - restCx).toFixed(1)}px, ${(clampedY - restCy).toFixed(1)}px)`;
+        ctrlStickBase.classList.add('active');
+      }
       updateSteerFromPoint(e.clientX, e.clientY);
     }, { passive: false });
 
@@ -688,7 +722,10 @@
       phonePad.pointerId = null;
       phonePad.mx = 0;
       phonePad.my = 0;
-      if (ctrlStickBase) ctrlStickBase.classList.remove('active');
+      if (ctrlStickBase) {
+        ctrlStickBase.classList.remove('active');
+        ctrlStickBase.style.transform = 'translate(0px, 0px)';
+      }
       if (ctrlStickKnob) ctrlStickKnob.style.transform = 'translate(0px, 0px)';
       if (ctrlTrackDot) ctrlTrackDot.style.transform = 'translate(0px, 0px)';
     };
@@ -867,6 +904,8 @@
     hazards: [],
     bossBeams: [],
     bossCast: null,
+    pings: [], // { playerId, isRess, timer, maxTimer, x, y, color, glow, name, slot }
+    myPingCooldown: 0,
   };
 
   function createPlayerFromRoster(rp, localIndex) {
@@ -1122,6 +1161,69 @@
     }
   }
 
+  function spawnPlayerPing(playerId, isRessOverride) {
+    const p = state.players.find((pl) => pl.id === playerId);
+    if (!p) return;
+    const isRess = isRessOverride !== undefined ? Boolean(isRessOverride) : Boolean(p.downed);
+    const dur = isRess ? 3.2 : 2.6;
+    state.pings = state.pings.filter((pg) => pg.playerId !== playerId);
+    state.pings.push({
+      playerId: p.id,
+      slot: p.slot,
+      name: p.name,
+      color: p.color,
+      glow: p.glow,
+      x: p.x,
+      y: p.y,
+      isRess,
+      timer: dur,
+      maxTimer: dur,
+    });
+    if (isRess) SFX.sosPing();
+    else SFX.ping();
+  }
+
+  function triggerMyPing() {
+    if (state.mode !== 'playing') return;
+    if (room.isHost && room.tvMode) return;
+    if (state.myPingCooldown > 0) return;
+    state.myPingCooldown = 1.4;
+    SFX.ensure();
+    if (navigator.vibrate) {
+      const me = state.players.find((p) => p.id === room.myId);
+      try { navigator.vibrate(me && me.downed ? [40, 40, 60] : 22); } catch (e) {}
+    }
+    if (room.isHost) {
+      const me = state.players.find((p) => p.id === room.myId);
+      const isRess = Boolean(me && me.downed);
+      spawnPlayerPing(room.myId, isRess);
+      room.sendSignal({ type: 'PING_FX', playerId: room.myId, isRess });
+    } else {
+      room.sendSignal({ type: 'PLAYER_PING' });
+      const me = state.players.find((p) => p.id === room.myId);
+      if (me && me.downed) SFX.sosPing();
+      else SFX.ping();
+    }
+  }
+
+  if (ctrlPingBtn) {
+    ctrlPingBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      ctrlPingBtn.classList.add('pressed');
+      triggerMyPing();
+    }, { passive: false });
+    const releasePingBtn = () => ctrlPingBtn.classList.remove('pressed');
+    ctrlPingBtn.addEventListener('pointerup', releasePingBtn);
+    ctrlPingBtn.addEventListener('pointercancel', releasePingBtn);
+    ctrlPingBtn.addEventListener('pointerleave', releasePingBtn);
+  }
+  if (ctrlDownedBanner) {
+    ctrlDownedBanner.addEventListener('click', () => triggerMyPing());
+  }
+  if (btnHudPing) {
+    btnHudPing.addEventListener('click', () => triggerMyPing());
+  }
+
   function updatePhoneControllerHUD() {
     if (!isPhoneControllerActive()) return;
     const me = state.players.find((p) => p.id === room.myId);
@@ -1130,7 +1232,23 @@
 
     if (ctrlColorDot) {
       ctrlColorDot.style.background = pal.hex;
-      ctrlColorDot.style.boxShadow = `0 0 10px ${pal.glow}`;
+      ctrlColorDot.style.boxShadow = `0 0 12px ${pal.glow}`;
+    }
+    if (ctrlSlotTag) {
+      ctrlSlotTag.textContent = `P${mySlot + 1} ${pal.name.toUpperCase()}`;
+      ctrlSlotTag.style.background = pal.hex;
+      ctrlSlotTag.style.color = '#090d16';
+    }
+    if (ctrlPilotPill) {
+      ctrlPilotPill.style.borderColor = pal.hex;
+    }
+    if (ctrlStickBase) {
+      ctrlStickBase.style.borderColor = phonePad.active ? '#fde047' : pal.hex;
+      ctrlStickBase.style.boxShadow = `inset 0 0 28px ${pal.hex}44, 0 8px 26px rgba(0, 0, 0, 0.45)`;
+    }
+    if (ctrlStickKnob) {
+      ctrlStickKnob.style.background = `linear-gradient(135deg, ${pal.glow}, ${pal.hex})`;
+      ctrlStickKnob.style.boxShadow = `0 5px 0 #090d16, 0 0 22px ${pal.hex}99`;
     }
     if (ctrlPilotName) ctrlPilotName.textContent = (me && me.name) || room.myName;
     if (ctrlMeta) ctrlMeta.textContent = `W${state.wave} · LV${state.level}`;
@@ -1147,6 +1265,20 @@
       const dashReady = (me.dashCooldown || 0) <= 0.05;
       if (ctrlDashBtn) ctrlDashBtn.classList.toggle('cooling', !dashReady);
       if (ctrlDashSub) ctrlDashSub.textContent = dashReady ? 'READY!' : `${me.dashCooldown.toFixed(1)}s`;
+
+      // Morph PING button into urgent RESS ME! button when downed!
+      const pingCool = state.myPingCooldown > 0.05;
+      if (ctrlPingBtn) {
+        ctrlPingBtn.classList.toggle('ress', Boolean(me.downed));
+        ctrlPingBtn.classList.toggle('cooling', pingCool);
+      }
+      if (ctrlPingIcon) ctrlPingIcon.textContent = me.downed ? '🆘' : '📍';
+      if (ctrlPingTitle) ctrlPingTitle.textContent = me.downed ? 'RESS!' : 'PING';
+      if (ctrlPingSub) {
+        ctrlPingSub.textContent = pingCool
+          ? `${state.myPingCooldown.toFixed(1)}s`
+          : me.downed ? 'NEED REVIVE' : 'FIND ME';
+      }
 
       if (ctrlWeaponsMini && me.upgrades) {
         const chips = [];
@@ -1317,6 +1449,13 @@
         startGame();
       } else if (msg.type === 'CAPTAIN_PAUSE' && room.tvMode && (state.mode === 'playing' || state.mode === 'paused')) {
         togglePause();
+      } else if (msg.type === 'PLAYER_PING' && state.mode === 'playing' && msg.senderId) {
+        const target = state.players.find((pl) => pl.id === msg.senderId);
+        if (target) {
+          const isRess = Boolean(target.downed);
+          spawnPlayerPing(target.id, isRess);
+          room.sendSignal({ type: 'PING_FX', playerId: target.id, isRess });
+        }
       } else if (msg.type === 'CAPTAIN_LOBBY' && room.tvMode && (state.mode === 'paused' || state.mode === 'gameover')) {
         room.sendSignal({ type: 'RETURN_LOBBY' });
         returnToLobbyUI();
@@ -1328,6 +1467,7 @@
     if (msg.type === 'GAME_START') {
       document.documentElement.classList.remove('autostart-boot');
       state.mode = 'playing';
+      state.pings = [];
       clearTouchSteer();
       resetPhonePad();
       titleOverlay.classList.add('hidden');
@@ -1344,6 +1484,10 @@
         }
       }
       SFX.levelUp();
+    } else if (msg.type === 'PING_FX' && msg.playerId) {
+      if (!isPhoneControllerActive()) {
+        spawnPlayerPing(msg.playerId, msg.isRess);
+      }
     } else if (msg.type === 'SNAP') {
       if (state.mode === 'title') {
         // Guest arrived slightly after GAME_START -> seamlessly jump straight into live match!
@@ -1823,6 +1967,8 @@
     state.hazards = [];
     state.bossBeams = [];
     state.bossCast = null;
+    state.pings = [];
+    if (btnHudPing) btnHudPing.classList.toggle('hidden', Boolean(room.isHost && room.tvMode));
 
     let localIdx = 0;
     state.players = roster.map((rp) => createPlayerFromRoster(rp, rp.isLocal ? localIdx++ : -1));
@@ -2842,6 +2988,8 @@
       spawnCartoonBurst(p.x, p.y, '#fb7185', true);
       if (state.players.length >= 2) {
         spawnFloatText(p.x, p.y - 32, `${p.name} DOWN! FLY NEAR TO REVIVE`, '#fb7185');
+        spawnPlayerPing(p.id, true);
+        room.sendSignal({ type: 'PING_FX', playerId: p.id, isRess: true });
       }
       if (!state.players.some((pl) => !pl.downed)) {
         triggerGameOver();
@@ -3060,12 +3208,23 @@
       }
 
       if (p.dashTimer <= 0) {
-        p.vx += moveX * accel * dt;
-        p.vy += moveY * accel * dt;
-        // Longer, smooth space-drift braking when no input is pressed
-        const drag = Math.pow(0.28, dt);
-        p.vx *= drag;
-        p.vy *= drag;
+        if (moveMag > 0.05) {
+          // Crisp, responsive target-velocity steering (fast turns, zero ice-skating drift!)
+          const targetVx = moveX * maxSpeed;
+          const targetVy = moveY * maxSpeed;
+          const turnRate = 1 - Math.exp(-15.5 * dt);
+          p.vx += (targetVx - p.vx) * turnRate;
+          p.vy += (targetVy - p.vy) * turnRate;
+        } else {
+          // Clean, predictable brake on release so you stop right where you want
+          const stopDrag = Math.pow(0.04, dt);
+          p.vx *= stopDrag;
+          p.vy *= stopDrag;
+          if (Math.hypot(p.vx, p.vy) < 6) {
+            p.vx = 0;
+            p.vy = 0;
+          }
+        }
         const sp = Math.hypot(p.vx, p.vy);
         if (sp > maxSpeed) {
           p.vx = (p.vx / sp) * maxSpeed;
@@ -3518,8 +3677,25 @@
   // Runs on BOTH Host and Guest every frame for silky 60fps Disney cartoon visuals!
   function updateVisualEffects(dt) {
     state.time += dt;
+    if (state.myPingCooldown > 0) state.myPingCooldown = Math.max(0, state.myPingCooldown - dt);
     if (state.hurtVignette > 0) state.hurtVignette = Math.max(0, state.hurtVignette - dt * 1.35);
     if (!room.isHost && state.shake > 0) state.shake = Math.max(0, state.shake - dt * 28);
+
+    // Keep active radar pings locked onto moving UFOs
+    for (let i = state.pings.length - 1; i >= 0; i--) {
+      const pg = state.pings[i];
+      pg.timer -= dt;
+      const liveP = state.players.find((pl) => pl.id === pg.playerId);
+      if (liveP) {
+        pg.x = liveP.x;
+        pg.y = liveP.y;
+        pg.name = liveP.name;
+        pg.color = liveP.color;
+        pg.glow = liveP.glow;
+        pg.slot = liveP.slot;
+      }
+      if (pg.timer <= 0) state.pings.splice(i, 1);
+    }
 
     // Guest-side Boss dying fireworks so teammates see the full cartoon explosion show!
     if (!room.isHost && state.mode === 'playing') {
@@ -4608,8 +4784,9 @@
       ctx.restore();
     }
 
-    // Cartoon UFO Players (with Visual Upgrades + Easy "YOU" Beacon!)
+    // Cartoon UFO Players (with Visual Upgrades + Clear Color Halos & Pilot Pill Badges!)
     for (const p of state.players) drawUfoPlayer(p);
+    drawPlayerPings();
 
     // Cartoon Particles (inked puff clouds, 4-point Disney stars, and sparks)
     for (const pt of state.particles) {
@@ -4734,34 +4911,44 @@
       }
 
       ctx.fillStyle = '#334155';
-      ctx.strokeStyle = '#090d16';
-      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = p.color || '#f43f5e';
+      ctx.lineWidth = 3.5;
       ctx.beginPath();
-      ctx.arc(0, 0, 14, 0, Math.PI * 2);
+      ctx.arc(0, 0, 16, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
 
       ctx.fillStyle = '#fecdd3';
-      ctx.font = '700 12px "Fredoka", sans-serif';
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 3.5;
+      ctx.font = '700 13px "Fredoka", sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('REVIVE!', 0, -22);
+      ctx.strokeText(`🆘 REVIVE P${p.slot + 1} ${p.name}!`, 0, -24);
+      ctx.fillText(`🆘 REVIVE P${p.slot + 1} ${p.name}!`, 0, -24);
       ctx.restore();
       return;
     }
 
-    // "YOU" Spotter Ring so your own UFO is unmistakable in chaos!
-    if (isMe) {
-      const rPulse = 1 + Math.sin(state.time * 6) * 0.07;
-      ctx.strokeStyle = p.glow;
-      ctx.globalAlpha = 0.45;
-      ctx.lineWidth = 2;
-      ctx.setLineDash([5, 5]);
-      ctx.beginPath();
-      ctx.arc(0, 0, 32 * rPulse, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.globalAlpha = 1;
-    }
+    // Vivid Color-Matched Identification Halo under EVERY UFO (so all 5 players stand out on TV!)
+    const rPulse = 1 + Math.sin(state.time * 5.5 + p.slot * 1.3) * 0.06;
+    const haloGrad = ctx.createRadialGradient(0, 0, 10, 0, 0, 42 * rPulse);
+    haloGrad.addColorStop(0, `${p.color}48`);
+    haloGrad.addColorStop(0.65, `${p.color}22`);
+    haloGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = haloGrad;
+    ctx.beginPath();
+    ctx.arc(0, 0, 42 * rPulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = isMe ? '#fef08a' : p.color;
+    ctx.globalAlpha = isMe ? 0.85 : 0.62;
+    ctx.lineWidth = isMe ? 2.8 : 2.2;
+    if (isMe) ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.arc(0, 0, (isMe ? 33 : 29) * rPulse, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
 
     // Visual Upgrade: Nova Bumper Ring
     if (up.nova_pulse > 0) {
@@ -5223,16 +5410,141 @@
       ctx.fillRect(barX + 1, barY + 1, Math.max(2, barW * hpRatio - 2), 2);
     }
 
-    // Clear "YOU" or Player Name Tag underneath
-    ctx.font = '700 11px "Fredoka", "Inter", sans-serif';
+    // Bobbing "▼ YOU" pointer above your own HP bar (when playing on your own screen)
+    if (isMe) {
+      const bob = Math.sin(state.time * 8) * 3;
+      ctx.fillStyle = '#fde047';
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(p.x, barY - 5 + bob);
+      ctx.lineTo(p.x - 7, barY - 15 + bob);
+      ctx.lineTo(p.x + 7, barY - 15 + bob);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // High-Contrast Color-Coded Cartoon Pilot Pill Badge underneath EVERY UFO (super readable on TV!)
+    const slotPrefix = `P${p.slot + 1}`;
+    const shortName = String(p.name || slotPrefix).slice(0, 12);
+    const labelText = isMe ? `★ YOU · ${shortName}` : `${slotPrefix} · ${shortName}`;
+    ctx.font = '700 12px "Fredoka", "Inter", sans-serif';
     ctx.textAlign = 'center';
-    const tagText = isMe ? `▲ YOU (${p.name})` : p.name;
-    ctx.strokeStyle = '#090d16';
-    ctx.lineWidth = 3;
-    ctx.strokeText(tagText, p.x, p.y + 34);
-    ctx.fillStyle = isMe ? '#fef08a' : '#f8fafc';
-    ctx.fillText(tagText, p.x, p.y + 34);
+    ctx.textBaseline = 'middle';
+    const textW = ctx.measureText(labelText).width;
+    const pillW = Math.max(58, textW + 24);
+    const pillH = 20;
+    const pillX = p.x - pillW * 0.5;
+    const pillY = p.y + 27;
+
+    ctx.fillStyle = 'rgba(9, 13, 22, 0.88)';
+    ctx.strokeStyle = isMe ? '#fde047' : p.color;
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.roundRect(pillX, pillY, pillW, pillH, 999);
+    ctx.fill();
+    ctx.stroke();
+
+    // Glowing pilot color dot inside pill
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(pillX + 10, pillY + pillH * 0.5, 4.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = isMe ? '#fef08a' : '#ffffff';
+    ctx.fillText(labelText, p.x + 4, pillY + pillH * 0.5 + 0.5);
     ctx.restore();
+  }
+
+  // ---- Giant Radar Beacon Spotlight for PING ("I'm Here!") & Dead SOS ("RESS ME!") ----
+  function drawPlayerPings() {
+    if (!state.pings || state.pings.length === 0) return;
+    for (const pg of state.pings) {
+      const progress = 1 - clamp(pg.timer / Math.max(0.01, pg.maxTimer), 0, 1);
+      const fade = pg.timer < 0.45 ? clamp(pg.timer / 0.45, 0, 1) : 1;
+      const accent = pg.isRess
+        ? (Math.floor(state.time * 12) % 2 === 0 ? '#f43f5e' : '#fde047')
+        : (pg.color || '#5eead4');
+      const glow = pg.isRess ? '#fda4af' : (pg.glow || '#fef08a');
+
+      ctx.save();
+      ctx.globalAlpha = fade;
+
+      // 1. Vertical Cartoon Spotlight Beam from Top of Screen straight onto the UFO!
+      const beamW = pg.isRess ? 64 : 52;
+      const beamGrad = ctx.createLinearGradient(pg.x, 0, pg.x, pg.y + 30);
+      beamGrad.addColorStop(0, 'rgba(0,0,0,0)');
+      beamGrad.addColorStop(0.55, pg.isRess ? 'rgba(244, 63, 94, 0.22)' : `${pg.color}28`);
+      beamGrad.addColorStop(1, pg.isRess ? 'rgba(253, 224, 71, 0.42)' : `${pg.color}55`);
+      ctx.fillStyle = beamGrad;
+      ctx.beginPath();
+      ctx.moveTo(pg.x - beamW * 0.35, 0);
+      ctx.lineTo(pg.x + beamW * 0.35, 0);
+      ctx.lineTo(pg.x + beamW * 0.85, pg.y + 18);
+      ctx.lineTo(pg.x - beamW * 0.85, pg.y + 18);
+      ctx.closePath();
+      ctx.fill();
+
+      // 2. Three Expanding Concentric Sonar Rings
+      for (let k = 0; k < 3; k++) {
+        const phase = (progress * 3.2 + k * 0.33) % 1;
+        const rad = 26 + phase * (pg.isRess ? 140 : 115);
+        ctx.strokeStyle = k === 1 && pg.isRess ? '#fde047' : accent;
+        ctx.globalAlpha = fade * (1 - phase) * 0.92;
+        ctx.lineWidth = pg.isRess ? 5.5 : 4.2;
+        ctx.beginPath();
+        ctx.arc(pg.x, pg.y, rad, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // 3. Bouncing Giant Pointer + Comic Callout Banner above UFO!
+      ctx.globalAlpha = fade;
+      const bounce = Math.sin(state.time * 13) * 6;
+      const bannerY = Math.max(54, pg.y - 68 + bounce);
+      const callout = pg.isRess
+        ? `🆘 RESS ME! · P${pg.slot + 1} ${String(pg.name || '').slice(0, 12)}`
+        : `📍 P${pg.slot + 1} ${String(pg.name || '').slice(0, 12)} IS HERE!`;
+
+      ctx.font = '700 15px "Fredoka", "Inter", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const tw = ctx.measureText(callout).width;
+      const bw = tw + 26;
+      const bh = 30;
+      const bx = clamp(pg.x, bw * 0.5 + 12, W - bw * 0.5 - 12);
+
+      // Chunky comic drop shadow
+      ctx.fillStyle = '#090d16';
+      ctx.beginPath();
+      ctx.roundRect(bx - bw * 0.5, bannerY - bh * 0.5 + 3, bw, bh, 999);
+      ctx.fill();
+
+      ctx.fillStyle = pg.isRess ? '#e11d48' : '#0f172a';
+      ctx.strokeStyle = pg.isRess ? '#fde047' : accent;
+      ctx.lineWidth = 3.2;
+      ctx.beginPath();
+      ctx.roundRect(bx - bw * 0.5, bannerY - bh * 0.5, bw, bh, 999);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = pg.isRess ? '#ffffff' : glow;
+      ctx.fillText(callout, bx, bannerY + 0.5);
+
+      // Pointer triangle aimed straight down at the UFO
+      ctx.fillStyle = pg.isRess ? '#fde047' : accent;
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(pg.x, bannerY + bh * 0.5 + 12);
+      ctx.lineTo(pg.x - 9, bannerY + bh * 0.5 + 1);
+      ctx.lineTo(pg.x + 9, bannerY + bh * 0.5 + 1);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.restore();
+    }
   }
 
   // ---- Old-School Cartoon Space Viruses & Bosses (Wiggling, Chomping & Hit-Reacting!) ----

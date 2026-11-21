@@ -1643,6 +1643,88 @@ body.clean-hud #damage-meter:active {
   letter-spacing: 0.05em;
 }
 
+.ctrl-btn-cluster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  flex-wrap: nowrap;
+}
+
+.ctrl-slot-tag {
+  font-family: "Fredoka", system-ui, sans-serif;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #090d16;
+  background: #5eead4;
+  border: 1.5px solid #090d16;
+  letter-spacing: 0.04em;
+}
+
+.ctrl-ping-btn {
+  width: min(92px, 22vw, 28vh);
+  height: min(92px, 22vw, 28vh);
+  min-width: 76px;
+  min-height: 76px;
+  border-radius: 50%;
+  border: 3.5px solid #090d16;
+  background: radial-gradient(circle at 35% 30%, #fef08a, #f59e0b);
+  color: #1e1b2e;
+  box-shadow: 0 5px 0 #090d16, 0 0 22px rgba(251, 191, 36, 0.4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 0.08s ease, box-shadow 0.08s ease, background 0.15s ease;
+}
+
+.ctrl-ping-btn:active,
+.ctrl-ping-btn.pressed {
+  transform: translateY(3px) scale(0.94);
+  box-shadow: 0 2px 0 #090d16;
+}
+
+.ctrl-ping-btn.cooling {
+  opacity: 0.68;
+}
+
+.ctrl-ping-btn.ress {
+  background: radial-gradient(circle at 35% 30%, #fda4af, #e11d48);
+  color: #ffffff;
+  border-color: #fde047;
+  box-shadow: 0 5px 0 #090d16, 0 0 28px rgba(244, 63, 94, 0.75);
+  animation: ressPulse 0.75s ease-in-out infinite alternate;
+}
+
+@keyframes ressPulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.07); }
+}
+
+.ctrl-ping-icon {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.ctrl-ping-title {
+  font-family: "Fredoka", system-ui, sans-serif;
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.1;
+  margin-top: 2px;
+}
+
+.ctrl-ping-sub {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  opacity: 0.9;
+}
+
 .ctrl-autofire-note {
   font-size: 0.74rem;
   font-weight: 700;
@@ -1705,17 +1787,17 @@ body.clean-hud #damage-meter:active {
   }
 }
 
-/* Horizontal / Landscape Phone Controller: Joystick on RIGHT-HAND side closer to edge, DASH on LEFT! */
+/* Horizontal / Landscape Phone Controller: Joystick on RIGHT-HAND side closer to edge, DASH + PING on LEFT! */
 @media (orientation: landscape) {
   .ctrl-pad-wrap {
-    grid-template-columns: 1fr 1.65fr;
+    grid-template-columns: 1.15fr 1.55fr;
     gap: 10px;
   }
 
   .ctrl-action-pad {
     order: 1;
     align-items: flex-start;
-    padding-left: max(16px, 4vw);
+    padding-left: max(14px, 3vw);
   }
 
   .ctrl-steer-pad {
@@ -1765,15 +1847,26 @@ body.clean-hud #damage-meter:active {
     font-size: 1.5rem;
   }
 
+  .ctrl-btn-cluster {
+    gap: 10px;
+  }
+
   .ctrl-dash-btn {
-    width: min(124px, 34vh);
-    height: min(124px, 34vh);
-    min-width: 96px;
-    min-height: 96px;
+    width: min(116px, 33vh);
+    height: min(116px, 33vh);
+    min-width: 92px;
+    min-height: 92px;
+  }
+
+  .ctrl-ping-btn {
+    width: min(82px, 24vh);
+    height: min(82px, 24vh);
+    min-width: 72px;
+    min-height: 72px;
   }
 
   .ctrl-dash-title {
-    font-size: 1.35rem;
+    font-size: 1.3rem;
   }
 
   .ctrl-autofire-note {

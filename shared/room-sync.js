@@ -858,7 +858,11 @@
         }
         if (!sentViaP2p && this.relay && this.relay.connected) {
           const now = Date.now();
-          if (now - this.lastRelayRtSent >= 55) {
+          const inp = payload && payload.input;
+          const isZero = Boolean(inp && !inp.mx && !inp.my && inp.tx === null);
+          const isUrgent = Boolean(inp && inp.dash) || (isZero && !this._lastRtZero);
+          this._lastRtZero = isZero;
+          if (isUrgent || now - this.lastRelayRtSent >= 35) {
             this.lastRelayRtSent = now;
             this.relay.send(msg);
           }
