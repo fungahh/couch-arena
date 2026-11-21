@@ -183,6 +183,7 @@
       this.slot = opts.slot || 0;
       this.isBot = Boolean(opts.isBot);
       this.botSkill = opts.botSkill || 0.65;
+      this.veteran = opts.veteran || null;
       this.speedPreset = opts.speedPreset || 'normal';
       this.onEvent = opts.onEvent || (() => {});
 
@@ -914,6 +915,7 @@
         color: this.color,
         slot: this.slot,
         isBot: this.isBot,
+        v: this.veteran || null,
         g: cells,
         a: this.active ? [this.active.type, this.active.rot, this.active.x, this.active.y - BUFFER_ROWS] : null,
         gy: this.active ? this.getGhostY() - BUFFER_ROWS : 0,
@@ -939,6 +941,7 @@
       this.color = snap.color || this.color;
       this.slot = snap.slot !== undefined ? snap.slot : this.slot;
       this.isBot = Boolean(snap.isBot);
+      if (snap.v) this.veteran = snap.v;
 
       let idx = 0;
       for (let r = 0; r < BUFFER_ROWS; r++) {

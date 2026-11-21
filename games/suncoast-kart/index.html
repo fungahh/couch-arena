@@ -50,6 +50,27 @@
     <main id="app">
       <div id="canvas-mount" aria-label="3D Kart Race Viewport"></div>
       <div id="ui-root"></div>
+      <div id="sk-vet-pill" style="position:fixed; top:max(10px, env(safe-area-inset-top)); left:50%; transform:translateX(-50%); z-index:45; display:none; align-items:center; gap:6px; padding:4px 12px; border-radius:999px; background:#fffbeb; color:#1e1b2e; border:2.5px solid #1e1b2e; box-shadow:0 3px 0 #1e1b2e; font-family:'Fredoka',system-ui,sans-serif; font-size:0.8rem; font-weight:700; pointer-events:none;"></div>
     </main>
+    <script>
+      (function () {
+        if (!window.CouchAccounts || !window.CouchAccounts.startVeteranSession) return;
+        const pill = document.getElementById('sk-vet-pill');
+        function renderVet(rank) {
+          if (!pill || !rank) return;
+          const prof = window.CouchAccounts.getPublicProfile('suncoast-kart');
+          const name = (prof && prof.username) || (window.CouchRoom && window.CouchRoom.getSavedPlayerName()) || 'Racer';
+          pill.style.display = 'inline-flex';
+          pill.style.background = rank.bg || '#fffbeb';
+          pill.innerHTML = '<span>' + rank.badge + '</span><span>' + name + ' · ' + rank.title + '</span><span style="color:' + rank.color + ';">' + rank.points + ' VP</span>';
+        }
+        renderVet(window.CouchAccounts.getVeteranStats('suncoast-kart'));
+        window.CouchAccounts.startVeteranSession(
+          'suncoast-kart',
+          () => document.visibilityState === 'visible',
+          { onUpdate: renderVet }
+        );
+      })();
+    </script>
   </body>
 </html>

@@ -112,11 +112,15 @@
     syncAudioButtons();
   });
 
+  const initialBotsParam = params.has('bots')
+    ? Math.max(0, Math.min(3, Number(params.get('bots')) || 0))
+    : (handoffMeta && handoffMeta.bots !== undefined ? Math.max(0, Math.min(3, Number(handoffMeta.bots) || 0)) : 0);
+
   // ---- Game State ----
   const state = {
     mode: 'title', // 'title' | 'countdown' | 'playing' | 'paused' | 'victory' | 'kicked'
-    botCount: 1,
-    botCountManuallySet: false,
+    botCount: initialBotsParam,
+    botCountManuallySet: params.has('bots') || Boolean(handoffMeta && handoffMeta.bots !== undefined),
     speedPreset: 'normal',
     targetMode: 'random', // 'random' | 'leader' | 'highest'
     boards: [], // ordered array of TetrisBoard
@@ -196,8 +200,8 @@
     playerName: getSavedPlayerName(),
     onRosterChange: (roster) => {
       if (!state.botCountManuallySet && room.isHost) {
-        // Default to 0 bots when 2+ real players are in the room, or +1 friendly bot for solo!
-        state.botCount = roster.length >= 2 ? 0 : 1;
+        // Default cleanly to 0 bots (pure Solo Marathon when 1P, pure PvP when 2+P); host can add bots anytime!
+        state.botCount = 0;
         syncOptionButtons();
       }
       renderTitleRoster(roster);
@@ -369,6 +373,7 @@
     const list = [];
     roster.forEach((p, idx) => {
       const pal = PLAYER_COLORS[(p.slot !== undefined ? p.slot : idx) % PLAYER_COLORS.length];
+      const vet = p.veteran || (p.id === room.myId && window.CouchAccounts ? window.CouchAccounts.getVeteranStats('wonder-tetris') : null);
       list.push({
         id: p.id,
         name: p.name,
@@ -376,6 +381,7 @@
         color: pal.hex,
         slot: p.slot !== undefined ? p.slot : idx,
         isBot: false,
+        veteran: vet,
       });
     });
 
@@ -391,6 +397,7 @@
         slot,
         isBot: true,
         botSkill: bot.skill,
+        veteran: null,
       });
     }
     return list;
@@ -422,6 +429,8 @@
     victoryModal.classList.add('hidden');
 
     state.speedPreset = cfg.speedPreset || 'normal';
+    state.lastMatchCfg = cfg;
+    state.lastSeed = cfg.seed;
     state.boards = [];
     state.boardsById = {};
     state.botBrains = [];
@@ -432,6 +441,7 @@
 
     const participants = cfg.participants || [];
     for (const p of participants) {
+      const myVet = p.id === room.myId && window.CouchAccounts ? window.CouchAccounts.getVeteranStats('wonder-tetris') : null;
       const b = new E.TetrisBoard({
         id: p.id,
         name: p.name,
@@ -440,6 +450,7 @@
         slot: p.slot,
         isBot: p.isBot,
         botSkill: p.botSkill || 0.65,
+        veteran: myVet || p.veteran || null,
         speedPreset: state.speedPreset,
         seed: cfg.seed,
         onEvent: (ev) => handleBoardEvent(ev),
@@ -1216,11 +1227,26 @@
     window.location.href = url.toString();
   }
 
+  function openModeSetup() {
+    state.mode = 'title';
+    audio.stopBgm();
+    pauseModal.classList.add('hidden');
+    victoryModal.classList.add('hidden');
+    countdownOverlay.classList.add('hidden');
+    titleModal.classList.remove('hidden');
+    syncOptionButtons();
+    syncShellViews();
+  }
+
   btnPause.addEventListener('click', togglePause);
   btnResume.addEventListener('click', togglePause);
   btnPauseRestart.addEventListener('click', () => {
     if (room.isHost) hostStartMatch();
   });
+  const btnPauseSetup = document.getElementById('btn-pause-setup');
+  const btnVictorySetup = document.getElementById('btn-victory-setup');
+  if (btnPauseSetup) btnPauseSetup.addEventListener('click', openModeSetup);
+  if (btnVictorySetup) btnVictorySetup.addEventListener('click', openModeSetup);
   btnBackRoom.addEventListener('click', goBackToRoom);
   btnPauseRoom.addEventListener('click', goBackToRoom);
   btnVictoryRoom.addEventListener('click', goBackToRoom);
@@ -1458,7 +1484,7 @@
     // Explicitly budget column widths so NOTHING EVER overflows or disappears on iPad Safari!
     const outerPad = 14;
     const colGap = stageW < 860 ? 12 : 18;
-    const topMargin = 14;
+    const topMargin = 46; // crisp room for your Name + Veteran Badge & Title right above your board!
     const bottomReserve = !isTouchDevice && state.boards.length >= 3 ? 40 : 12;
     const usableW = stageW - outerPad * 2;
     const usableH = Math.max(200, stageH - topMargin - bottomReserve);
@@ -1498,9 +1524,11 @@
     const heroX = leftX + leftW + colGap;
     const heroY = Math.round(topMargin + (usableH - gridH) / 2);
 
-    // 1. HERO BOARD
+    // 1. HERO BOARD (with your Name + Veteran Badge, Title & VP right above!)
     const heroInfo = R.drawBoard(gameCtx, myB, { x: heroX, y: heroY, w: gridW, h: gridH }, {
       showFaces: cell >= 16,
+      showNameHeader: true,
+      showVeteranRight: true,
       isLeader: hasRivals && myB.id === leaderId,
     });
     state.boardCenters[myB.id] = { cx: heroInfo.cx, cy: heroInfo.cy };
@@ -1829,6 +1857,20 @@
       setTimeout(clearBootSplash, 4000);
     }
   });
+
+  // ---- Per-Game Veteran Points Time Tracker ----
+  if (window.CouchAccounts && window.CouchAccounts.startVeteranSession) {
+    window.CouchAccounts.startVeteranSession(
+      'wonder-tetris',
+      () => state.mode === 'playing' && !(room.isHost && room.tvMode),
+      {
+        onUpdate: (rank) => {
+          if (state.myBoard) state.myBoard.veteran = rank;
+          room.updateProfile({ veteran: rank });
+        },
+      }
+    );
+  }
 
   requestAnimationFrame(tick);
 })();

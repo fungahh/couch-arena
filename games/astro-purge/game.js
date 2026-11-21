@@ -5431,10 +5431,13 @@
       ctx.stroke();
     }
 
-    // High-Contrast Color-Coded Cartoon Pilot Pill Badge underneath EVERY UFO (super readable on TV!)
+    // High-Contrast Color-Coded Cartoon Pilot Pill Badge + Per-Game Veteran Title!
     const slotPrefix = `P${p.slot + 1}`;
     const shortName = String(p.name || slotPrefix).slice(0, 12);
-    const labelText = isMe ? `★ YOU · ${shortName}` : `${slotPrefix} · ${shortName}`;
+    const rp = room.players && room.players[p.id];
+    const vet = (rp && rp.veteran) || (isMe && window.CouchAccounts && window.CouchAccounts.getVeteranStats ? window.CouchAccounts.getVeteranStats('astro-purge') : null);
+    const vetPrefix = vet ? `${vet.badge} ` : '';
+    const labelText = isMe ? `★ ${vetPrefix}${shortName}` : `${slotPrefix} · ${vetPrefix}${shortName}`;
     ctx.font = '700 12px "Fredoka", "Inter", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -5460,6 +5463,23 @@
 
     ctx.fillStyle = isMe ? '#fef08a' : '#ffffff';
     ctx.fillText(labelText, p.x + 4, pillY + pillH * 0.5 + 0.5);
+
+    // Floating Cool Veteran Title & VP tag right above the UFO's head!
+    if (vet && vet.title) {
+      const titleStr = `${vet.badge} ${vet.title} · ${vet.points} VP`;
+      ctx.font = '700 10px "Fredoka", "Inter", sans-serif';
+      const tw = ctx.measureText(titleStr).width + 14;
+      const ty = barY - (isMe ? 28 : 14);
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.84)';
+      ctx.strokeStyle = vet.color || '#facc15';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.roundRect(p.x - tw * 0.5, ty - 8, tw, 16, 999);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#fef9c3';
+      ctx.fillText(titleStr, p.x, ty + 0.5);
+    }
     ctx.restore();
   }
 
@@ -6105,6 +6125,18 @@
       draw();
     }
     requestAnimationFrame(loop);
+  }
+
+  if (window.CouchAccounts && window.CouchAccounts.startVeteranSession) {
+    window.CouchAccounts.startVeteranSession(
+      'astro-purge',
+      () => state.mode === 'playing' && !(room.isHost && room.tvMode),
+      {
+        onUpdate: (rank) => {
+          room.updateProfile({ veteran: rank });
+        },
+      }
+    );
   }
 
   requestAnimationFrame(loop);

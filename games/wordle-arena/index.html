@@ -1935,6 +1935,7 @@
       const snapshot = {
         id: state.myId,
         name: state.myName,
+        veteran: window.CouchAccounts && window.CouchAccounts.getVeteranStats ? window.CouchAccounts.getVeteranStats('wordle-arena') : null,
         isHost: state.mode === 'host' || state.mode === 'solo',
         isBot: false,
         currentWordIdx: state.currentWordIdx,
@@ -2603,9 +2604,13 @@
         }
         historyHtml += '</div>';
 
+        const vet = p.veteran || (p.id === state.myId && window.CouchAccounts && window.CouchAccounts.getVeteranStats ? window.CouchAccounts.getVeteranStats('wordle-arena') : null);
+        const vetTag = vet
+          ? `<span style="display:inline-flex; align-items:center; gap:3px; margin-left:6px; padding:1px 7px; border-radius:999px; background:${vet.bg || '#fef9c3'}; color:#1e1b2e; border:1.5px solid ${vet.color || '#eab308'}; font-size:0.7rem; font-weight:800;">${vet.badge} ${escapeHtml(vet.title)} · ${vet.points} VP</span>`
+          : '';
         card.innerHTML = `
           <div class="slot-top">
-            <span class="slot-name">${escapeHtml(p.name)}</span>
+            <span class="slot-name">${escapeHtml(p.name)}${vetTag}</span>
             <span class="slot-badge${p.isFinished ? ' done' : ''}">${badgeText}</span>
           </div>
           <div class="slot-sub">
@@ -2727,6 +2732,39 @@
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
       }[m]));
     }
+
+    // ---- Per-Game Veteran Points Time Tracker ----
+    (function initWordleVeteran() {
+      if (!window.CouchAccounts || !window.CouchAccounts.startVeteranSession) return;
+      function updateOwnVetPill(rank) {
+        const hdr = document.querySelector('#arena-view .header-bar') || document.querySelector('.top-bar');
+        if (!hdr || !rank) return;
+        let pill = document.getElementById('wa-vet-pill');
+        if (!pill) {
+          pill = document.createElement('span');
+          pill.id = 'wa-vet-pill';
+          pill.style.cssText = 'display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;border:2px solid #1e1b2e;font-family:Fredoka,system-ui,sans-serif;font-size:0.78rem;font-weight:700;color:#1e1b2e;';
+          hdr.appendChild(pill);
+        }
+        pill.style.background = rank.bg || '#fef9c3';
+        pill.innerHTML = `${rank.badge} ${escapeHtml(state.myName || 'Player')} · ${escapeHtml(rank.title)} <span style="color:${rank.color};">${rank.points} VP</span>`;
+      }
+      updateOwnVetPill(window.CouchAccounts.getVeteranStats('wordle-arena'));
+      window.CouchAccounts.startVeteranSession(
+        'wordle-arena',
+        () => {
+          const arena = document.getElementById('arena-view');
+          return Boolean(arena && !arena.classList.contains('hidden') && !state.tvMode && !state.isFinished);
+        },
+        {
+          onUpdate: (rank) => {
+            updateOwnVetPill(rank);
+            broadcastMyProgress();
+            renderPlayersGrid();
+          }
+        }
+      );
+    })();
   </script>
 </body>
 </html>

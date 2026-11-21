@@ -28,6 +28,7 @@ window.GAME_HUB_REGISTRY = [
       pillText: '#9a3412',
       launchLabel: 'Start Wonder Tetris!',
       controlsTip: 'Move with Arrows/WASD · Rotate with Up/X/Z · Hard Drop with Space · Hold with C · On TV, everyone plays on their phone controller!',
+      supportsBotToggle: true,
     },
     statKey: 'wonder_tetris_best',
     formatStat: (raw) => {

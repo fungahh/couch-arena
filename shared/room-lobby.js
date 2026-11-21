@@ -24,6 +24,7 @@
   const requireApproval = !isHostStart && params.get('joinreq') === '1';
   const roomCode = rawRoom || window.CouchGames.generateRoomCode(game);
   let selectedLang = params.get('lang') === 'sv' ? 'sv' : 'en';
+  let selectedBots = Math.max(0, Math.min(3, Number(params.get('bots') || 0) || 0));
   let openInMainMenu = isHostStart && params.get('private') !== '1';
   let launching = false;
   let waitingForApproval = requireApproval;
@@ -76,6 +77,7 @@
   const btnLangSv = document.getElementById('btn-lang-sv');
   const astroLocalGroup = document.getElementById('astro-local-group');
   const btnAddLocal = document.getElementById('btn-add-local');
+  const tetrisBotsGroup = document.getElementById('tetris-bots-group');
   const rosterSection = document.getElementById('roster-section');
   const rosterHeading = document.getElementById('roster-heading');
   const rosterHint = document.getElementById('roster-hint');
@@ -99,7 +101,7 @@
 
   // ---- RoomSync (Pre-Game Lobby Channel: `lobby_<gameId>`) ----
   const { RoomSync, PLAYER_COLORS } = window.CouchRoom;
-  const profile = window.CouchAccounts ? window.CouchAccounts.getPublicProfile() : { username: window.CouchRoom.getSavedPlayerName(), avatar: '🛸', handle: '', trophyCount: 0 };
+  const profile = window.CouchAccounts ? window.CouchAccounts.getPublicProfile(gameId) : { username: window.CouchRoom.getSavedPlayerName(), avatar: '🛸', handle: '', trophyCount: 0, veteran: null };
 
   let currentPendingRequests = [];
 
@@ -117,6 +119,7 @@
     avatar: profile.avatar || '🛸',
     accountHandle: profile.handle || '',
     trophyCount: profile.trophyCount || 0,
+    veteran: profile.veteran || null,
     onRosterChange: (roster) => {
       renderRoster(roster);
       syncAllUI(roster);
@@ -329,6 +332,31 @@
     }
   });
 
+  function syncBotsUI() {
+    if (!tetrisBotsGroup) return;
+    const canEdit = room.isHost || isCouchCaptain();
+    tetrisBotsGroup.querySelectorAll('[data-bots]').forEach((btn) => {
+      btn.classList.toggle('active', Number(btn.dataset.bots) === selectedBots);
+      btn.disabled = !canEdit;
+    });
+  }
+
+  function setBots(n) {
+    selectedBots = Math.max(0, Math.min(3, Number(n) || 0));
+    syncBotsUI();
+    if (room.isHost) {
+      room.sendSignal({ type: 'BOTS_SYNC', bots: selectedBots });
+    } else if (isCouchCaptain()) {
+      room.sendSignal({ type: 'CAPTAIN_SET_BOTS', bots: selectedBots });
+    }
+  }
+
+  if (tetrisBotsGroup) {
+    tetrisBotsGroup.querySelectorAll('[data-bots]').forEach((btn) => {
+      btn.addEventListener('click', () => setBots(Number(btn.dataset.bots)));
+    });
+  }
+
   // ---- Copy Invite, Open Listing Toggle, TV Toggle, TV Fullscreen ----
   btnCopyLink.addEventListener('click', async () => {
     const url = new URL(window.location.href);
@@ -428,6 +456,10 @@
         const isCap = room.roomHasTv && roster.length > 0 && roster[0].id === p.id;
         const roleTag = p.isHost ? 'HOST' : isCap ? '★ CAPTAIN' : p.isController ? '📱 PHONE' : p.isLocal ? 'LOCAL' : 'READY';
         const trophyStr = p.accountHandle ? `🏆 ${p.trophyCount || 0} Trophies` : (p.isController ? 'Phone Controller' : p.isLocal ? 'Same Screen' : 'Guest');
+        const vet = p.veteran || (p.id === room.myId && window.CouchAccounts ? window.CouchAccounts.getVeteranStats(gameId) : null);
+        const vetHtml = vet
+          ? `<div style="display:inline-flex; align-items:center; flex-wrap:wrap; gap:3px; margin-top:4px; padding:2px 7px; border-radius:10px; background:${vet.bg || '#fef9c3'}; border:1.5px solid #1e1b2e; font-size:0.7rem; line-height:1.15; font-weight:800; color:#1e1b2e;"><span>${vet.badge} ${escapeHtml(vet.title)}</span><span style="color:${vet.color};">· ${vet.points} VP</span></div>`
+          : '';
         card.innerHTML = `
           <div class="roster-card-top">
             <span style="color:${pal.hex};">P${s + 1} · ${pal.name}</span>
@@ -440,6 +472,7 @@
             <div style="min-width:0;">
               <div class="roster-name">${escapeHtml(p.name)}</div>
               <div class="roster-meta">${p.id === room.myId ? 'You · ' : ''}${trophyStr}</div>
+              ${vetHtml}
             </div>
           </div>
         `;
@@ -480,7 +513,9 @@
     nameOptionGroup.classList.toggle('hidden', isTvHost);
     wordleLangGroup.classList.toggle('hidden', !flair.supportsLanguage);
     astroLocalGroup.classList.toggle('hidden', !(flair.supportsLocalAdd && room.isHost && !isTvHost));
+    if (tetrisBotsGroup) tetrisBotsGroup.classList.toggle('hidden', !flair.supportsBotToggle);
     syncLangUI();
+    syncBotsUI();
 
     const baseLabel = flair.launchLabel || `Launch ${game.title}!`;
     if (room.isHost) {
@@ -510,7 +545,7 @@
   }
 
   // ---- Synchronized Launch from Unified Pre-Game Room into the Game! ----
-  function buildGameUrl({ isHost, tvMode, controllerMode, lang }) {
+  function buildGameUrl({ isHost, tvMode, controllerMode, lang, bots }) {
     const url = new URL(game.path, window.location.href);
     url.searchParams.set('room', roomCode);
     url.searchParams.set('autostart', '1');
@@ -518,6 +553,7 @@
     if (isHost && tvMode) url.searchParams.set('tv', '1');
     if (!isHost && controllerMode) url.searchParams.set('controller', '1');
     if (flair.supportsLanguage) url.searchParams.set('lang', lang || selectedLang);
+    if (flair.supportsBotToggle) url.searchParams.set('bots', String(bots !== undefined ? bots : selectedBots));
     return url.toString();
   }
 
@@ -540,6 +576,7 @@
         expectedCount: roster.length,
         tvMode: room.tvMode,
         lang: selectedLang,
+        bots: selectedBots,
         localPlayers,
         ts: Date.now(),
       }));
@@ -550,6 +587,7 @@
       gameId,
       roomCode,
       lang: selectedLang,
+      bots: selectedBots,
       tvMode: room.tvMode,
     });
 
@@ -559,6 +597,7 @@
         tvMode: room.tvMode,
         controllerMode: false,
         lang: selectedLang,
+        bots: selectedBots,
       });
     }, 320);
   }
@@ -581,6 +620,8 @@
         hostLaunchGame();
       } else if (msg.type === 'CAPTAIN_SET_LANG' && msg.lang) {
         setLanguage(msg.lang);
+      } else if (msg.type === 'CAPTAIN_SET_BOTS' && msg.bots !== undefined) {
+        setBots(msg.bots);
       } else if (msg.type === 'CAPTAIN_APPROVE_JOIN' && msg.targetPlayerId) {
         room.approveJoinRequest(msg.targetPlayerId);
       } else if (msg.type === 'CAPTAIN_DECLINE_JOIN' && msg.targetPlayerId) {
@@ -593,6 +634,9 @@
     if (msg.type === 'LANG_SYNC' && msg.lang) {
       selectedLang = msg.lang === 'sv' ? 'sv' : 'en';
       syncLangUI();
+    } else if (msg.type === 'BOTS_SYNC' && msg.bots !== undefined) {
+      selectedBots = Math.max(0, Math.min(3, Number(msg.bots) || 0));
+      syncBotsUI();
     } else if (msg.type === 'PENDING_SYNC' && Array.isArray(msg.requests)) {
       currentPendingRequests = msg.requests;
       renderPendingRequests(currentPendingRequests);
@@ -606,6 +650,7 @@
         tvMode: false,
         controllerMode: initialController || room.roomHasTv,
         lang: msg.lang || selectedLang,
+        bots: msg.bots !== undefined ? msg.bots : selectedBots,
       });
     }
   }

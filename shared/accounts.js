@@ -419,8 +419,207 @@
     }
   }
 
-  function getPublicProfile() {
+  // ---- Per-Game Veteran Points, Cool Titles & Badges ----
+  const GUEST_VET_KEY = 'couch_arcade_guest_veteran_v1';
+
+  const VETERAN_TIERS = [
+    { tier: 0, minPts: 0,    badge: '🌱', color: '#22c55e', bg: '#dcfce7' },
+    { tier: 1, minPts: 60,   badge: '⭐', color: '#eab308', bg: '#fef9c3' },
+    { tier: 2, minPts: 180,  badge: '✨', color: '#0ea5e9', bg: '#e0f2fe' },
+    { tier: 3, minPts: 420,  badge: '🔥', color: '#f97316', bg: '#ffedd5' },
+    { tier: 4, minPts: 900,  badge: '💎', color: '#8b5cf6', bg: '#ede9fe' },
+    { tier: 5, minPts: 1800, badge: '👑', color: '#ec4899', bg: '#fce7f3' },
+    { tier: 6, minPts: 3600, badge: '🌈', color: '#f43f5e', bg: '#ffe4e6' },
+  ];
+
+  const GAME_VETERAN_TITLES = {
+    'wonder-tetris': [
+      'Block Sprout',
+      'Stack Apprentice',
+      'Castle Builder',
+      'Combo Conjurer',
+      'Fantasia Architect',
+      'Tetris Monarch',
+      'Storybook Legend',
+    ],
+    'astro-purge': [
+      'Space Cadet',
+      'Saucer Scout',
+      'Nebula Ace',
+      'Galaxy Veteran',
+      'Cosmic Captain',
+      'Starlight Commander',
+      'Galactic Legend',
+    ],
+    'wordle-arena': [
+      'Letter Sprout',
+      'Word Seeker',
+      'Riddle Runner',
+      'Vocab Veteran',
+      'Lexicon Sage',
+      'Crossword Monarch',
+      'Wordsmith Legend',
+    ],
+    'suncoast-kart': [
+      'Coastal Rookie',
+      'Drift Cruiser',
+      'Turbo Racer',
+      'Circuit Veteran',
+      'Apex Grandmaster',
+      'Suncoast Champion',
+      'Grand Prix Legend',
+    ],
+  };
+
+  function normalizeGameId(raw) {
+    const clean = String(raw || '').toLowerCase().replace(/^lobby_/, '').replace(/_/g, '-');
+    if (clean.includes('tetris')) return 'wonder-tetris';
+    if (clean.includes('astro')) return 'astro-purge';
+    if (clean.includes('wordle')) return 'wordle-arena';
+    if (clean.includes('kart') || clean.includes('suncoast')) return 'suncoast-kart';
+    return clean || 'couch-arcade';
+  }
+
+  function loadGuestVetMap() {
+    try {
+      const raw = localStorage.getItem(GUEST_VET_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function saveGuestVetMap(map) {
+    try { localStorage.setItem(GUEST_VET_KEY, JSON.stringify(map)); } catch (e) {}
+  }
+
+  function getVeteranRank(gameId, points) {
+    const gid = normalizeGameId(gameId);
+    const pts = Math.max(0, Math.floor(Number(points) || 0));
+    let idx = 0;
+    for (let i = VETERAN_TIERS.length - 1; i >= 0; i--) {
+      if (pts >= VETERAN_TIERS[i].minPts) {
+        idx = i;
+        break;
+      }
+    }
+    const def = VETERAN_TIERS[idx];
+    const next = VETERAN_TIERS[idx + 1] || null;
+    const titles = GAME_VETERAN_TITLES[gid] || ['Rookie', 'Rising Star', 'Pro', 'Veteran', 'Grandmaster', 'Champion', 'Legend'];
+    const title = titles[idx] || titles[titles.length - 1];
+    const progress = next ? Math.min(1, (pts - def.minPts) / Math.max(1, next.minPts - def.minPts)) : 1;
+    return {
+      gameId: gid,
+      points: pts,
+      tier: def.tier,
+      badge: def.badge,
+      title,
+      color: def.color,
+      bg: def.bg,
+      nextPoints: next ? next.minPts : null,
+      progress,
+    };
+  }
+
+  function getVeteranPoints(gameId) {
+    const gid = normalizeGameId(gameId);
     const acc = getActiveAccount();
+    if (acc && acc.veteran && typeof acc.veteran[gid] === 'number') {
+      return Math.max(0, Math.floor(acc.veteran[gid]));
+    }
+    const gMap = loadGuestVetMap();
+    return Math.max(0, Math.floor(Number(gMap[gid]) || 0));
+  }
+
+  function getVeteranStats(gameId) {
+    return getVeteranRank(gameId, getVeteranPoints(gameId));
+  }
+
+  function showVeteranRankToast(rank) {
+    if (typeof document === 'undefined' || !rank) return;
+    injectStyles();
+    let stack = document.getElementById('ca-toast-stack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.id = 'ca-toast-stack';
+      stack.className = 'ca-toast-stack';
+      document.body.appendChild(stack);
+    }
+    const toast = document.createElement('div');
+    toast.className = 'ca-ach-toast';
+    toast.style.background = rank.bg || '#fffbeb';
+    toast.innerHTML = `
+      <div class="ca-ach-toast-icon" style="background:${rank.color}; color:#ffffff;">${rank.badge}</div>
+      <div>
+        <div class="ca-ach-toast-kicker" style="color:${rank.color};">🏅 Veteran Rank Up!</div>
+        <div class="ca-ach-toast-title">${escapeHtml(rank.title)}</div>
+        <div class="ca-ach-toast-desc">${rank.points.toLocaleString()} Veteran Points earned!</div>
+      </div>
+    `;
+    stack.appendChild(toast);
+    setTimeout(() => {
+      toast.style.transition = 'opacity 0.35s ease, transform 0.35s ease';
+      toast.style.opacity = '0';
+      toast.style.transform = 'translateY(-12px)';
+      setTimeout(() => toast.remove(), 380);
+    }, 4400);
+  }
+
+  function addVeteranPoints(gameId, delta = 10, opts = {}) {
+    const gid = normalizeGameId(gameId);
+    const inc = Math.max(0, Math.floor(Number(delta) || 0));
+    if (inc <= 0) return getVeteranStats(gid);
+
+    const prevRank = getVeteranStats(gid);
+    const newPts = prevRank.points + inc;
+
+    const acc = getActiveAccount();
+    if (acc) {
+      const map = loadAllMap();
+      const target = map[acc.handle];
+      if (target) {
+        if (!target.veteran || typeof target.veteran !== 'object') target.veteran = {};
+        target.veteran[gid] = newPts;
+        saveAllMap(map);
+      }
+    } else {
+      const gMap = loadGuestVetMap();
+      gMap[gid] = newPts;
+      saveGuestVetMap(gMap);
+    }
+
+    const nextRank = getVeteranRank(gid, newPts);
+    if (!opts.silent && nextRank.tier > prevRank.tier) {
+      showVeteranRankToast(nextRank);
+    }
+    notifyChange();
+    return nextRank;
+  }
+
+  function startVeteranSession(gameId, isActiveFn, opts = {}) {
+    const gid = normalizeGameId(gameId);
+    const tickSec = opts.tickSeconds || 10;
+    const ptsPerTick = opts.pointsPerTick || 10; // ~60 Veteran Points per minute of play!
+    const onUpdate = typeof opts.onUpdate === 'function' ? opts.onUpdate : null;
+
+    const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      if (typeof isActiveFn === 'function' && !isActiveFn()) return;
+      const rank = addVeteranPoints(gid, ptsPerTick, { silent: Boolean(opts.silent) });
+      if (onUpdate) onUpdate(rank);
+    }, tickSec * 1000);
+
+    return {
+      stop() { clearInterval(timer); },
+      getStats() { return getVeteranStats(gid); },
+    };
+  }
+
+  function getPublicProfile(gameId) {
+    const acc = getActiveAccount();
+    const vet = gameId ? getVeteranStats(gameId) : null;
     if (!acc) {
       return {
         loggedIn: false,
@@ -428,6 +627,7 @@
         avatar: '🎮',
         trophyCount: 0,
         handle: '',
+        veteran: vet,
       };
     }
     return {
@@ -436,6 +636,7 @@
       avatar: acc.avatar || '🛸',
       trophyCount: getTrophyCount(acc),
       handle: acc.handle,
+      veteran: vet,
     };
   }
 
@@ -885,6 +1086,23 @@
             </div>
             <button type="button" class="ca-btn ca-btn-danger" id="ca-btn-logout" style="flex:0 0 auto; min-width:auto; padding:8px 14px; font-size:0.84rem;">Sign Out</button>
           </div>
+          <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-bottom:12px;">
+            ${[
+              ['wonder-tetris', '🧱 Wonder Tetris'],
+              ['astro-purge', '🛸 Astro Purge'],
+              ['suncoast-kart', '🏎️ Suncoast Kart'],
+              ['wordle-arena', '🔤 Wordle Arena'],
+            ].map(([gid, gLabel]) => {
+              const vr = getVeteranStats(gid);
+              return `
+                <div style="background:${vr.bg}; border:2px solid #1e1b2e; border-radius:14px; padding:8px 10px;">
+                  <div style="font-size:0.72rem; font-weight:800; color:#5b5575;">${gLabel}</div>
+                  <div style="font-family:'Fredoka',sans-serif; font-size:0.9rem; font-weight:700; color:#1e1b2e;">${vr.badge} ${escapeHtml(vr.title)}</div>
+                  <div style="font-size:0.72rem; font-weight:800; color:${vr.color};">${vr.points.toLocaleString()} VP${vr.nextPoints ? ` / ${vr.nextPoints}` : ' · MAX'}</div>
+                </div>
+              `;
+            }).join('')}
+          </div>
           <div class="ca-ach-filter">
             <button type="button" class="ca-filter-pill ${achFilter === 'all' ? 'active' : ''}" data-filter="all">All (${earned}/${totalAch})</button>
             <button type="button" class="ca-filter-pill ${achFilter === 'wonder-tetris' ? 'active' : ''}" data-filter="wonder-tetris">🧱 Wonder Tetris</button>
@@ -1121,6 +1339,8 @@
   global.CouchAccounts = {
     AVATARS,
     ACHIEVEMENTS,
+    VETERAN_TIERS,
+    GAME_VETERAN_TITLES,
     getActiveAccount,
     listAccounts,
     createAccount,
@@ -1132,6 +1352,11 @@
     unlockAchievement,
     recordGamePlayed,
     getPublicProfile,
+    getVeteranRank,
+    getVeteranStats,
+    addVeteranPoints,
+    startVeteranSession,
+    showVeteranRankToast,
     onChange,
     openAccountModal,
     showAchievementToast,

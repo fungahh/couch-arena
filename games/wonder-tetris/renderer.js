@@ -982,26 +982,31 @@
       ctx.lineWidth = 2.6;
       ctx.stroke();
 
-      // Player avatar + name + score (never overlaps even on narrow phone mini-boards!)
+      // Player avatar + Veteran badge + name + cool Veteran title + score!
       const badgeTotalW = gridW + framePad * 2;
-      ctx.font = `700 ${Math.max(10, Math.round(badgeH * 0.46))}px Fredoka, system-ui, sans-serif`;
+      ctx.font = `700 ${Math.max(10, Math.round(badgeH * 0.45))}px Fredoka, system-ui, sans-serif`;
       ctx.textBaseline = 'middle';
-      const scoreStr = Number(board.score || 0).toLocaleString();
-      const scoreW = ctx.measureText(scoreStr).width;
-      const maxLabelW = Math.max(36, badgeTotalW - scoreW - 22);
+      const vet = !board.isBot && board.veteran ? board.veteran : null;
+      const rightText = opts.showVeteranRight && vet
+        ? `${vet.badge} ${vet.title} · ${vet.points} VP`
+        : Number(board.score || 0).toLocaleString();
+      const rightW = ctx.measureText(rightText).width;
+      const maxLabelW = Math.max(36, badgeTotalW - rightW - 22);
 
       ctx.textAlign = 'left';
       ctx.fillStyle = '#1e1b2e';
       const crown = isLeader ? '👑 ' : '';
-      let label = `${crown}${board.avatar || '🌟'} ${board.name}`;
+      const vetPrefix = vet && !opts.showVeteranRight ? `${vet.badge} ` : '';
+      const vetSuffix = vet && !opts.showVeteranRight && badgeTotalW >= 230 ? ` · ${vet.title}` : '';
+      let label = `${crown}${vetPrefix}${board.avatar || '🌟'} ${board.name}${vetSuffix}`;
       while (label.length > 4 && ctx.measureText(label).width > maxLabelW) {
         label = label.slice(0, -1);
       }
       ctx.fillText(label, gx - framePad + 7, badgeY + badgeH / 2 + 1, maxLabelW);
 
       ctx.textAlign = 'right';
-      ctx.fillStyle = board.color || '#0f766e';
-      ctx.fillText(scoreStr, gx + gridW + framePad - 7, badgeY + badgeH / 2 + 1);
+      ctx.fillStyle = opts.showVeteranRight && vet ? (vet.color || '#d97706') : (board.color || '#0f766e');
+      ctx.fillText(rightText, gx + gridW + framePad - 7, badgeY + badgeH / 2 + 1);
     }
 
     ctx.restore();

@@ -65,9 +65,9 @@
     );
   }
 
-  function getSavedProfileMeta() {
+  function getSavedProfileMeta(gameId) {
     if (global.CouchAccounts && global.CouchAccounts.getPublicProfile) {
-      return global.CouchAccounts.getPublicProfile();
+      return global.CouchAccounts.getPublicProfile(gameId);
     }
     return {
       loggedIn: false,
@@ -75,6 +75,7 @@
       avatar: '🎮',
       trophyCount: 0,
       handle: '',
+      veteran: null,
     };
   }
 
@@ -106,11 +107,12 @@
       this.maxPlayers = opts.maxPlayers || 5;
       this.myId = getStablePlayerId();
 
-      const prof = getSavedProfileMeta();
+      const prof = getSavedProfileMeta(this.gameId);
       this.myName = opts.playerName || prof.username || getSavedPlayerName();
       this.myAvatar = opts.avatar || prof.avatar || '🛸';
       this.myAccountHandle = opts.accountHandle !== undefined ? opts.accountHandle : prof.handle;
       this.myTrophyCount = opts.trophyCount !== undefined ? opts.trophyCount : prof.trophyCount;
+      this.myVeteran = opts.veteran || prof.veteran || null;
 
       this.roomCode = (opts.roomCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
       this.isHost = Boolean(opts.isHost);
@@ -277,6 +279,7 @@
             avatar: this.myAvatar,
             accountHandle: this.myAccountHandle,
             trophyCount: this.myTrophyCount,
+            veteran: this.myVeteran,
             slot: freeSlot,
             isHost: true,
             isLocal: true,
@@ -305,12 +308,14 @@
       if (profile.avatar) this.myAvatar = profile.avatar;
       if (profile.accountHandle !== undefined) this.myAccountHandle = profile.accountHandle;
       if (profile.trophyCount !== undefined) this.myTrophyCount = Number(profile.trophyCount) || 0;
+      if (profile.veteran !== undefined) this.myVeteran = profile.veteran;
 
       if (this.players[this.myId]) {
         this.players[this.myId].name = this.myName;
         this.players[this.myId].avatar = this.myAvatar;
         this.players[this.myId].accountHandle = this.myAccountHandle;
         this.players[this.myId].trophyCount = this.myTrophyCount;
+        this.players[this.myId].veteran = this.myVeteran;
         this.emitRoster();
         if (this.isHost) {
           this.broadcastRoster();
@@ -321,6 +326,7 @@
             avatar: this.myAvatar,
             accountHandle: this.myAccountHandle,
             trophyCount: this.myTrophyCount,
+            veteran: this.myVeteran,
           });
         }
       } else if (!this.isHost) {
@@ -330,6 +336,7 @@
           avatar: this.myAvatar,
           accountHandle: this.myAccountHandle,
           trophyCount: this.myTrophyCount,
+          veteran: this.myVeteran,
         });
       }
     }
@@ -347,6 +354,7 @@
         avatar: this.myAvatar,
         accountHandle: this.myAccountHandle,
         trophyCount: this.myTrophyCount,
+        veteran: this.myVeteran,
         isController: this.controllerMode,
         requireApproval: this.requireApproval,
         _mid: `${this.myId}_j_${++this.msgSeq}`,
@@ -411,6 +419,7 @@
             avatar: this.myAvatar,
             accountHandle: this.myAccountHandle,
             trophyCount: this.myTrophyCount,
+            veteran: this.myVeteran,
             slot: 0,
             isHost: true,
             isLocal: true,
@@ -745,6 +754,7 @@
           avatar: data.avatar || '🛸',
           accountHandle: data.accountHandle || '',
           trophyCount: Number(data.trophyCount) || 0,
+          veteran: data.veteran || null,
           slot: freeSlot,
           isHost: false,
           isLocal: false,
@@ -757,6 +767,7 @@
         if (data.avatar) this.players[sender].avatar = data.avatar;
         if (data.accountHandle !== undefined) this.players[sender].accountHandle = data.accountHandle;
         if (data.trophyCount !== undefined) this.players[sender].trophyCount = Number(data.trophyCount) || 0;
+        if (data.veteran !== undefined) this.players[sender].veteran = data.veteran;
         if (data.isController !== undefined) this.players[sender].isController = Boolean(data.isController);
         this.emitRoster();
       }
@@ -1208,6 +1219,7 @@
           if (data.avatar) this.players[sender].avatar = data.avatar;
           if (data.accountHandle !== undefined) this.players[sender].accountHandle = data.accountHandle;
           if (data.trophyCount !== undefined) this.players[sender].trophyCount = Number(data.trophyCount) || 0;
+          if (data.veteran !== undefined) this.players[sender].veteran = data.veteran;
           this.emitRoster();
           this.broadcastRoster();
         } else if (this.pendingRequests[sender]) {
@@ -1215,6 +1227,7 @@
           if (data.avatar) this.pendingRequests[sender].avatar = data.avatar;
           if (data.accountHandle !== undefined) this.pendingRequests[sender].accountHandle = data.accountHandle;
           if (data.trophyCount !== undefined) this.pendingRequests[sender].trophyCount = Number(data.trophyCount) || 0;
+          if (data.veteran !== undefined) this.pendingRequests[sender].veteran = data.veteran;
           this.onJoinRequestsChange(this.getPendingRequests());
         }
         return;
