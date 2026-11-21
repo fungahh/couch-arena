@@ -49,6 +49,46 @@ body {
   height: 100%;
   display: block;
   background: var(--bg-space);
+  touch-action: none;
+  -webkit-touch-callout: none;
+}
+
+/* Mobile Touch Dash Button */
+#touch-dash-btn {
+  position: fixed;
+  right: 22px;
+  bottom: 92px;
+  z-index: 18;
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  border: 2px solid rgba(94, 234, 212, 0.55);
+  background: rgba(14, 21, 34, 0.78);
+  color: #ccfbf1;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+#touch-dash-btn.visible {
+  display: flex;
+}
+
+#touch-dash-btn:active,
+#touch-dash-btn.active {
+  transform: scale(0.92);
+  background: rgba(20, 184, 166, 0.35);
+  border-color: #5eead4;
 }
 
 /* HUD Layer */
@@ -449,9 +489,9 @@ body {
   padding: 6px 10px;
   color: var(--text);
   font-family: inherit;
-  font-size: 0.86rem;
+  font-size: 16px;
   font-weight: 600;
-  width: 145px;
+  width: 155px;
   outline: none;
 }
 

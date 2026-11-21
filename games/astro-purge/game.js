@@ -316,6 +316,109 @@
     return Array.from(navigator.getGamepads()).filter(Boolean);
   }
 
+  // ---- iOS / Mobile Touch Virtual Thumbstick & Dash Button ----
+  const touchDashBtn = document.getElementById('touch-dash-btn');
+  const touchCtrl = {
+    isTouchDevice: ('ontouchstart' in window) || (navigator.maxTouchPoints > 0),
+    active: false,
+    touchId: null,
+    originX: 0,
+    originY: 0,
+    curX: 0,
+    curY: 0,
+    maxR: 54,
+    mx: 0,
+    my: 0,
+    dash: false,
+    dashTouchId: null,
+  };
+
+  function resetTouchStick() {
+    touchCtrl.active = false;
+    touchCtrl.touchId = null;
+    touchCtrl.mx = 0;
+    touchCtrl.my = 0;
+  }
+
+  canvas.addEventListener('touchstart', (e) => {
+    touchCtrl.isTouchDevice = true;
+    if (state.mode !== 'playing') return;
+    e.preventDefault();
+    SFX.ensure();
+    if (touchCtrl.active) return;
+    const t = e.changedTouches[0];
+    if (!t) return;
+    touchCtrl.active = true;
+    touchCtrl.touchId = t.identifier;
+    touchCtrl.originX = t.clientX;
+    touchCtrl.originY = t.clientY;
+    touchCtrl.curX = t.clientX;
+    touchCtrl.curY = t.clientY;
+    touchCtrl.mx = 0;
+    touchCtrl.my = 0;
+  }, { passive: false });
+
+  canvas.addEventListener('touchmove', (e) => {
+    if (!touchCtrl.active || state.mode !== 'playing') return;
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.identifier === touchCtrl.touchId) {
+        const dx = t.clientX - touchCtrl.originX;
+        const dy = t.clientY - touchCtrl.originY;
+        const d = Math.hypot(dx, dy);
+        const clamped = Math.min(d, touchCtrl.maxR);
+        const ang = Math.atan2(dy, dx);
+        touchCtrl.curX = touchCtrl.originX + Math.cos(ang) * clamped;
+        touchCtrl.curY = touchCtrl.originY + Math.sin(ang) * clamped;
+        if (d > 6) {
+          touchCtrl.mx = (Math.cos(ang) * clamped) / touchCtrl.maxR;
+          touchCtrl.my = (Math.sin(ang) * clamped) / touchCtrl.maxR;
+        } else {
+          touchCtrl.mx = 0;
+          touchCtrl.my = 0;
+        }
+        break;
+      }
+    }
+  }, { passive: false });
+
+  function handleCanvasTouchEnd(e) {
+    if (!touchCtrl.active) return;
+    for (const t of e.changedTouches) {
+      if (t.identifier === touchCtrl.touchId) {
+        resetTouchStick();
+        break;
+      }
+    }
+  }
+  canvas.addEventListener('touchend', handleCanvasTouchEnd, { passive: true });
+  canvas.addEventListener('touchcancel', handleCanvasTouchEnd, { passive: true });
+
+  if (touchDashBtn) {
+    touchDashBtn.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      touchCtrl.isTouchDevice = true;
+      const t = e.changedTouches[0];
+      if (t) touchCtrl.dashTouchId = t.identifier;
+      touchCtrl.dash = true;
+      touchDashBtn.classList.add('active');
+    }, { passive: false });
+
+    const endDash = (e) => {
+      for (const t of e.changedTouches) {
+        if (t.identifier === touchCtrl.dashTouchId) {
+          touchCtrl.dash = false;
+          touchCtrl.dashTouchId = null;
+          touchDashBtn.classList.remove('active');
+          break;
+        }
+      }
+    };
+    touchDashBtn.addEventListener('touchend', endDash, { passive: true });
+    touchDashBtn.addEventListener('touchcancel', endDash, { passive: true });
+  }
+
   function readLocalInput(localSlot, pads) {
     const pad = pads[localSlot] || null;
     let mx = 0;
@@ -339,6 +442,12 @@
         if (keys.has('ArrowLeft')) mx -= 1;
         if (keys.has('ArrowRight')) mx += 1;
       }
+      // Touch virtual thumbstick & Dash button
+      if (touchCtrl.active && (touchCtrl.mx || touchCtrl.my)) {
+        mx = touchCtrl.mx;
+        my = touchCtrl.my;
+      }
+      if (touchCtrl.dash) dash = true;
     } else {
       if (keys.has('ArrowUp')) my -= 1;
       if (keys.has('ArrowDown')) my += 1;
@@ -2128,6 +2237,27 @@
     ctx.globalAlpha = 1;
 
     ctx.restore();
+
+    // Floating virtual thumbstick indicator (unshaken screen coordinates)
+    if (touchCtrl.active && state.mode === 'playing') {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(touchCtrl.originX, touchCtrl.originY, touchCtrl.maxR, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(14, 21, 34, 0.35)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(94, 234, 212, 0.45)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(touchCtrl.curX, touchCtrl.curY, 22, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(94, 234, 212, 0.45)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(204, 251, 241, 0.85)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   function drawJaggedLine(x1, y1, x2, y2, color, width) {
@@ -2518,6 +2648,12 @@
           room.sendRealtime({ type: 'INPUT', input: readLocalInput(0, pads) });
         }
       }
+    }
+
+    if (touchDashBtn) {
+      const showDash = touchCtrl.isTouchDevice && state.mode === 'playing';
+      touchDashBtn.classList.toggle('visible', showDash);
+      if (!showDash && touchCtrl.active) resetTouchStick();
     }
 
     draw();
