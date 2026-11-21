@@ -83,6 +83,9 @@
   const bossNameEl = document.getElementById('boss-name');
   const bossHpText = document.getElementById('boss-hp-text');
   const bossHpFill = document.getElementById('boss-hp-fill');
+  const bossCastWrap = document.getElementById('boss-cast-wrap');
+  const bossCastLabel = document.getElementById('boss-cast-label');
+  const bossCastFill = document.getElementById('boss-cast-fill');
   const bossWarningEl = document.getElementById('boss-warning');
   const bossWarningTitle = document.getElementById('boss-warning-title');
   const bossWarningSub = document.getElementById('boss-warning-sub');
@@ -225,6 +228,24 @@
       this.tone(220, 440, 0.22, 'triangle', 0.12);
       setTimeout(() => this.tone(330, 660, 0.26, 'triangle', 0.12), 140);
       setTimeout(() => this.tone(440, 880, 0.45, 'triangle', 0.13), 280);
+    },
+    laserCharge() {
+      this.tone(220, 780, 0.45, 'sine', 0.085);
+      this.tone(440, 960, 0.35, 'triangle', 0.05);
+    },
+    laserFire() {
+      this.noise(0.32, 0.1, 1400);
+      this.tone(520, 140, 0.38, 'sawtooth', 0.11);
+    },
+    phaseShift() {
+      this.noise(0.28, 0.1, 900);
+      this.tone(180, 360, 0.18, 'sawtooth', 0.11);
+      setTimeout(() => this.tone(270, 540, 0.22, 'sawtooth', 0.11), 130);
+      setTimeout(() => this.tone(360, 720, 0.32, 'triangle', 0.12), 260);
+    },
+    voidBoom() {
+      this.noise(0.18, 0.09, 600);
+      this.tone(190, 55, 0.2, 'sawtooth', 0.1);
     },
   };
 
@@ -670,6 +691,9 @@
     beams: [],
     novas: [],
     floatTexts: [],
+    hazards: [],
+    bossBeams: [],
+    bossCast: null,
   };
 
   function createPlayerFromRoster(rp, localIndex) {
@@ -956,10 +980,24 @@
     }
   }
 
+  function renderBossCastUI(cast) {
+    if (!bossCastWrap) return;
+    if (!cast || !cast.label) {
+      bossCastWrap.classList.add('hidden');
+      bossCastWrap.classList.remove('safe-cast');
+      return;
+    }
+    bossCastLabel.textContent = cast.label;
+    bossCastFill.style.width = `${clamp((cast.progress || 0) * 100, 0, 100).toFixed(1)}%`;
+    bossCastWrap.classList.toggle('safe-cast', Boolean(cast.safe));
+    bossCastWrap.classList.remove('hidden');
+  }
+
   function buildSnapshot() {
     const nx = (v) => Math.round((v / W) * 1000) / 1000;
     const ny = (v) => Math.round((v / H) * 1000) / 1000;
     const boss = state.enemies.find((e) => e.isBoss);
+    const kindToCode = { void: 0, meteor: 1, safe: 2, puddle: 3 };
     return {
       wv: state.wave,
       wk: state.waveKills,
@@ -970,7 +1008,35 @@
       xp: Math.round(state.xp),
       xn: state.xpNeeded,
       ba: state.bossActive ? 1 : 0,
-      b: boss && !boss.dying ? { n: boss.name, h: Math.ceil(boss.hp), m: boss.maxHp, ph: boss.phase || 1 } : null,
+      b: boss && !boss.dying ? {
+        n: boss.name,
+        h: Math.ceil(boss.hp),
+        m: boss.maxHp,
+        ph: boss.phase || 1,
+        inv: boss.phaseInvuln > 0 ? 1 : 0,
+        ct: boss.chargeTelegraph ? Math.round(boss.chargeTelegraph.angle * 100) / 100 : null,
+      } : null,
+      bc: state.bossCast ? {
+        l: state.bossCast.label,
+        p: Math.round((state.bossCast.progress || 0) * 100) / 100,
+        sf: state.bossCast.safe ? 1 : 0,
+      } : null,
+      hz: state.hazards.slice(0, 18).map((h) => [
+        kindToCode[h.kind] ?? 0,
+        nx(h.x),
+        ny(h.y),
+        Math.round(h.r),
+        Math.round(clamp(1 - h.timer / Math.max(0.01, h.maxTimer), 0, 1) * 100) / 100,
+      ]),
+      bb: state.bossBeams.slice(0, 8).map((bm) => [
+        nx(bm.x),
+        ny(bm.y),
+        Math.round(bm.angle * 100) / 100,
+        Math.round(bm.len),
+        Math.round(bm.width),
+        bm.telegraph > 0 ? 1 : 0,
+        Math.round((bm.telegraph > 0 ? 1 - bm.telegraph / Math.max(0.01, bm.maxTelegraph) : 1) * 100) / 100,
+      ]),
       p: state.players.map((p) => [
         p.id,
         p.slot,
@@ -1006,9 +1072,10 @@
         e.chillTimer > 0 ? 1 : 0,
         e.phase || 1,
         e.dying ? 1 : 0,
+        e.phaseInvuln > 0 ? 1 : 0,
       ]),
       bl: state.bullets.slice(0, 65).map((b) => [nx(b.x), ny(b.y), Math.round(b.radius), b.color, b.kind === 'missile' ? 1 : 0]),
-      eb: state.enemyBullets.slice(0, 60).map((b) => [nx(b.x), ny(b.y), Math.round(b.radius), b.color]),
+      eb: state.enemyBullets.slice(0, 65).map((b) => [nx(b.x), ny(b.y), Math.round(b.radius), b.color, b.bouncy ? 1 : 0]),
       pk: state.pickups.slice(0, 60).map((pk) => [pk.kind === 'xp' ? 0 : 1, nx(pk.x), ny(pk.y), pk.pulling ? 1 : 0, pk.tier || 1]),
     };
   }
@@ -1037,6 +1104,30 @@
     state.xp = s.xp;
     state.xpNeeded = s.xn;
     state.bossActive = Boolean(s.ba);
+
+    const codeToKind = ['void', 'meteor', 'safe', 'puddle'];
+    state.hazards = (s.hz || []).map((arr) => ({
+      kind: codeToKind[arr[0]] || 'void',
+      x: arr[1] * W,
+      y: arr[2] * H,
+      r: arr[3],
+      progress: arr[4] || 0,
+      timer: 1 - (arr[4] || 0),
+      maxTimer: 1,
+    }));
+
+    state.bossBeams = (s.bb || []).map((arr) => ({
+      x: arr[0] * W,
+      y: arr[1] * H,
+      angle: arr[2],
+      len: arr[3],
+      width: arr[4],
+      telegraph: arr[5] ? 0.5 : 0,
+      maxTelegraph: 1,
+      progress: arr[6] || 0,
+    }));
+
+    state.bossCast = s.bc ? { label: s.bc.l, progress: s.bc.p, safe: Boolean(s.bc.sf) } : null;
 
     state.players = s.p.map((arr) => {
       const pal = PLAYER_COLORS[arr[1] % PLAYER_COLORS.length];
@@ -1087,6 +1178,8 @@
       chillTimer: arr[7] ? 1 : 0,
       phase: arr[8] || 1,
       dying: Boolean(arr[9]),
+      phaseInvuln: arr[10] ? 0.5 : 0,
+      chargeTelegraph: arr[0] === 'boss' && s.b && s.b.ct !== null && s.b.ct !== undefined ? { angle: s.b.ct } : null,
       shape: arr[0].startsWith('asteroid') ? getCachedRockShape(arr[3]) : null,
     }));
 
@@ -1103,6 +1196,7 @@
       y: arr[1] * H,
       radius: arr[2],
       color: arr[3],
+      bouncy: Boolean(arr[4]),
     }));
 
     state.pickups = s.pk.map((arr) => ({
@@ -1116,13 +1210,16 @@
     }));
 
     if (s.b) {
-      bossNameEl.textContent = `WAVE ${state.wave} · ${s.b.n}${s.b.ph >= 2 ? ' [ENRAGED]' : ''}`;
+      const phTag = s.b.ph >= 3 ? ' [FINAL PHASE!]' : s.b.ph === 2 ? ' [PHASE 2]' : ' [PHASE 1]';
+      bossNameEl.textContent = `WAVE ${state.wave} · ${s.b.n}${phTag}`;
       bossBarWrap.classList.remove('hidden');
       const pct = clamp((s.b.h / s.b.m) * 100, 0, 100);
       bossHpFill.style.width = pct.toFixed(1) + '%';
       bossHpText.textContent = `${s.b.h} / ${s.b.m}`;
+      renderBossCastUI(state.bossCast);
     } else {
       bossBarWrap.classList.add('hidden');
+      renderBossCastUI(null);
     }
 
     renderHud();
@@ -1258,6 +1355,9 @@
     state.beams = [];
     state.novas = [];
     state.floatTexts = [];
+    state.hazards = [];
+    state.bossBeams = [];
+    state.bossCast = null;
 
     let localIdx = 0;
     state.players = roster.map((rp) => createPlayerFromRoster(rp, rp.isLocal ? localIdx++ : -1));
@@ -1269,6 +1369,7 @@
     gameoverOverlay.classList.add('hidden');
     bossWarningEl.classList.add('hidden');
     bossBarWrap.classList.add('hidden');
+    renderBossCastUI(null);
     if (waveBannerEl) waveBannerEl.classList.add('hidden');
     hudEl.classList.remove('hidden');
 
@@ -1287,11 +1388,15 @@
   function returnToLobbyUI() {
     clearTouchSteer();
     state.mode = 'title';
+    state.hazards = [];
+    state.bossBeams = [];
+    state.bossCast = null;
     hudEl.classList.add('hidden');
     pauseOverlay.classList.add('hidden');
     upgradeOverlay.classList.add('hidden');
     gameoverOverlay.classList.add('hidden');
     bossBarWrap.classList.add('hidden');
+    renderBossCastUI(null);
     bossWarningEl.classList.add('hidden');
     if (waveBannerEl) waveBannerEl.classList.add('hidden');
     titleOverlay.classList.remove('hidden');
@@ -1408,7 +1513,31 @@
     renderHud();
   }
 
-  // ---- TOUGH MULTI-PHASE BOSSES (Every 10 Waves!) ----
+  // ---- CUPHEAD x WOW RAID BOSSES (3 Distinct Phases + Special Abilities Every 10 Waves!) ----
+  const BOSS_PROFILES = [
+    {
+      name: 'BARON CORONA-CHOMP',
+      color: '#e11d48',
+      intro: 'Toxic Void Pools · Sweeping Mega Laser · Chomp Lunge',
+      p2Call: 'PHASE 2 · SWEEPING MEGA LASER UNLOCKED!',
+      p3Call: 'FINAL PHASE · TWIN LASERS & VOID STORM!',
+    },
+    {
+      name: 'HYDRA SLIME-QUEEN',
+      color: '#65a30d',
+      intro: 'Safe-Bubble Shockwave · Bouncing Slime Orbs · Royal Brood',
+      p2Call: 'PHASE 2 · SAFE-BUBBLE SHOCKWAVE & BOUNCING SLIMES!',
+      p3Call: 'FINAL PHASE · ROYAL SWARM OVERDRIVE!',
+    },
+    {
+      name: 'KING PANDEMIC-REX',
+      color: '#ea580c',
+      intro: 'Rotating Plasma Cross · Meteor Barrage · Flame Charge',
+      p2Call: 'PHASE 2 · ROTATING PLASMA CROSS UNLOCKED!',
+      p3Call: 'FINAL PHASE · METEOR CATACLYSM!',
+    },
+  ];
+
   function triggerBossSequence(bossWave) {
     state.bossActive = true;
     state.pendingBossWave = bossWave;
@@ -1416,11 +1545,11 @@
 
     const tier = Math.floor(bossWave / 10);
     const variant = (tier - 1) % 3;
-    const names = ['BARON CORONA-CHOMP', 'HYDRA SLIME-QUEEN', 'KING PANDEMIC-REX'];
-    const name = tier > 3 ? `${names[variant]} MK-${tier}` : names[variant];
-    const sub = `WAVE ${bossWave} BOSS — ${name} INCOMING!`;
+    const prof = BOSS_PROFILES[variant];
+    const name = tier > 3 ? `${prof.name} MK-${tier}` : prof.name;
+    const sub = `WAVE ${bossWave} RAID BOSS — ${name} (${prof.intro})`;
 
-    bossWarningTitle.textContent = '⚠ GIANT SPACE VIRUS BOSS!';
+    bossWarningTitle.textContent = '⚠ RAID BOSS ENCOUNTER!';
     bossWarningSub.textContent = sub;
     bossWarningEl.classList.remove('hidden');
     room.sendSignal({ type: 'BOSS_WARN', sub });
@@ -1431,33 +1560,46 @@
   function spawnBoss(bossWave) {
     const tier = Math.floor(bossWave / 10);
     const variant = (tier - 1) % 3;
-    const names = ['BARON CORONA-CHOMP', 'HYDRA SLIME-QUEEN', 'KING PANDEMIC-REX'];
-    const name = tier > 3 ? `${names[variant]} MK-${tier}` : names[variant];
-    const coopScale = 1 + Math.max(0, state.players.length - 1) * 0.65;
-    const maxHp = Math.round((4400 + (tier - 1) * 3900) * coopScale);
+    const prof = BOSS_PROFILES[variant];
+    const name = tier > 3 ? `${prof.name} MK-${tier}` : prof.name;
+    const coopScale = 1 + Math.max(0, state.players.length - 1) * 0.68;
+    const maxHp = Math.round((5600 + (tier - 1) * 4600) * coopScale);
+
+    state.hazards = [];
+    state.bossBeams = [];
+    state.bossCast = null;
 
     const boss = {
       type: 'boss',
       isBoss: true,
       variant, tier, name,
       phase: 1,
+      phaseInvuln: 0,
       dying: false,
       dyingTimer: 0,
       boomTick: 0,
       x: W * 0.5, y: -100, vx: 0, vy: 0,
-      radius: 62,
+      radius: 64,
       hp: maxHp, maxHp,
-      speed: 74 + tier * 10,
-      rot: 0, rotSpeed: 0.45,
-      attackTimer: 1.6, minionTimer: 4.5, chargeTimer: 5.8,
-      charging: 0, chargeVx: 0, chargeVy: 0, spiralAngle: 0,
-      xp: 0, score: 1500 * tier, damage: 32,
-      color: variant === 0 ? '#e11d48' : variant === 1 ? '#65a30d' : '#ea580c',
+      speed: 78 + tier * 10,
+      rot: 0, rotSpeed: 0.48,
+      attackTimer: 1.5,
+      minionTimer: 5.5,
+      chargeTimer: 6.2,
+      chargeTelegraph: null,
+      charging: 0, chargeVx: 0, chargeVy: 0, chargeDropTick: 0,
+      spiralAngle: 0,
+      abilityTimer: 3.2,
+      abilityStep: 0,
+      beamLockTimer: 0,
+      meteorQueue: [],
+      xp: 0, score: 1800 * tier, damage: 32,
+      color: prof.color,
       hitFlash: 0, chillTimer: 0,
     };
 
     state.enemies.push(boss);
-    bossNameEl.textContent = `WAVE ${bossWave} · ${name}`;
+    bossNameEl.textContent = `WAVE ${bossWave} · ${name} [PHASE 1]`;
     bossBarWrap.classList.remove('hidden');
     updateBossBar(boss);
   }
@@ -1465,12 +1607,15 @@
   function updateBossBar(boss) {
     if (!boss || boss.hp <= 0 || boss.dying) {
       bossBarWrap.classList.add('hidden');
+      renderBossCastUI(null);
       return;
     }
     const pct = clamp((boss.hp / boss.maxHp) * 100, 0, 100);
     bossHpFill.style.width = pct.toFixed(1) + '%';
     bossHpText.textContent = `${Math.ceil(boss.hp)} / ${boss.maxHp}`;
-    bossNameEl.textContent = `WAVE ${state.wave} · ${boss.name}${boss.phase >= 2 ? ' [ENRAGED!]' : ''}`;
+    const phTag = boss.phase >= 3 ? ' [FINAL PHASE!]' : boss.phase === 2 ? ' [PHASE 2]' : ' [PHASE 1]';
+    bossNameEl.textContent = `WAVE ${state.wave} · ${boss.name}${phTag}`;
+    renderBossCastUI(state.bossCast);
   }
 
   // ---- Harder Team Leveling -> PERSONAL Upgrade Drafts (Separate from Waves!) ----
@@ -1853,14 +1998,53 @@
     SFX.nova();
   }
 
-  // ---- Enemy Damage & Death (With Hit-Confirm Animations, Boss Finale & Tiered XP!) ----
+  // ---- Enemy Damage & Death (With Hit-Confirm Animations, 3-Phase Raid Shifts & Boss Finale!) ----
+  function triggerBossPhaseShift(e, nextPhase) {
+    e.phase = nextPhase;
+    e.phaseInvuln = 1.05;
+    e.speed *= nextPhase === 2 ? 1.18 : 1.22;
+    e.chargeTelegraph = null;
+    e.charging = 0;
+    e.abilityTimer = 1.35; // Immediately showcase newly unlocked phase ability!
+    state.enemyBullets = [];
+    state.shake = 16;
+
+    // Gentle shockwave push so players see the phase transformation clearly
+    state.novas.push({ x: e.x, y: e.y, r: 30, maxR: 260, color: nextPhase === 3 ? '#ef4444' : '#fde047', life: 0.55, maxLife: 0.55 });
+    spawnCartoonBurst(e.x, e.y, nextPhase === 3 ? '#fde047' : '#fb7185', true);
+    for (const pl of state.players) {
+      if (pl.downed) continue;
+      const d = dist(e.x, e.y, pl.x, pl.y) || 1;
+      if (d < 220) {
+        pl.vx += ((pl.x - e.x) / d) * 320;
+        pl.vy += ((pl.y - e.y) / d) * 320;
+      }
+    }
+
+    const prof = BOSS_PROFILES[e.variant] || BOSS_PROFILES[0];
+    const bannerTitle = nextPhase === 2 ? `${e.name} · PHASE 2!` : `${e.name} · FINAL PHASE!`;
+    const bannerSub = nextPhase === 2 ? prof.p2Call : prof.p3Call;
+    showWaveBanner(bannerTitle, bannerSub);
+    room.sendSignal({ type: 'WAVE_BANNER', title: bannerTitle, sub: bannerSub });
+    spawnFloatText(e.x, e.y - 76, nextPhase === 2 ? 'PHASE 2!!' : 'FINAL PHASE!!', '#fde047');
+    SFX.phaseShift();
+  }
+
   function damageEnemy(e, baseDmg, color = '#f8fafc', sourcePlayer = null, hitX = null, hitY = null) {
     if (e.hp <= 0 || e.dying) return;
+    if (e.isBoss && e.phaseInvuln > 0) {
+      // Brief phase-shift barrier deflects hits with a clear cartoon spark
+      const ix = hitX !== null ? hitX : e.x;
+      const iy = hitY !== null ? hitY : e.y;
+      spawnParticles(ix, iy, '#fde047', 2, 120, 2.5, 'star');
+      return;
+    }
+
     let { dmg, isCrit } = rollPlayerDamage(sourcePlayer, baseDmg);
 
     // Boss burst-armor cap so bosses are real battles and never insta-melt
     if (e.isBoss) {
-      const maxHit = Math.max(40, Math.round(e.maxHp * 0.035));
+      const maxHit = Math.max(40, Math.round(e.maxHp * 0.03));
       dmg = Math.min(dmg, maxHit);
     }
 
@@ -1898,14 +2082,15 @@
       }
     }
 
-    // Boss Phase 2 Enrage at 50% HP!
-    if (e.isBoss && e.phase === 1 && e.hp > 0 && e.hp <= e.maxHp * 0.5) {
-      e.phase = 2;
-      e.speed *= 1.28;
-      state.shake = 12;
-      spawnCartoonBurst(e.x, e.y, '#fb7185', true);
-      spawnFloatText(e.x, e.y - 72, 'PHASE 2 — ENRAGED!', '#fde047');
-      SFX.bossWarn();
+    // 3-Phase WoW/Cuphead Boss Transitions at 66.6% and 33.3% HP!
+    if (e.isBoss && e.hp > 0) {
+      if (e.phase === 1 && e.hp <= e.maxHp * 0.666) {
+        e.hp = Math.max(e.hp, Math.ceil(e.maxHp * 0.666));
+        triggerBossPhaseShift(e, 2);
+      } else if (e.phase === 2 && e.hp <= e.maxHp * 0.333) {
+        e.hp = Math.max(e.hp, Math.ceil(e.maxHp * 0.333));
+        triggerBossPhaseShift(e, 3);
+      }
     }
 
     if (isCrit || e.isBoss) {
@@ -1920,9 +2105,14 @@
         e.dying = true;
         e.dyingTimer = 2.15;
         e.boomTick = 0;
+        e.chargeTelegraph = null;
         state.enemyBullets = [];
+        state.hazards = [];
+        state.bossBeams = [];
+        state.bossCast = null;
         state.shake = 16;
         bossBarWrap.classList.add('hidden');
+        renderBossCastUI(null);
         spawnCartoonBurst(e.x, e.y, '#fde047', true);
         spawnFloatText(e.x, e.y - 72, `${e.name} DEFEATED!!`, '#fde047');
         SFX.bossBoom();
@@ -2685,12 +2875,25 @@
       }
     }
 
-    // Enemy Bullets
+    // Enemy Bullets (Including Cuphead Bouncing Slime Orbs!)
     for (let i = state.enemyBullets.length - 1; i >= 0; i--) {
       const b = state.enemyBullets[i];
       b.life -= dt;
       b.x += b.vx * dt;
       b.y += b.vy * dt;
+
+      if (b.bounces > 0) {
+        let bounced = false;
+        if (b.x < b.radius + 6 && b.vx < 0) { b.x = b.radius + 6; b.vx = -b.vx; bounced = true; }
+        else if (b.x > W - b.radius - 6 && b.vx > 0) { b.x = W - b.radius - 6; b.vx = -b.vx; bounced = true; }
+        if (b.y < b.radius + 6 && b.vy < 0) { b.y = b.radius + 6; b.vy = -b.vy; bounced = true; }
+        else if (b.y > H - b.radius - 6 && b.vy > 0) { b.y = H - b.radius - 6; b.vy = -b.vy; bounced = true; }
+        if (bounced) {
+          b.bounces -= 1;
+          spawnParticles(b.x, b.y, b.color || '#a3e635', 5, 110, 3.2, 'puff');
+        }
+      }
+
       if (b.life <= 0 || b.x < -30 || b.x > W + 30 || b.y < -30 || b.y > H + 30) {
         state.enemyBullets.splice(i, 1);
         continue;
@@ -2703,6 +2906,9 @@
         }
       }
     }
+
+    // Update Cuphead / WoW Raid Boss Hazards (Void Zones, Meteors, Safe Bubbles, Puddles) & Sweeping Beams!
+    updateBossHazardsAndBeams(dt, livingPlayers);
 
     // Pickups (Tiered XP Gems + Boss Super-Magnet Vacuum + Absorption Burst!)
     const XP_TIER_COLORS = ['#38bdf8', '#38bdf8', '#4ade80', '#fbbf24', '#f472b6'];
@@ -2871,14 +3077,364 @@
     }
   }
 
+  // ---- CUPHEAD x WOW RAID BOSS ABILITIES & HAZARD ENGINE ----
+  function spawnBossVoidZones(boss, count) {
+    const living = state.players.filter((p) => !p.downed);
+    const delay = boss.phase >= 3 ? 1.15 : 1.38;
+    for (let k = 0; k < count; k++) {
+      let hx, hy;
+      if (k < living.length) {
+        const lp = living[k];
+        hx = clamp(lp.x + (lp.vx || 0) * 0.35 + rand(-36, 36), 80, W - 80);
+        hy = clamp(lp.y + (lp.vy || 0) * 0.35 + rand(-36, 36), 95, H - 80);
+      } else {
+        hx = rand(90, W - 90);
+        hy = rand(110, H - 90);
+      }
+      state.hazards.push({
+        kind: 'void',
+        x: hx,
+        y: hy,
+        r: boss.phase >= 3 ? 66 : 58,
+        timer: delay,
+        maxTimer: delay,
+        damage: 24 + boss.tier * 4,
+      });
+    }
+    state.bossCast = { label: '☠ TOXIC VOID POOLS — MOVE OUT!', progress: 0, safe: false, timer: delay, maxTimer: delay };
+    SFX.laserCharge();
+  }
+
+  function startBossLaserSweep(boss, target, twin = false) {
+    const baseAng = target ? Math.atan2(target.y - boss.y, target.x - boss.x) : rand(0, Math.PI * 2);
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    const startAng = baseAng - dir * 0.92;
+    const telegraph = boss.phase >= 3 ? 1.05 : 1.25;
+    const active = boss.phase >= 3 ? 2.15 : 1.85;
+    const rotSpeed = dir * (boss.phase >= 3 ? 1.05 : 0.92);
+    const len = Math.max(W, H) * 1.15;
+    const beamCount = twin ? 2 : 1;
+
+    for (let k = 0; k < beamCount; k++) {
+      state.bossBeams.push({
+        ownerBoss: boss,
+        x: boss.x,
+        y: boss.y,
+        angle: startAng + k * Math.PI,
+        rotSpeed,
+        len,
+        width: 22,
+        telegraph,
+        maxTelegraph: telegraph,
+        activeTimer: active,
+        damage: 26 + boss.tier * 4,
+        firedSfx: false,
+      });
+    }
+    boss.beamLockTimer = telegraph + active * 0.75;
+    state.bossCast = {
+      label: twin ? '🔥 TWIN MEGA LASERS — ORBIT OR DASH!' : '🔥 MEGA LASER SWEEP — ORBIT OR DASH!',
+      progress: 0,
+      safe: false,
+      timer: telegraph,
+      maxTimer: telegraph,
+    };
+    spawnFloatText(boss.x, boss.y - 76, twin ? 'TWIN LASER SWEEP!' : 'MEGA LASER!', '#fde047');
+    SFX.laserCharge();
+  }
+
+  function startBossSafeBubble(boss) {
+    // Classic WoW Raid Mechanic: stand inside the glowing Safe Bubble before the arena-wide shockwave hits!
+    const safeX = clamp(W * 0.5 + rand(-W * 0.24, W * 0.24), 130, W - 130);
+    const safeY = clamp(H * 0.54 + rand(-H * 0.2, H * 0.2), 130, H - 120);
+    const delay = boss.phase >= 3 ? 2.25 : 2.6;
+    state.hazards.push({
+      kind: 'safe',
+      x: safeX,
+      y: safeY,
+      r: boss.phase >= 3 ? 98 : 112,
+      timer: delay,
+      maxTimer: delay,
+      damage: 34 + boss.tier * 5,
+    });
+    state.bossCast = {
+      label: '🛡 SLIME SHOCKWAVE — GET IN THE SAFE BUBBLE!',
+      progress: 0,
+      safe: true,
+      timer: delay,
+      maxTimer: delay,
+    };
+    spawnFloatText(safeX, safeY - 12, 'SAFE BUBBLE!', '#5eead4');
+    SFX.bossWarn();
+  }
+
+  function startBossPlasmaCross(boss) {
+    // Classic WoW Raid Mechanic: 4 rotating laser arms in a giant + / X wheel!
+    const telegraph = boss.phase >= 3 ? 1.15 : 1.35;
+    const active = boss.phase >= 3 ? 2.8 : 2.4;
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    const rotSpeed = dir * (boss.phase >= 3 ? 0.68 : 0.52);
+    const baseAng = rand(0, Math.PI * 0.5);
+    const len = Math.max(W, H) * 1.15;
+
+    for (let k = 0; k < 4; k++) {
+      state.bossBeams.push({
+        ownerBoss: boss,
+        x: boss.x,
+        y: boss.y,
+        angle: baseAng + (k * Math.PI) / 2,
+        rotSpeed,
+        len,
+        width: 20,
+        telegraph,
+        maxTelegraph: telegraph,
+        activeTimer: active,
+        damage: 25 + boss.tier * 4,
+        firedSfx: k > 0, // only play fire SFX once for the group
+      });
+    }
+    boss.beamLockTimer = telegraph + active;
+    state.bossCast = {
+      label: '⚡ ROTATING PLASMA CROSS — WEAVE AROUND!',
+      progress: 0,
+      safe: false,
+      timer: telegraph,
+      maxTimer: telegraph,
+    };
+    spawnFloatText(boss.x, boss.y - 76, 'PLASMA CROSS!', '#fde047');
+    SFX.laserCharge();
+  }
+
+  function startBossMeteorBarrage(boss, count) {
+    boss.meteorQueue = [];
+    for (let k = 0; k < count; k++) {
+      boss.meteorQueue.push({ wait: k * (boss.phase >= 3 ? 0.28 : 0.36) });
+    }
+    const dur = count * 0.36 + 0.9;
+    state.bossCast = {
+      label: '☄️ METEOR BARRAGE — KEEP MOVING!',
+      progress: 0,
+      safe: false,
+      timer: dur,
+      maxTimer: dur,
+    };
+    spawnFloatText(boss.x, boss.y - 76, 'METEOR RAIN!', '#fb923c');
+    SFX.bossWarn();
+  }
+
+  function updateBossHazardsAndBeams(dt, livingPlayers) {
+    // Update WoW Boss Cast Bar timer
+    if (state.bossCast) {
+      state.bossCast.timer -= dt;
+      state.bossCast.progress = clamp(1 - state.bossCast.timer / Math.max(0.01, state.bossCast.maxTimer), 0, 1);
+      if (state.bossCast.timer <= 0) {
+        state.bossCast = null;
+      }
+      renderBossCastUI(state.bossCast);
+    }
+
+    // Update Arena Ground Hazards (Void Pools, Meteors, Safe Bubbles, Toxic Puddles)
+    for (let i = state.hazards.length - 1; i >= 0; i--) {
+      const h = state.hazards[i];
+      h.timer -= dt;
+
+      if (h.kind === 'puddle') {
+        // Lingering toxic slime puddle ticks light damage if player parks inside
+        for (const p of livingPlayers) {
+          if (dist(p.x, p.y, h.x, h.y) < h.r + p.radius * 0.5 && p.invuln <= 0 && p.dashTimer <= 0) {
+            hurtPlayer(p, 11);
+          }
+        }
+        if (h.timer <= 0) state.hazards.splice(i, 1);
+        continue;
+      }
+
+      if (h.timer <= 0) {
+        if (h.kind === 'void') {
+          // Detonate Toxic Void Pool -> spawns lingering bubbling puddle!
+          state.novas.push({ x: h.x, y: h.y, r: 10, maxR: h.r + 14, color: '#a3e635', life: 0.34, maxLife: 0.34 });
+          spawnCartoonBurst(h.x, h.y, '#84cc16', false);
+          SFX.voidBoom();
+          for (const p of livingPlayers) {
+            if (dist(p.x, p.y, h.x, h.y) <= h.r + p.radius * 0.65) {
+              hurtPlayer(p, h.damage);
+            }
+          }
+          // Convert into lingering toxic puddle for 2.3s
+          state.hazards.splice(i, 1, {
+            kind: 'puddle',
+            x: h.x,
+            y: h.y,
+            r: h.r * 0.88,
+            timer: 2.3,
+            maxTimer: 2.3,
+            damage: 11,
+          });
+        } else if (h.kind === 'meteor') {
+          // Detonate Meteor Strike + scatter 4 cartoon rock sparks!
+          state.shake = Math.max(state.shake, 11);
+          state.novas.push({ x: h.x, y: h.y, r: 8, maxR: h.r + 22, color: '#fb923c', life: 0.36, maxLife: 0.36 });
+          spawnCartoonBurst(h.x, h.y, '#f97316', true);
+          SFX.voidBoom();
+          for (const p of livingPlayers) {
+            if (dist(p.x, p.y, h.x, h.y) <= h.r + p.radius * 0.65) {
+              hurtPlayer(p, h.damage);
+            }
+          }
+          state.hazards.splice(i, 1);
+        } else if (h.kind === 'safe') {
+          // WoW Safe-Bubble Shockwave! Anyone inside is SAFE; anyone outside gets blasted!
+          state.shake = Math.max(state.shake, 18);
+          state.novas.push({ x: W * 0.5, y: H * 0.5, r: 40, maxR: Math.max(W, H) * 0.85, color: '#e11d48', life: 0.55, maxLife: 0.55 });
+          state.novas.push({ x: h.x, y: h.y, r: h.r * 0.7, maxR: h.r + 28, color: '#5eead4', life: 0.45, maxLife: 0.45 });
+          SFX.bossBoom();
+          for (const p of livingPlayers) {
+            if (dist(p.x, p.y, h.x, h.y) <= h.r + p.radius * 0.35) {
+              p.shieldFlash = 0.48;
+              spawnParticles(p.x, p.y, '#5eead4', 10, 150, 3.5, 'star');
+              spawnFloatText(p.x, p.y - 34, 'SAFE!', '#5eead4');
+              SFX.shield();
+            } else {
+              hurtPlayer(p, h.damage);
+            }
+          }
+          state.hazards.splice(i, 1);
+        }
+      }
+    }
+
+    // Update Cuphead / WoW Sweeping Laser Beams & Plasma Cross
+    for (let i = state.bossBeams.length - 1; i >= 0; i--) {
+      const bm = state.bossBeams[i];
+      if (bm.ownerBoss && !bm.ownerBoss.dying && bm.ownerBoss.hp > 0) {
+        bm.x = bm.ownerBoss.x;
+        bm.y = bm.ownerBoss.y;
+      } else {
+        state.bossBeams.splice(i, 1);
+        continue;
+      }
+
+      if (bm.telegraph > 0) {
+        bm.telegraph -= dt;
+        if (bm.telegraph <= 0 && !bm.firedSfx) {
+          bm.firedSfx = true;
+          state.shake = Math.max(state.shake, 10);
+          SFX.laserFire();
+        }
+        continue;
+      }
+
+      bm.activeTimer -= dt;
+      bm.angle += bm.rotSpeed * dt;
+      if (bm.activeTimer <= 0) {
+        state.bossBeams.splice(i, 1);
+        continue;
+      }
+
+      // Check active beam collision against living players (line-segment distance)
+      const x2 = bm.x + Math.cos(bm.angle) * bm.len;
+      const y2 = bm.y + Math.sin(bm.angle) * bm.len;
+      const dx = x2 - bm.x;
+      const dy = y2 - bm.y;
+      const lenSq = dx * dx + dy * dy || 1;
+      for (const p of livingPlayers) {
+        const t = clamp(((p.x - bm.x) * dx + (p.y - bm.y) * dy) / lenSq, 0, 1);
+        const px = bm.x + t * dx;
+        const py = bm.y + t * dy;
+        if (dist(px, py, p.x, p.y) <= bm.width * 0.5 + p.radius - 4) {
+          hurtPlayer(p, bm.damage);
+        }
+      }
+    }
+  }
+
   function updateBossBehavior(boss, target, dt, slow) {
     if (boss.y < 145) { boss.y += 120 * dt; return; }
+    if (boss.phaseInvuln > 0) {
+      boss.phaseInvuln = Math.max(0, boss.phaseInvuln - dt);
+      boss.rot += 2.2 * dt;
+      return;
+    }
+
+    // Process staggered Meteor Barrage drops (King Pandemic-Rex)
+    if (boss.meteorQueue && boss.meteorQueue.length > 0) {
+      for (let i = boss.meteorQueue.length - 1; i >= 0; i--) {
+        boss.meteorQueue[i].wait -= dt;
+        if (boss.meteorQueue[i].wait <= 0) {
+          boss.meteorQueue.splice(i, 1);
+          const living = state.players.filter((p) => !p.downed);
+          const pick = living.length ? living[Math.floor(Math.random() * living.length)] : null;
+          const mx = pick ? clamp(pick.x + (pick.vx || 0) * 0.4 + rand(-42, 42), 75, W - 75) : rand(80, W - 80);
+          const my = pick ? clamp(pick.y + (pick.vy || 0) * 0.4 + rand(-42, 42), 95, H - 75) : rand(100, H - 80);
+          const delay = boss.phase >= 3 ? 0.98 : 1.15;
+          state.hazards.push({
+            kind: 'meteor',
+            x: mx,
+            y: my,
+            r: boss.phase >= 3 ? 62 : 54,
+            timer: delay,
+            maxTimer: delay,
+            damage: 26 + boss.tier * 4,
+          });
+        }
+      }
+    }
+
+    // Hold position while channeling a sweeping laser / plasma cross
+    if (boss.beamLockTimer > 0) {
+      boss.beamLockTimer = Math.max(0, boss.beamLockTimer - dt);
+      // Drift gently toward center during Plasma Cross so players have room on all sides
+      if (boss.variant === 2) {
+        boss.x += (W * 0.5 - boss.x) * dt * 1.4;
+        boss.y += (H * 0.48 - boss.y) * dt * 1.4;
+      }
+      return;
+    }
+
+    // Cuphead Telegraphed Chomp Lunge!
+    if (boss.chargeTelegraph) {
+      boss.chargeTelegraph.timer -= dt;
+      if (boss.chargeTelegraph.timer <= 0) {
+        const ang = boss.chargeTelegraph.angle;
+        const sp = boss.phase >= 3 ? 500 : boss.phase === 2 ? 440 : 380;
+        boss.chargeVx = Math.cos(ang) * sp;
+        boss.chargeVy = Math.sin(ang) * sp;
+        boss.charging = 0.78;
+        boss.chargeDropTick = 0.08;
+        boss.chargeTelegraph = null;
+        spawnFloatText(boss.x, boss.y - 74, 'CHOMP LUNGE!', '#fb7185');
+        SFX.dash();
+      }
+      return;
+    }
+
     if (boss.charging > 0) {
       boss.charging -= dt;
       boss.x = clamp(boss.x + boss.chargeVx * dt, 70, W - 70);
       boss.y = clamp(boss.y + boss.chargeVy * dt, 95, H - 70);
+      // Drop spicy hazard globs along the lunge path in Phase 2+!
+      if (boss.phase >= 2) {
+        boss.chargeDropTick -= dt;
+        if (boss.chargeDropTick <= 0) {
+          boss.chargeDropTick = 0.14;
+          const perp = Math.atan2(boss.chargeVy, boss.chargeVx) + Math.PI * 0.5;
+          [-1, 1].forEach((side) => {
+            state.enemyBullets.push({
+              x: boss.x,
+              y: boss.y,
+              vx: Math.cos(perp) * 145 * side,
+              vy: Math.sin(perp) * 145 * side,
+              radius: 7.5,
+              damage: 18,
+              color: '#ef4444',
+              life: 3.4,
+            });
+          });
+        }
+      }
       return;
     }
+
     if (target) {
       const ang = Math.atan2(target.y - boss.y, target.x - boss.x);
       boss.vx += (Math.cos(ang) * boss.speed - boss.vx) * dt * 1.6;
@@ -2887,72 +3443,131 @@
       boss.y = clamp(boss.y + boss.vy * slow * dt, 95, H - 70);
     }
 
-    const enraged = boss.phase >= 2;
+    const ph = boss.phase || 1;
+
+    // ---- Special WoW / Cuphead Raid Ability Rotation ----
+    boss.abilityTimer -= dt;
+    if (boss.abilityTimer <= 0 && !state.bossCast) {
+      boss.abilityStep += 1;
+      if (boss.variant === 0) {
+        // BARON CORONA-CHOMP: Void Pools (P1+) & Sweeping Mega Laser (P2+) / Twin Lasers (P3)
+        if (ph >= 2 && boss.abilityStep % 2 === 0) {
+          startBossLaserSweep(boss, target, ph >= 3);
+        } else {
+          spawnBossVoidZones(boss, ph >= 3 ? 5 : ph === 2 ? 4 : 3);
+        }
+        boss.abilityTimer = ph >= 3 ? 4.3 : ph === 2 ? 5.2 : 6.0;
+      } else if (boss.variant === 1) {
+        // HYDRA SLIME-QUEEN: Royal Brood + Bouncing Slime Orbs (P1+) & WoW Safe-Bubble Shockwave (P2+)
+        if (ph >= 2 && boss.abilityStep % 2 === 0) {
+          startBossSafeBubble(boss);
+        } else {
+          // Launch Cuphead Bouncing Slime Orb ring!
+          const count = ph >= 3 ? 9 : ph === 2 ? 7 : 5;
+          const base = target ? Math.atan2(target.y - boss.y, target.x - boss.x) : 0;
+          for (let k = 0; k < count; k++) {
+            const a = base + (k / count) * Math.PI * 2;
+            state.enemyBullets.push({
+              x: boss.x,
+              y: boss.y,
+              vx: Math.cos(a) * (ph >= 3 ? 255 : 220),
+              vy: Math.sin(a) * (ph >= 3 ? 255 : 220),
+              radius: 11,
+              damage: 20,
+              color: '#84cc16',
+              life: 6.2,
+              bouncy: true,
+              bounces: ph >= 3 ? 3 : 2,
+            });
+          }
+          spawnFloatText(boss.x, boss.y - 74, 'BOUNCING SLIMES!', '#bef264');
+          SFX.nova();
+          if (ph >= 3) spawnBossVoidZones(boss, 3);
+        }
+        boss.abilityTimer = ph >= 3 ? 4.8 : ph === 2 ? 5.6 : 6.0;
+      } else {
+        // KING PANDEMIC-REX: Meteor Barrage (P1+) & WoW Rotating Plasma Cross (P2+)
+        if (ph >= 2 && boss.abilityStep % 2 === 0) {
+          startBossPlasmaCross(boss);
+        } else {
+          startBossMeteorBarrage(boss, ph >= 3 ? 8 : ph === 2 ? 6 : 5);
+        }
+        boss.abilityTimer = ph >= 3 ? 4.6 : ph === 2 ? 5.6 : 6.2;
+      }
+    }
+
+    // ---- Core Cuphead Bullet Patterns (escalate across Phases 1 -> 2 -> 3) ----
     boss.attackTimer -= dt;
     if (boss.attackTimer <= 0) {
       if (boss.variant === 0) {
-        const count = (enraged ? 18 : 12) + boss.tier * 2;
-        boss.spiralAngle += 0.35;
+        const count = (ph >= 3 ? 18 : ph === 2 ? 15 : 11) + boss.tier * 2;
+        boss.spiralAngle += ph >= 3 ? 0.42 : 0.34;
         for (let k = 0; k < count; k++) {
           const a = boss.spiralAngle + (k / count) * Math.PI * 2;
           state.enemyBullets.push({
             x: boss.x, y: boss.y,
-            vx: Math.cos(a) * (enraged ? 245 : 210),
-            vy: Math.sin(a) * (enraged ? 245 : 210),
+            vx: Math.cos(a) * (ph >= 3 ? 260 : ph === 2 ? 235 : 205),
+            vy: Math.sin(a) * (ph >= 3 ? 260 : ph === 2 ? 235 : 205),
             radius: 8, damage: 19, color: '#ef4444', life: 4.5,
           });
         }
-        boss.attackTimer = Math.max(0.95, (enraged ? 1.45 : 2.0) - boss.tier * 0.1);
+        boss.attackTimer = Math.max(0.9, (ph >= 3 ? 1.25 : ph === 2 ? 1.55 : 2.0) - boss.tier * 0.08);
       } else if (boss.variant === 1 && target) {
         const baseAng = Math.atan2(target.y - boss.y, target.x - boss.x);
-        const span = enraged ? 3 : 2;
+        const span = ph >= 3 ? 3 : 2;
         for (let k = -span; k <= span; k++) {
-          const a = baseAng + k * 0.18;
+          const a = baseAng + k * 0.19;
+          const isBouncy = ph >= 2 && Math.abs(k) === span;
           state.enemyBullets.push({
             x: boss.x, y: boss.y,
-            vx: Math.cos(a) * (enraged ? 295 : 260),
-            vy: Math.sin(a) * (enraged ? 295 : 260),
-            radius: 8, damage: 19, color: '#ef4444', life: 4.0,
+            vx: Math.cos(a) * (ph >= 3 ? 295 : 255),
+            vy: Math.sin(a) * (ph >= 3 ? 295 : 255),
+            radius: isBouncy ? 10.5 : 8,
+            damage: 19,
+            color: isBouncy ? '#84cc16' : '#ef4444',
+            life: isBouncy ? 5.5 : 4.0,
+            bouncy: isBouncy,
+            bounces: isBouncy ? 2 : 0,
           });
         }
-        boss.attackTimer = Math.max(0.8, (enraged ? 1.2 : 1.65) - boss.tier * 0.1);
+        boss.attackTimer = Math.max(0.8, (ph >= 3 ? 1.15 : ph === 2 ? 1.4 : 1.75) - boss.tier * 0.08);
       } else {
-        boss.spiralAngle += 0.45;
-        const count = enraged ? 20 : 14;
+        boss.spiralAngle += 0.46;
+        const count = ph >= 3 ? 20 : ph === 2 ? 16 : 12;
         for (let k = 0; k < count; k++) {
           const a = boss.spiralAngle + (k / count) * Math.PI * 2;
           state.enemyBullets.push({
             x: boss.x, y: boss.y,
-            vx: Math.cos(a) * (enraged ? 265 : 230),
-            vy: Math.sin(a) * (enraged ? 265 : 230),
-            radius: 8.5, damage: 21, color: '#ef4444', life: 4.5,
+            vx: Math.cos(a) * (ph >= 3 ? 275 : ph === 2 ? 245 : 220),
+            vy: Math.sin(a) * (ph >= 3 ? 275 : ph === 2 ? 245 : 220),
+            radius: 8.5, damage: 20, color: '#ef4444', life: 4.5,
           });
         }
-        boss.attackTimer = Math.max(0.9, (enraged ? 1.3 : 1.75) - boss.tier * 0.1);
+        boss.attackTimer = Math.max(0.85, (ph >= 3 ? 1.2 : ph === 2 ? 1.45 : 1.8) - boss.tier * 0.08);
       }
     }
 
+    // ---- Telegraphed Cuphead Boss Lunge ----
     boss.chargeTimer -= dt;
     if (boss.chargeTimer <= 0 && target) {
       const ang = Math.atan2(target.y - boss.y, target.x - boss.x);
-      const sp = enraged ? 420 : 355;
-      boss.chargeVx = Math.cos(ang) * sp;
-      boss.chargeVy = Math.sin(ang) * sp;
-      boss.charging = 0.8;
-      boss.chargeTimer = enraged ? 4.4 : 5.8;
-      spawnFloatText(boss.x, boss.y - 74, 'BOSS LUNGE!', '#fb7185');
+      boss.chargeTelegraph = { angle: ang, timer: ph >= 3 ? 0.58 : 0.72 };
+      boss.chargeTimer = ph >= 3 ? 4.4 : ph === 2 ? 5.2 : 6.2;
+      SFX.bossWarn();
     }
 
+    // ---- Coordinated Raid Add Waves ----
     boss.minionTimer -= dt;
-    if (boss.minionTimer <= 0 && state.enemies.length < 14) {
-      const count = enraged ? 3 : 2;
+    if (boss.minionTimer <= 0 && state.enemies.length < 13) {
+      const count = ph >= 3 ? 3 : 2;
       for (let k = 0; k < count; k++) {
-        spawnEnemy(boss.variant === 1 ? 'microbe' : 'corona', {
-          x: boss.x + rand(-55, 55),
-          y: boss.y + rand(-55, 55),
+        const addType = boss.variant === 1 ? (k === 0 && ph >= 2 ? 'mitosis' : 'microbe') : 'corona';
+        spawnEnemy(addType, {
+          x: boss.x + rand(-60, 60),
+          y: boss.y + rand(-60, 60),
         });
       }
-      boss.minionTimer = enraged ? 4.0 : 5.2;
+      boss.minionTimer = ph >= 3 ? 4.8 : 6.0;
     }
   }
 
@@ -3154,6 +3769,104 @@
       ctx.restore();
     }
 
+    // WoW Raid Ground Hazards (Toxic Void Zones, Meteor Targets, Safe Bubbles, Bubbling Slime Puddles!)
+    for (const h of state.hazards) {
+      const prog = h.progress !== undefined ? h.progress : clamp(1 - h.timer / Math.max(0.01, h.maxTimer), 0, 1);
+      ctx.save();
+      if (h.kind === 'safe') {
+        // Subtle danger tint across the rest of the arena so the glowing Safe Bubble pops!
+        ctx.fillStyle = `rgba(225, 29, 72, ${(0.08 + prog * 0.16).toFixed(3)})`;
+        ctx.fillRect(0, 0, W, H);
+
+        ctx.translate(h.x, h.y);
+        const pulse = 1 + Math.sin(state.time * 10) * 0.04;
+        // Glowing golden-cyan Safe Bubble fill
+        ctx.fillStyle = 'rgba(45, 212, 191, 0.24)';
+        ctx.strokeStyle = '#5eead4';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(0, 0, h.r * pulse, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Filling radial countdown ring around the Safe Bubble
+        ctx.strokeStyle = '#fde047';
+        ctx.lineWidth = 6;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.arc(0, 0, h.r + 6, -Math.PI / 2, -Math.PI / 2 + prog * Math.PI * 2);
+        ctx.stroke();
+
+        // Bold SAFE ZONE label
+        ctx.font = '700 15px "Fredoka", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 4;
+        ctx.strokeText('SAFE ZONE!', 0, 5);
+        ctx.fillStyle = '#ccfbf1';
+        ctx.fillText('SAFE ZONE!', 0, 5);
+      } else if (h.kind === 'puddle') {
+        ctx.translate(h.x, h.y);
+        const fade = clamp(h.timer / Math.max(0.01, h.maxTimer), 0.25, 1);
+        ctx.globalAlpha = fade * 0.8;
+        ctx.fillStyle = 'rgba(132, 204, 22, 0.35)';
+        ctx.strokeStyle = '#a3e635';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, h.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        // Cute cartoon bubbling dots
+        for (let b = 0; b < 3; b++) {
+          const ba = b * 2.1 + state.time * 1.2;
+          const br = h.r * 0.45;
+          const bSize = 4 + Math.sin(state.time * 8 + b * 2) * 2.5;
+          ctx.fillStyle = '#bef264';
+          ctx.beginPath();
+          ctx.arc(Math.cos(ba) * br, Math.sin(ba) * br, Math.max(1.5, bSize), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        // 'void' or 'meteor' telegraphed AoE circle (fills up to 100% -> BOOM!)
+        const isMeteor = h.kind === 'meteor';
+        const ringCol = isMeteor ? '#fb923c' : '#a3e635';
+        const fillCol = isMeteor ? 'rgba(249, 115, 22, 0.24)' : 'rgba(225, 29, 72, 0.22)';
+        const innerCol = isMeteor ? 'rgba(251, 146, 60, 0.48)' : 'rgba(163, 230, 53, 0.44)';
+
+        ctx.translate(h.x, h.y);
+        ctx.fillStyle = fillCol;
+        ctx.beginPath();
+        ctx.arc(0, 0, h.r, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Expanding inner fill showing exact detonation progress!
+        ctx.fillStyle = innerCol;
+        ctx.beginPath();
+        ctx.arc(0, 0, Math.max(4, h.r * prog), 0, Math.PI * 2);
+        ctx.fill();
+
+        // Crisp dashed danger perimeter
+        ctx.strokeStyle = ringCol;
+        ctx.lineWidth = 3;
+        ctx.setLineDash([8, 6]);
+        ctx.beginPath();
+        ctx.arc(0, 0, h.r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Center target crosshair / warning mark
+        ctx.fillStyle = '#fef08a';
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 3;
+        ctx.font = '700 16px "Fredoka", sans-serif';
+        ctx.textAlign = 'center';
+        const icon = isMeteor ? '!' : '☠';
+        ctx.strokeText(icon, 0, 6);
+        ctx.fillText(icon, 0, 6);
+      }
+      ctx.restore();
+    }
+
     // Beams
     for (const b of state.beams) {
       const a = b.life / b.maxLife;
@@ -3175,39 +3888,146 @@
       ctx.globalAlpha = 1;
     }
 
+    // Cuphead / WoW Boss Sweeping Lasers & Rotating Plasma Cross!
+    for (const bm of state.bossBeams) {
+      const x2 = bm.x + Math.cos(bm.angle) * bm.len;
+      const y2 = bm.y + Math.sin(bm.angle) * bm.len;
+      ctx.save();
+      if (bm.telegraph > 0) {
+        const prog = bm.progress !== undefined ? bm.progress : clamp(1 - bm.telegraph / Math.max(0.01, bm.maxTelegraph), 0, 1);
+        const blink = 0.55 + Math.sin(state.time * 28) * 0.45;
+        ctx.strokeStyle = `rgba(244, 63, 94, ${(0.4 + blink * 0.5).toFixed(3)})`;
+        ctx.lineWidth = 3 + prog * 5;
+        ctx.setLineDash([14, 10]);
+        ctx.beginPath();
+        ctx.moveTo(bm.x, bm.y);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // Growing charge orb at boss mouth
+        ctx.fillStyle = '#fef08a';
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(bm.x, bm.y, 10 + prog * 18, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        const flicker = 1 + Math.sin(state.time * 48) * 0.14;
+        ctx.lineCap = 'round';
+        // Thick cartoon ink outer outline
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = (bm.width + 12) * flicker;
+        ctx.beginPath();
+        ctx.moveTo(bm.x, bm.y);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+        // Fiery crimson laser body
+        ctx.strokeStyle = '#e11d48';
+        ctx.lineWidth = (bm.width + 4) * flicker;
+        ctx.stroke();
+        // Bright yellow-white core
+        ctx.strokeStyle = '#fef08a';
+        ctx.lineWidth = (bm.width * 0.46) * flicker;
+        ctx.stroke();
+        // Blazing emitter star at origin
+        ctx.fillStyle = '#fef08a';
+        drawFourPointStar(bm.x, bm.y, 26 * flicker);
+      }
+      ctx.restore();
+    }
+
+    // Cuphead Telegraphed Boss Lunge Arrow!
+    for (const e of state.enemies) {
+      if (e.isBoss && e.chargeTelegraph) {
+        const ang = e.chargeTelegraph.angle;
+        const distLen = 280;
+        const ex = e.x + Math.cos(ang) * distLen;
+        const ey = e.y + Math.sin(ang) * distLen;
+        const pulse = 0.55 + Math.sin(state.time * 26) * 0.45;
+        ctx.save();
+        ctx.strokeStyle = `rgba(251, 113, 133, ${pulse.toFixed(2)})`;
+        ctx.lineWidth = 8;
+        ctx.lineCap = 'round';
+        ctx.setLineDash([16, 12]);
+        ctx.beginPath();
+        ctx.moveTo(e.x, e.y);
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // Arrowhead
+        ctx.translate(ex, ey);
+        ctx.rotate(ang);
+        ctx.fillStyle = '#fde047';
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(14, 0);
+        ctx.lineTo(-10, -12);
+        ctx.lineTo(-10, 12);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
     // Cartoon Enemies
     for (const e of state.enemies) drawEnemy(e);
 
-    // ENEMY PROJECTILES — High-contrast spiky red hazard globs with pulsing danger rings!
+    // ENEMY PROJECTILES — High-contrast spiky red globs + Cuphead glossy bouncing slime orbs!
     for (const b of state.enemyBullets) {
       const p = 1 + Math.sin(state.time * 16 + b.x) * 0.14;
       ctx.save();
       ctx.translate(b.x, b.y);
-      // Pulsing danger halo
-      ctx.strokeStyle = 'rgba(244, 63, 94, 0.7)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(0, 0, (b.radius + 3.5) * p, 0, Math.PI * 2);
-      ctx.stroke();
-      // Spiky dark-inked crimson glob
-      ctx.fillStyle = '#e11d48';
-      ctx.strokeStyle = '#090d16';
-      ctx.lineWidth = 2.2;
-      ctx.beginPath();
-      for (let k = 0; k < 10; k++) {
-        const a = (k / 10) * Math.PI * 2 + state.time * 5;
-        const rr = k % 2 === 0 ? b.radius * 1.15 : b.radius * 0.72;
-        if (k === 0) ctx.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
-        else ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+      if (b.bouncy) {
+        // Glossy cartoon bouncing Cuphead slime orb!
+        const sq = 1 + Math.sin(state.time * 14 + b.y * 0.05) * 0.14;
+        ctx.scale(sq, 2 - sq);
+        ctx.strokeStyle = 'rgba(163, 230, 53, 0.65)';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, b.radius + 3.5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = '#84cc16';
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, b.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        // Gloss highlight
+        ctx.fillStyle = '#ecfccb';
+        ctx.beginPath();
+        ctx.ellipse(-b.radius * 0.3, -b.radius * 0.3, b.radius * 0.34, b.radius * 0.2, -0.5, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        // Pulsing danger halo
+        ctx.strokeStyle = 'rgba(244, 63, 94, 0.7)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, (b.radius + 3.5) * p, 0, Math.PI * 2);
+        ctx.stroke();
+        // Spiky dark-inked crimson glob
+        ctx.fillStyle = '#e11d48';
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        for (let k = 0; k < 10; k++) {
+          const a = (k / 10) * Math.PI * 2 + state.time * 5;
+          const rr = k % 2 === 0 ? b.radius * 1.15 : b.radius * 0.72;
+          if (k === 0) ctx.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+          else ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        // Bright yellow-white warning core
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath();
+        ctx.arc(0, 0, b.radius * 0.36, 0, Math.PI * 2);
+        ctx.fill();
       }
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      // Bright yellow-white warning core
-      ctx.fillStyle = '#fef08a';
-      ctx.beginPath();
-      ctx.arc(0, 0, b.radius * 0.36, 0, Math.PI * 2);
-      ctx.fill();
       ctx.restore();
     }
 
@@ -3922,15 +4742,37 @@
         ctx.stroke();
       }
     } else if (e.isBoss) {
-      const enraged = e.phase >= 2;
-      const chomp = 0.5 + Math.sin(state.time * (enraged ? 11 : 6.5)) * 0.5;
+      const ph = e.phase || 1;
+      const enraged = ph >= 2;
+      const overdrive = ph >= 3;
+      const chomp = 0.5 + Math.sin(state.time * (overdrive ? 15 : enraged ? 11 : 6.5)) * 0.5;
+
+      // Cuphead-style Phase 2 & Phase 3 Visual Power-Up Aura!
+      if (enraged && !e.dying) {
+        const auraPulse = 1 + Math.sin(state.time * (overdrive ? 16 : 9)) * 0.08;
+        ctx.save();
+        ctx.strokeStyle = overdrive ? 'rgba(253, 224, 71, 0.72)' : 'rgba(251, 113, 133, 0.5)';
+        ctx.lineWidth = overdrive ? 6 : 4;
+        ctx.setLineDash(overdrive ? [12, 8] : [16, 12]);
+        ctx.beginPath();
+        ctx.arc(0, 0, (e.radius + 26) * auraPulse, state.time * 2, state.time * 2 + Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        if (overdrive) {
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.16)';
+          ctx.beginPath();
+          ctx.arc(0, 0, (e.radius + 32) * auraPulse, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
 
       // Wiggling rubber-hose curved tentacles/spikes
       for (let k = 0; k < 12; k++) {
         const a = (k / 12) * Math.PI * 2 + e.rot;
-        const wiggle = Math.sin(state.time * (enraged ? 10 : 6) + k * 1.4) * 0.22;
-        const tipX = Math.cos(a + wiggle) * (e.radius + 20);
-        const tipY = Math.sin(a + wiggle) * (e.radius + 20);
+        const wiggle = Math.sin(state.time * (overdrive ? 14 : enraged ? 10 : 6) + k * 1.4) * (overdrive ? 0.3 : 0.22);
+        const tipX = Math.cos(a + wiggle) * (e.radius + (overdrive ? 24 : 20));
+        const tipY = Math.sin(a + wiggle) * (e.radius + (overdrive ? 24 : 20));
         const midX = Math.cos(a - wiggle * 0.6) * (e.radius + 8);
         const midY = Math.sin(a - wiggle * 0.6) * (e.radius + 8);
 
@@ -3944,18 +4786,18 @@
         ctx.strokeStyle = flash ? '#fff' : e.color;
         ctx.lineWidth = 4.5;
         ctx.stroke();
-        ctx.fillStyle = flash ? '#fff' : enraged ? '#fde047' : '#fda4af';
+        ctx.fillStyle = flash ? '#fff' : overdrive ? '#facc15' : enraged ? '#fde047' : '#fda4af';
         ctx.strokeStyle = '#090d16';
         ctx.lineWidth = 2.2;
         ctx.beginPath();
-        ctx.arc(tipX, tipY, 7, 0, Math.PI * 2);
+        ctx.arc(tipX, tipY, overdrive ? 8.5 : 7, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
       }
 
       // Giant Cartoon Boss Body + Gloss Highlight
       ctx.fillStyle = flash ? '#ffffff' : e.color;
-      ctx.strokeStyle = '#090d16';
+      ctx.strokeStyle = overdrive ? '#fde047' : '#090d16';
       ctx.lineWidth = 4.5;
       ctx.beginPath();
       ctx.arc(0, 0, e.radius, 0, Math.PI * 2);
@@ -3983,31 +4825,31 @@
         ctx.ellipse(-18, -28, 22, 10, -0.45, 0, Math.PI * 2);
         ctx.fill();
 
-        // Big Animated Boss Eyes
-        ctx.fillStyle = enraged ? '#fef08a' : '#ffffff';
+        // Big Animated Boss Eyes (glow gold-crimson in Phase 2 & fiery overdrive in Phase 3!)
+        ctx.fillStyle = overdrive ? '#fde047' : enraged ? '#fef08a' : '#ffffff';
         ctx.strokeStyle = '#090d16';
         ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.ellipse(-20, -10, 12, 15, 0, 0, Math.PI * 2);
-        ctx.ellipse(20, -10, 12, 15, 0, 0, Math.PI * 2);
+        ctx.ellipse(-20, -10, 12, overdrive ? 17 : 15, 0, 0, Math.PI * 2);
+        ctx.ellipse(20, -10, 12, overdrive ? 17 : 15, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
-        const eyeJitter = Math.sin(state.time * 9) * 2.5;
+        const eyeJitter = Math.sin(state.time * (overdrive ? 18 : 9)) * (overdrive ? 3.5 : 2.5);
         ctx.fillStyle = enraged ? '#dc2626' : '#090d16';
         ctx.beginPath();
-        ctx.arc(-18 + eyeJitter, -8, 5.5, 0, Math.PI * 2);
-        ctx.arc(18 + eyeJitter, -8, 5.5, 0, Math.PI * 2);
+        ctx.arc(-18 + eyeJitter, -8, overdrive ? 6.5 : 5.5, 0, Math.PI * 2);
+        ctx.arc(18 + eyeJitter, -8, overdrive ? 6.5 : 5.5, 0, Math.PI * 2);
         ctx.fill();
         // Furrowed Angry Eyebrows
         ctx.strokeStyle = '#090d16';
-        ctx.lineWidth = 5;
+        ctx.lineWidth = 5.5;
         ctx.lineCap = 'round';
         ctx.beginPath();
-        ctx.moveTo(-34, -26 - chomp * 3); ctx.lineTo(-8, -17);
-        ctx.moveTo(34, -26 - chomp * 3); ctx.lineTo(8, -17);
+        ctx.moveTo(-34, -26 - chomp * 3); ctx.lineTo(-8, -16);
+        ctx.moveTo(34, -26 - chomp * 3); ctx.lineTo(8, -16);
         ctx.stroke();
         // Animated Chomping Jagged Boss Mouth!
-        const jawOpen = 10 + chomp * 14;
+        const jawOpen = 10 + chomp * (overdrive ? 18 : 14);
         ctx.fillStyle = '#090d16';
         ctx.beginPath();
         ctx.moveTo(-28, 16);
@@ -4029,6 +4871,19 @@
           ctx.closePath();
           ctx.fill();
         });
+      }
+
+      // Shimmering Golden Phase-Shift Invulnerability Barrier!
+      if (e.phaseInvuln > 0 && !e.dying) {
+        ctx.save();
+        ctx.fillStyle = 'rgba(253, 224, 71, 0.22)';
+        ctx.strokeStyle = '#fef08a';
+        ctx.lineWidth = 4.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, e.radius + 14 + Math.sin(state.time * 24) * 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
       }
     } else {
       // Spiky Cartoon Space Virus with Wiggling Tentacles!

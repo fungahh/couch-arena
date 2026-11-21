@@ -51,7 +51,7 @@
         </div>
       </div>
 
-      <!-- Boss Health Bar -->
+      <!-- Boss Health Bar (WoW Raid Phase Notches + Ability Cast Bar!) -->
       <div id="boss-bar-wrap" class="hidden">
         <div class="boss-header">
           <span id="boss-name">BARON CORONA-CHOMP</span>
@@ -59,6 +59,14 @@
         </div>
         <div class="boss-hp-track">
           <div class="boss-hp-fill" id="boss-hp-fill"></div>
+          <div class="boss-phase-tick" style="left: 33.33%" title="Phase 3 Threshold"></div>
+          <div class="boss-phase-tick" style="left: 66.66%" title="Phase 2 Threshold"></div>
+        </div>
+        <div id="boss-cast-wrap" class="boss-cast-wrap hidden">
+          <div class="boss-cast-label" id="boss-cast-label">CASTING ABILITY...</div>
+          <div class="boss-cast-track">
+            <div class="boss-cast-fill" id="boss-cast-fill"></div>
+          </div>
         </div>
       </div>
     </div>
