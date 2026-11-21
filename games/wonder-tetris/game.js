@@ -426,6 +426,7 @@
     state.attackArcs = [];
     state.myBoard = null;
     state.matchStartTs = Date.now();
+    for (const k of Object.keys(tvCtrlState)) delete tvCtrlState[k];
 
     const participants = cfg.participants || [];
     for (const p of participants) {
@@ -864,7 +865,58 @@
       return;
     }
 
-    // TV Mode: Host receives Phone Controller actions!
+    // TV Mode: Host receives low-latency Phone Controller digital button state changes!
+    // Sending { b: 'L'|'R'|'D'|'CW'|'CCW'|'DROP'|'HOLD', s: 1|0 } on pointerdown/pointerup
+    // lets the TV run silky-smooth native 60fps DAS/ARR with only 2 tiny UDP packets per hold!
+    if (msg.type === 'CTRL_BTN' && room.isHost && room.tvMode) {
+      if (state.mode !== 'playing') return;
+      const pid = msg.senderId;
+      const b = state.boardsById[pid];
+      if (!b || !b.alive) return;
+      let st = tvCtrlState[pid];
+      if (!st) {
+        st = { left: false, right: false, down: false, dir: 0, das: 0, arr: 0, downTimer: 0 };
+        tvCtrlState[pid] = st;
+      }
+      const pressed = Boolean(msg.s);
+      if (msg.b === 'L') {
+        st.left = pressed;
+        if (pressed) {
+          b.move(-1);
+          st.dir = -1;
+          st.das = 0.14;
+          st.arr = 0;
+        } else {
+          st.dir = st.right ? 1 : 0;
+          if (st.dir !== 0) st.das = 0.14;
+        }
+      } else if (msg.b === 'R') {
+        st.right = pressed;
+        if (pressed) {
+          b.move(1);
+          st.dir = 1;
+          st.das = 0.14;
+          st.arr = 0;
+        } else {
+          st.dir = st.left ? -1 : 0;
+          if (st.dir !== 0) st.das = 0.14;
+        }
+      } else if (msg.b === 'D') {
+        st.down = pressed;
+        if (pressed) {
+          b.softDrop();
+          st.downTimer = 0.055;
+        }
+      } else if (pressed) {
+        if (msg.b === 'CW') b.rotate(1);
+        else if (msg.b === 'CCW') b.rotate(-1);
+        else if (msg.b === 'DROP') b.hardDrop();
+        else if (msg.b === 'HOLD') b.holdPiece();
+      }
+      return;
+    }
+
+    // Legacy / single-action fallback
     if (msg.type === 'CTRL_ACT' && room.isHost && room.tvMode) {
       if (state.mode !== 'playing') return;
       const b = state.boardsById[msg.senderId];
@@ -896,17 +948,22 @@
     }
   }
 
-  // ---- Phone Controller Input & HUD ----
-  function sendControllerAction(action, reliable = false) {
+  // Per-player TV-side DAS/ARR state for zero-jitter remote holds
+  const tvCtrlState = {};
+
+  // ---- Phone Controller Input & HUD (UDP State-Change Protocol) ----
+  function sendControllerBtn(btnCode, isDown) {
     if (!isPhoneController()) return;
-    if (navigator.vibrate) {
-      try { navigator.vibrate(action === 'drop' ? 18 : 8); } catch (e) {}
+    if (isDown) {
+      if (window.CouchRoom && window.CouchRoom.requestWakeLock) {
+        window.CouchRoom.requestWakeLock();
+      }
+      if (navigator.vibrate) {
+        try { navigator.vibrate(btnCode === 'DROP' ? 22 : 15); } catch (e) {}
+      }
     }
-    if (reliable) {
-      room.sendSignal({ type: 'CTRL_ACT', action });
-    } else {
-      room.sendRealtime({ type: 'CTRL_ACT', action });
-    }
+    // Fly immediately over local Wi-Fi WebRTC UDP DataChannel (with edge dedupe!)
+    room.sendRealtime({ type: 'CTRL_BTN', b: btnCode, s: isDown ? 1 : 0 }, { urgent: true, edge: true });
   }
 
   function updatePhoneControllerHud() {
@@ -923,11 +980,41 @@
     if (h.next) R.drawPiecePreview(nCtx, h.next, 0, 0, ctrlNextCanvas.width, ctrlNextCanvas.height, state.time);
   }
 
+  function bindDigitalControllerBtn(el, btnCode, sendRelease = false) {
+    if (!el) return;
+    let activePtr = null;
+    const down = (ev) => {
+      ev.preventDefault();
+      if (activePtr !== null) return;
+      activePtr = ev.pointerId;
+      if (el.setPointerCapture) {
+        try { el.setPointerCapture(ev.pointerId); } catch (e) {}
+      }
+      audio.init();
+      el.classList.add('pressed');
+      sendControllerBtn(btnCode, true);
+    };
+    const up = (ev) => {
+      if (activePtr !== null && ev && ev.pointerId !== undefined && ev.pointerId !== activePtr) return;
+      if (activePtr === null) return;
+      activePtr = null;
+      el.classList.remove('pressed');
+      if (sendRelease) sendControllerBtn(btnCode, false);
+    };
+    el.addEventListener('pointerdown', down, { passive: false });
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+    el.addEventListener('lostpointercapture', up);
+  }
+
   function bindHoldButton(el, onPress, repeatMs = 0) {
     if (!el) return;
     let repTimer = null;
     let delayTimer = null;
-    const stop = () => {
+    let activePtr = null;
+    const stop = (ev) => {
+      if (activePtr !== null && ev && ev.pointerId !== undefined && ev.pointerId !== activePtr) return;
+      activePtr = null;
       el.classList.remove('pressed');
       clearTimeout(delayTimer);
       clearInterval(repTimer);
@@ -936,37 +1023,55 @@
     };
     const start = (ev) => {
       ev.preventDefault();
+      if (activePtr !== null) return;
+      activePtr = ev.pointerId;
+      if (el.setPointerCapture) {
+        try { el.setPointerCapture(ev.pointerId); } catch (e) {}
+      }
       audio.init();
       el.classList.add('pressed');
+      if (navigator.vibrate) { try { navigator.vibrate(14); } catch (e) {} }
       onPress();
       if (repeatMs > 0) {
         delayTimer = setTimeout(() => {
           repTimer = setInterval(onPress, repeatMs);
-        }, 145);
+        }, 140);
       }
     };
-    el.addEventListener('pointerdown', start);
+    el.addEventListener('pointerdown', start, { passive: false });
     el.addEventListener('pointerup', stop);
     el.addEventListener('pointercancel', stop);
-    el.addEventListener('pointerleave', stop);
+    el.addEventListener('lostpointercapture', stop);
   }
 
-  // Phone Controller Buttons (TV Mode)
-  bindHoldButton(document.getElementById('c-left'), () => sendControllerAction('left'), 55);
-  bindHoldButton(document.getElementById('c-right'), () => sendControllerAction('right'), 55);
-  bindHoldButton(document.getElementById('c-down'), () => sendControllerAction('down'), 55);
-  bindHoldButton(document.getElementById('c-rot-cw'), () => sendControllerAction('rotCW', true));
-  bindHoldButton(document.getElementById('c-rot-ccw'), () => sendControllerAction('rotCCW', true));
-  bindHoldButton(document.getElementById('c-drop'), () => sendControllerAction('drop', true));
-  bindHoldButton(document.getElementById('c-hold'), () => sendControllerAction('hold', true));
+  // Phone Controller Buttons (TV Mode — State-Change UDP Protocol!)
+  bindDigitalControllerBtn(document.getElementById('c-left'), 'L', true);
+  bindDigitalControllerBtn(document.getElementById('c-right'), 'R', true);
+  bindDigitalControllerBtn(document.getElementById('c-down'), 'D', true);
+  bindDigitalControllerBtn(document.getElementById('c-rot-cw'), 'CW', false);
+  bindDigitalControllerBtn(document.getElementById('c-rot-ccw'), 'CCW', false);
+  bindDigitalControllerBtn(document.getElementById('c-drop'), 'DROP', false);
+  bindDigitalControllerBtn(document.getElementById('c-hold'), 'HOLD', false);
 
-  btnCtrlStart.addEventListener('click', () => {
+  window.addEventListener('blur', () => {
+    if (isPhoneController()) {
+      sendControllerBtn('L', false);
+      sendControllerBtn('R', false);
+      sendControllerBtn('D', false);
+    }
+  });
+
+  btnCtrlStart.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
     audio.init();
+    if (navigator.vibrate) { try { navigator.vibrate(15); } catch (err) {} }
     room.sendSignal({ type: 'CAPTAIN_START' });
-  });
-  btnCtrlPause.addEventListener('click', () => {
+  }, { passive: false });
+  btnCtrlPause.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    if (navigator.vibrate) { try { navigator.vibrate(12); } catch (err) {} }
     room.sendSignal({ type: 'CAPTAIN_PAUSE' });
-  });
+  }, { passive: false });
 
   // Mobile Standalone Touch Controls
   function doLocalAction(action) {
@@ -1501,29 +1606,56 @@
       }
 
       if (room.isHost && room.tvMode) {
+        // TV Mode: Run silky-smooth native 60fps DAS/ARR for held Phone Controller buttons!
+        for (const b of state.boards) {
+          if (b.isBot || !b.alive) continue;
+          const st = tvCtrlState[b.id];
+          if (!st) continue;
+          if (st.dir !== 0) {
+            if (st.das > 0) {
+              st.das -= dt;
+            } else {
+              st.arr -= dt;
+              if (st.arr <= 0) {
+                b.move(st.dir);
+                st.arr = 0.04;
+              }
+            }
+          }
+          if (st.down) {
+            st.downTimer -= dt;
+            if (st.downTimer <= 0) {
+              b.softDrop();
+              st.downTimer = 0.048;
+            }
+          }
+        }
+
         // TV Mode: Host simulates ALL boards + bots!
         for (const bot of state.botBrains) bot.update(dt);
         for (const b of state.boards) b.update(dt);
 
-        // Send compact HUD to each connected Phone Controller (~7 Hz)
-        if (now - state.lastCtrlHudSend > 140) {
+        // Send compact HUD to each connected Phone Controller ONLY when values changed (over UDP!)
+        if (now - state.lastCtrlHudSend > 120) {
           state.lastCtrlHudSend = now;
           for (const b of state.boards) {
             if (b.isBot) continue;
-            room.sendToPlayer(b.id, {
-              type: 'CTRL_HUD',
-              hud: {
-                score: b.score,
-                lines: b.lines,
-                level: b.level,
-                combo: b.combo,
-                hold: b.hold,
-                next: b.queue[0] || null,
-                alive: b.alive,
-                danger: b.danger,
-                pg: b.getTotalPendingGarbage(),
-              },
-            });
+            const hud = {
+              score: b.score,
+              lines: b.lines,
+              level: b.level,
+              combo: b.combo,
+              hold: b.hold,
+              next: b.queue[0] || null,
+              alive: b.alive,
+              danger: b.danger,
+              pg: b.getTotalPendingGarbage(),
+            };
+            const sig = `${hud.score}|${hud.lines}|${hud.level}|${hud.hold}|${hud.next}|${hud.alive}|${hud.danger}|${hud.pg}`;
+            if (b._lastHudSig !== sig) {
+              b._lastHudSig = sig;
+              room.sendRealtime({ type: 'CTRL_HUD', targetId: b.id, hud });
+            }
           }
         }
       } else {

@@ -822,3 +822,61 @@ body.show-touch-bar .mobile-controls {
   .top-bar { gap: 6px; }
   .top-actions { gap: 5px; }
 }
+
+/* Zero-Delay Touch / iOS Safari & Android Chrome Controller Protection */
+.controller-shell,
+.ctrl-pad-area,
+.pad-big-btn,
+.mobile-controls,
+.t-btn {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  overscroll-behavior: none;
+}
+
+/* Console-Grade Landscape Gamepad Layout when Phone is Held Sideways! */
+@media (orientation: landscape) and (max-height: 540px) {
+  .top-bar {
+    padding: 4px 12px;
+  }
+  .brand-badge {
+    width: 28px;
+    height: 28px;
+    font-size: 1rem;
+  }
+  .brand-title {
+    font-size: 0.95rem;
+  }
+  .controller-shell {
+    max-width: 100%;
+    padding: 6px max(16px, env(safe-area-inset-left)) max(8px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-right));
+    gap: 6px;
+  }
+  .ctrl-hud-card {
+    padding: 6px 12px;
+    border-radius: 16px;
+  }
+  .ctrl-avatar {
+    width: 34px;
+    height: 34px;
+    font-size: 1.2rem;
+  }
+  .ctrl-mini-box {
+    width: 56px;
+    padding: 2px 4px;
+  }
+  .ctrl-row-main {
+    gap: clamp(20px, 8vw, 88px);
+  }
+  .pad-big-btn {
+    min-height: 68px;
+    border-radius: 18px;
+    font-size: 1.2rem;
+  }
+  .pad-big-btn.btn-hard-drop {
+    min-height: 72px;
+    font-size: 1.3rem;
+  }
+}

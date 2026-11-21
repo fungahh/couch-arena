@@ -136,18 +136,25 @@
       this.bc = null;
       this.relay = null;
       this.peer = null;
-      this.conns = {}; // peerId -> DataConnection
+      this.conns = {}; // peerId -> reliable DataConnection (signals)
+      this.fastConns = {}; // peerId -> unreliable/unordered UDP-style DataConnection (realtime 60Hz input/state)
       this.hostConn = null;
+      this.hostFastConn = null;
       this.peerToPlayerId = {};
       this.playerToPeerId = {};
       this.lastSeenByPlayer = {};
       this.reconnectTimer = null;
+      this.fastReconnectTimer = null;
       this.connWatchdog = null;
+      this.fastWatchdog = null;
       this.joinRetryTimer = null;
       this.hbTimer = null;
       this.retryCount = 0;
       this.msgSeq = 0;
+      this.rtSeqOut = 0;
+      this.lastRtSeq = {}; // senderId:type -> last applied UDP sequence
       this.seenMids = new Set();
+      this.seenEids = new Set();
       this.lastRelayRtSent = 0;
       this.admitted = this.isHost;
       this.waitingApproval = false;
@@ -164,6 +171,8 @@
           if (!this.isHost && !this.declined && !this.kicked) {
             if (!this.hostConn || !this.hostConn.open) {
               this.connectToHostPeer();
+            } else if (!this.hostFastConn || !this.hostFastConn.open) {
+              this.connectFastLane();
             }
             if (!this.admitted) this._sendJoinReq();
           }
@@ -181,25 +190,35 @@
       return `ca-${this.gameId}-${this.roomCode}`;
     }
 
+    hasOpenFastP2p() {
+      if (this.isHost) {
+        return Object.values(this.fastConns).some((c) => c && c.open);
+      }
+      return Boolean(this.hostFastConn && this.hostFastConn.open);
+    }
+
     hasOpenP2p() {
       if (this.isHost) {
-        return Object.values(this.conns).some((c) => c && c.open);
+        return Object.values(this.conns).some((c) => c && c.open) || this.hasOpenFastP2p();
       }
-      return Boolean(this.hostConn && this.hostConn.open);
+      return Boolean((this.hostConn && this.hostConn.open) || (this.hostFastConn && this.hostFastConn.open));
     }
 
     _updateStatus() {
       if (this.destroyed) return;
+      const fastOpen = this.hasOpenFastP2p();
       const p2pOpen = this.hasOpenP2p();
       const relayOpen = Boolean(this.relay && this.relay.connected);
       const peerOpen = Boolean(this.peer && !this.peer.destroyed && this.peer.open);
 
       if (this.isHost) {
-        if (p2pOpen) this.onStatusChange('ok', 'P2P Live');
+        if (fastOpen) this.onStatusChange('ok', 'P2P UDP');
+        else if (p2pOpen) this.onStatusChange('ok', 'P2P Live');
         else if (peerOpen || relayOpen) this.onStatusChange('ok', 'Room Online');
         else this.onStatusChange('warn', 'Connecting...');
       } else {
-        if (p2pOpen) this.onStatusChange('ok', 'P2P Live');
+        if (fastOpen) this.onStatusChange('ok', 'P2P UDP');
+        else if (p2pOpen) this.onStatusChange('ok', 'P2P Live');
         else if (relayOpen && (this.admitted || this.waitingApproval)) this.onStatusChange('ok', 'Live (Relay)');
         else if (relayOpen) this.onStatusChange('warn', 'Joining Room...');
         else this.onStatusChange('warn', 'Connecting...');
@@ -517,6 +536,26 @@
     }
 
     bindHostConnection(conn) {
+      const isFast = conn.label === 'rt' || conn.reliable === false;
+      if (isFast) {
+        this.fastConns[conn.peer] = conn;
+        conn.on('open', () => {
+          this._updateStatus();
+        });
+        conn.on('data', (data) => {
+          this.handlePacket(data, conn);
+        });
+        const onFastDrop = () => {
+          if (this.fastConns[conn.peer] === conn) {
+            delete this.fastConns[conn.peer];
+          }
+          this._updateStatus();
+        };
+        conn.on('close', onFastDrop);
+        conn.on('error', onFastDrop);
+        return;
+      }
+
       this.conns[conn.peer] = conn;
 
       conn.on('open', () => {
@@ -538,7 +577,7 @@
       });
 
       const onDrop = () => {
-        delete this.conns[conn.peer];
+        if (this.conns[conn.peer] === conn) delete this.conns[conn.peer];
         const pid = this.peerToPlayerId[conn.peer];
         delete this.peerToPlayerId[conn.peer];
         if (pid && this.playerToPeerId[pid] === conn.peer) {
@@ -563,9 +602,68 @@
       conn.on('error', onDrop);
     }
 
+    connectFastLane() {
+      if (this.destroyed || this.isHost || this.declined || this.kicked || !this.peer || this.peer.destroyed) return;
+      if (this.hostFastConn && this.hostFastConn.open) return;
+
+      clearTimeout(this.fastWatchdog);
+      if (this.hostFastConn) {
+        try { this.hostFastConn.close(); } catch (e) {}
+        this.hostFastConn = null;
+      }
+
+      let fast;
+      try {
+        // Unordered + Unreliable UDP-style WebRTC DataChannel (ordered: false, maxRetransmits: 0)
+        // Zero head-of-line blocking for 60Hz phone controllers and real-time game snapshots!
+        fast = this.peer.connect(this.hostPeerId, {
+          label: 'rt',
+          reliable: false,
+          serialization: 'json',
+        });
+      } catch (e) {
+        return;
+      }
+      this.hostFastConn = fast;
+
+      this.fastWatchdog = setTimeout(() => {
+        if (this.destroyed || this.hostFastConn !== fast || fast.open) return;
+        try { fast.close(); } catch (e) {}
+        if (this.hostFastConn === fast) this.hostFastConn = null;
+        clearTimeout(this.fastReconnectTimer);
+        this.fastReconnectTimer = setTimeout(() => this.connectFastLane(), 4000);
+      }, 5000);
+
+      fast.on('open', () => {
+        clearTimeout(this.fastWatchdog);
+        this._updateStatus();
+      });
+
+      fast.on('data', (data) => {
+        this.handlePacket(data, fast);
+      });
+
+      const onFastDrop = () => {
+        clearTimeout(this.fastWatchdog);
+        if (this.hostFastConn === fast) this.hostFastConn = null;
+        if (this.destroyed || this.declined || this.kicked) return;
+        this._updateStatus();
+        clearTimeout(this.fastReconnectTimer);
+        this.fastReconnectTimer = setTimeout(() => {
+          if (this.hostConn && this.hostConn.open) this.connectFastLane();
+        }, 3000);
+      };
+
+      fast.on('close', onFastDrop);
+      fast.on('error', onFastDrop);
+    }
+
     connectToHostPeer() {
       if (this.destroyed || this.isHost || this.declined || this.kicked || !this.peer || this.peer.destroyed) return;
-      if (this.hostConn && this.hostConn.open) return;
+      if (this.hostConn && this.hostConn.open) {
+        if (!this.hostFastConn || !this.hostFastConn.open) this.connectFastLane();
+        return;
+      }
 
       clearTimeout(this.connWatchdog);
       if (this.hostConn) {
@@ -576,7 +674,11 @@
       this._updateStatus();
       let conn;
       try {
-        conn = this.peer.connect(this.hostPeerId, { reliable: true });
+        conn = this.peer.connect(this.hostPeerId, {
+          label: 'sig',
+          reliable: true,
+          serialization: 'json',
+        });
       } catch (e) {
         clearTimeout(this.reconnectTimer);
         this.reconnectTimer = setTimeout(() => this.connectToHostPeer(), 2500);
@@ -599,6 +701,8 @@
         this._updateStatus();
         this._sendJoinReq(conn);
         this._startJoinRetry();
+        // Immediately establish the unordered UDP-style DataChannel for 2–10ms local Wi-Fi controller input!
+        this.connectFastLane();
       });
 
       conn.on('data', (data) => {
@@ -782,13 +886,20 @@
         this.sendToPlayer(playerId, { type: 'KICKED' });
         const remotePeer = this.playerToPeerId[playerId];
         const conn = remotePeer ? this.conns[remotePeer] : null;
+        const fast = remotePeer ? this.fastConns[remotePeer] : null;
         if (conn && conn.open) {
           setTimeout(() => {
             try { conn.close(); } catch (e) {}
           }, 120);
         }
+        if (fast && fast.open) {
+          setTimeout(() => {
+            try { fast.close(); } catch (e) {}
+          }, 120);
+        }
         if (remotePeer) {
           delete this.conns[remotePeer];
+          delete this.fastConns[remotePeer];
           delete this.peerToPlayerId[remotePeer];
         }
         delete this.playerToPeerId[playerId];
@@ -825,8 +936,18 @@
       this.onRosterChange(this.getOrderedPlayers());
     }
 
-    sendRealtime(payload) {
-      const msg = { ...payload, _rt: true, senderId: this.myId };
+    sendRealtime(payload, opts = {}) {
+      const seq = ++this.rtSeqOut;
+      const msg = {
+        ...payload,
+        _rt: true,
+        _seq: seq,
+        senderId: this.myId,
+      };
+      if (opts.edge) {
+        msg._edge = 1;
+        msg._eid = `${this.myId}_e_${seq}`;
+      }
       if (this.bc) {
         try { this.bc.postMessage(msg); } catch (e) {}
       }
@@ -834,35 +955,55 @@
       if (this.isHost) {
         const remoteIds = Object.values(this.players).filter((p) => !p.isLocal).map((p) => p.id);
         let allRemoteOnP2p = remoteIds.length > 0;
+        const sentPeers = new Set();
+
         for (const rid of remoteIds) {
           const rPeer = this.playerToPeerId[rid];
-          const c = rPeer ? this.conns[rPeer] : null;
-          if (!c || !c.open) allRemoteOnP2p = false;
-        }
-        for (const conn of Object.values(this.conns)) {
-          if (conn && conn.open) {
-            try { conn.send(msg); sentViaP2p = true; } catch (e) {}
+          const fast = rPeer ? this.fastConns[rPeer] : null;
+          const rel = rPeer ? this.conns[rPeer] : null;
+          const chosen = (fast && fast.open) ? fast : (rel && rel.open) ? rel : null;
+          if (chosen) {
+            try { chosen.send(msg); sentViaP2p = true; sentPeers.add(rPeer); } catch (e) {}
+          } else {
+            allRemoteOnP2p = false;
           }
         }
-        // If any remote player is relay-only (NAT/5G), also mirror throttled realtime state over WSS!
+        // Also cover any peer not yet mapped via playerToPeerId
+        for (const [peerId, fast] of Object.entries(this.fastConns)) {
+          if (!sentPeers.has(peerId) && fast && fast.open) {
+            try { fast.send(msg); sentViaP2p = true; sentPeers.add(peerId); } catch (e) {}
+          }
+        }
+        for (const [peerId, conn] of Object.entries(this.conns)) {
+          if (!sentPeers.has(peerId) && conn && conn.open) {
+            try { conn.send(msg); sentViaP2p = true; sentPeers.add(peerId); } catch (e) {}
+          }
+        }
+
+        // Only mirror throttled realtime state over cloud WSS if a remote player has no direct P2P!
         if (!allRemoteOnP2p && remoteIds.length > 0 && this.relay && this.relay.connected) {
           const now = Date.now();
-          if (now - this.lastRelayRtSent >= 75) {
+          if (opts.urgent || now - this.lastRelayRtSent >= 65) {
             this.lastRelayRtSent = now;
             this.relay.send(msg);
           }
         }
       } else {
-        if (this.hostConn && this.hostConn.open) {
+        // Prefer Unordered/Unreliable UDP DataChannel for 2–10ms zero-blocking controller frames!
+        if (this.hostFastConn && this.hostFastConn.open) {
+          try { this.hostFastConn.send(msg); sentViaP2p = true; } catch (e) {}
+        } else if (this.hostConn && this.hostConn.open) {
           try { this.hostConn.send(msg); sentViaP2p = true; } catch (e) {}
         }
+
+        // Cloud WSS fallback ONLY when direct P2P is not yet open
         if (!sentViaP2p && this.relay && this.relay.connected) {
           const now = Date.now();
           const inp = payload && payload.input;
           const isZero = Boolean(inp && !inp.mx && !inp.my && inp.tx === null);
-          const isUrgent = Boolean(inp && inp.dash) || (isZero && !this._lastRtZero);
+          const isUrgent = Boolean(opts.urgent || opts.edge || (inp && inp.dash) || (isZero && !this._lastRtZero));
           this._lastRtZero = isZero;
-          if (isUrgent || now - this.lastRelayRtSent >= 35) {
+          if (isUrgent || now - this.lastRelayRtSent >= 32) {
             this.lastRelayRtSent = now;
             this.relay.send(msg);
           }
@@ -899,6 +1040,22 @@
       if (data.targetId && data.targetId !== this.myId) return;
 
       if (data._rt) {
+        if (data._edge && data._eid) {
+          if (this.seenEids.has(data._eid)) return;
+          this.seenEids.add(data._eid);
+          if (this.seenEids.size > 180) {
+            const first = this.seenEids.values().next().value;
+            this.seenEids.delete(first);
+          }
+        } else if (typeof data._seq === 'number') {
+          const laneKey = `${data.senderId}:${data.type || 'rt'}`;
+          const prev = this.lastRtSeq[laneKey];
+          if (prev !== undefined && data._seq <= prev && (prev - data._seq) < 500) {
+            // Drop stale out-of-order UDP packet so controls never rubber-band!
+            return;
+          }
+          this.lastRtSeq[laneKey] = data._seq;
+        }
         this.onMessage(data);
         return;
       }
@@ -1090,13 +1247,19 @@
       document.removeEventListener('visibilitychange', this._onVisibility);
       window.removeEventListener('pagehide', this._onPageHide);
       clearTimeout(this.reconnectTimer);
+      clearTimeout(this.fastReconnectTimer);
       clearTimeout(this.connWatchdog);
+      clearTimeout(this.fastWatchdog);
       clearInterval(this.joinRetryTimer);
       clearInterval(this.hbTimer);
       for (const entry of Object.values(this.pendingLookups)) {
         clearTimeout(entry.timer);
       }
       this.pendingLookups = {};
+      if (this.hostFastConn) {
+        try { this.hostFastConn.close(); } catch (e) {}
+        this.hostFastConn = null;
+      }
       if (this.bc) {
         try { this.bc.close(); } catch (e) {}
       }
@@ -1109,6 +1272,19 @@
     }
   }
 
+  let _wakeLockSentinel = null;
+  async function requestWakeLock() {
+    if (typeof navigator === 'undefined' || !navigator.wakeLock || !navigator.wakeLock.request) return false;
+    try {
+      if (_wakeLockSentinel && !_wakeLockSentinel.released) return true;
+      _wakeLockSentinel = await navigator.wakeLock.request('screen');
+      _wakeLockSentinel.addEventListener('release', () => { _wakeLockSentinel = null; });
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   global.CouchRoom = {
     RoomSync,
     PLAYER_COLORS,
@@ -1118,5 +1294,6 @@
     getSavedProfileMeta,
     savePlayerName,
     ensurePeerJs,
+    requestWakeLock,
   };
 })(window);

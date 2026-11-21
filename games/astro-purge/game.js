@@ -686,9 +686,11 @@
     ctrlSteerPad.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       SFX.ensure();
+      if (window.CouchRoom && window.CouchRoom.requestWakeLock) window.CouchRoom.requestWakeLock();
       if (phonePad.pointerId !== null) return;
       phonePad.pointerId = e.pointerId;
       phonePad.active = true;
+      if (navigator.vibrate) { try { navigator.vibrate(10); } catch (err) {} }
       if (ctrlSteerPad.setPointerCapture) {
         try { ctrlSteerPad.setPointerCapture(e.pointerId); } catch (err) {}
       }
@@ -728,6 +730,7 @@
       }
       if (ctrlStickKnob) ctrlStickKnob.style.transform = 'translate(0px, 0px)';
       if (ctrlTrackDot) ctrlTrackDot.style.transform = 'translate(0px, 0px)';
+      phonePad.urgentFlush = true;
     };
     ctrlSteerPad.addEventListener('pointerup', releaseSteer);
     ctrlSteerPad.addEventListener('pointercancel', releaseSteer);
@@ -737,12 +740,15 @@
     ctrlDashBtn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       SFX.ensure();
+      if (window.CouchRoom && window.CouchRoom.requestWakeLock) window.CouchRoom.requestWakeLock();
       phonePad.dash = true;
+      phonePad.urgentFlush = true;
       ctrlDashBtn.classList.add('pressed');
       if (navigator.vibrate) { try { navigator.vibrate(18); } catch (err) {} }
     }, { passive: false });
     const endCtrlDash = () => {
       phonePad.dash = false;
+      phonePad.urgentFlush = true;
       ctrlDashBtn.classList.remove('pressed');
     };
     ctrlDashBtn.addEventListener('pointerup', endCtrlDash);
@@ -6062,15 +6068,26 @@
           renderHud();
         }
         netTick += dt;
-        if (netTick >= 0.04 && state.players.some((p) => !p.isLocal)) {
+        const snapInterval = room.hasOpenFastP2p && room.hasOpenFastP2p() ? 0.03 : 0.04;
+        if (netTick >= snapInterval && state.players.some((p) => !p.isLocal)) {
           netTick = 0;
           room.sendRealtime({ type: 'SNAP', s: buildSnapshot() });
         }
       } else {
         netTick += dt;
-        if (netTick >= 0.033) {
-          netTick = 0;
-          room.sendRealtime({ type: 'INPUT', input: readLocalInput(0, pads) });
+        const fastUdp = Boolean(room.hasOpenFastP2p && room.hasOpenFastP2p());
+        const inputInterval = fastUdp ? 0.016 : 0.032; // 60Hz over local Wi-Fi WebRTC UDP!
+        const urgent = Boolean(phonePad.urgentFlush);
+        if (urgent || netTick >= inputInterval) {
+          const inp = readLocalInput(0, pads);
+          const inpKey = `${inp.mx.toFixed(2)}|${inp.my.toFixed(2)}|${inp.tx === null ? '' : inp.tx.toFixed(0)}|${inp.ty === null ? '' : inp.ty.toFixed(0)}|${inp.dash ? 1 : 0}|${inp.fire ? 1 : 0}`;
+          const changed = inpKey !== phonePad._lastSentKey;
+          if (urgent || changed || netTick >= 0.12) {
+            netTick = 0;
+            phonePad.urgentFlush = false;
+            phonePad._lastSentKey = inpKey;
+            room.sendRealtime({ type: 'INPUT', input: inp }, { urgent });
+          }
         }
       }
     }

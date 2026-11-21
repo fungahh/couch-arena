@@ -24,6 +24,20 @@
     <script src="../../shared/room-sync.js"></script>
     <script type="module" crossorigin src="./assets/index-DcIiVWyl.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-DXxdBxG8.css">
+    <style>
+      .touch-controls,
+      .touch-controls button,
+      #touch-left,
+      #touch-right,
+      #touch-drift,
+      #touch-item {
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
+        overscroll-behavior: none;
+      }
+    </style>
   </head>
   <body>
     <div id="boot-splash" class="boot-splash" aria-live="polite">
