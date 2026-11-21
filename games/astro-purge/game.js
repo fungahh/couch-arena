@@ -103,16 +103,45 @@
   const lobbyPlayerName = document.getElementById('lobby-player-name');
   const lobbyRoomStatus = document.getElementById('lobby-room-status');
   const lobbyRosterGrid = document.getElementById('lobby-roster-grid');
+  const lobbyControlsBox = document.getElementById('lobby-controls-box');
   const btnCopyInvite = document.getElementById('btn-copy-invite');
+  const btnToggleTv = document.getElementById('btn-toggle-tv');
   const btnAddLocal = document.getElementById('btn-add-local');
   const btnLaunch = document.getElementById('btn-launch');
   const titlePadHint = document.getElementById('title-pad-hint');
+
+  const tvQrPanel = document.getElementById('tv-qr-panel');
+  const tvQrBox = document.getElementById('tv-qr-box');
+  const tvBigCode = document.getElementById('tv-big-code');
+  const btnTvFullscreen = document.getElementById('btn-tv-fullscreen');
+
+  const controllerUi = document.getElementById('controller-ui');
+  const ctrlColorDot = document.getElementById('ctrl-color-dot');
+  const ctrlPilotName = document.getElementById('ctrl-pilot-name');
+  const ctrlMeta = document.getElementById('ctrl-meta');
+  const ctrlHpFill = document.getElementById('ctrl-hp-fill');
+  const ctrlHpText = document.getElementById('ctrl-hp-text');
+  const btnCtrlMode = document.getElementById('btn-ctrl-mode');
+  const btnCtrlPause = document.getElementById('btn-ctrl-pause');
+  const btnCtrlSwap = document.getElementById('btn-ctrl-swap');
+  const ctrlSteerPad = document.getElementById('ctrl-steer-pad');
+  const ctrlSteerLabel = document.getElementById('ctrl-steer-label');
+  const ctrlStickBase = document.getElementById('ctrl-stick-base');
+  const ctrlStickKnob = document.getElementById('ctrl-stick-knob');
+  const ctrlTrackVisual = document.getElementById('ctrl-track-visual');
+  const ctrlTrackDot = document.getElementById('ctrl-track-dot');
+  const ctrlDashBtn = document.getElementById('ctrl-dash-btn');
+  const ctrlDashSub = document.getElementById('ctrl-dash-sub');
+  const ctrlWeaponsMini = document.getElementById('ctrl-weapons-mini');
+  const ctrlHurtFlash = document.getElementById('ctrl-hurt-flash');
+  const ctrlDownedBanner = document.getElementById('ctrl-downed-banner');
 
   const draftEyebrow = document.getElementById('draft-eyebrow');
   const draftTitle = document.getElementById('draft-title');
   const draftSub = document.getElementById('draft-sub');
   const upgradeGrid = document.getElementById('upgrade-grid');
   const draftWaitingEl = document.getElementById('draft-waiting');
+  const draftHintFooter = document.getElementById('draft-hint-footer');
 
   const btnResume = document.getElementById('btn-resume');
   const btnRestartPause = document.getElementById('btn-restart-pause');
@@ -555,6 +584,137 @@
     touchDashBtn.addEventListener('touchcancel', endDash, { passive: true });
   }
 
+  // ---- Dedicated Phone Controller Input (Toggleable Virtual Joystick OR Trackpad!) ----
+  const phonePad = {
+    mode: (localStorage.getItem('astro_ctrl_mode') === 'trackpad') ? 'trackpad' : 'stick',
+    active: false,
+    mx: 0,
+    my: 0,
+    dash: false,
+    pointerId: null,
+    originX: 0,
+    originY: 0,
+  };
+
+  function resetPhonePad() {
+    phonePad.active = false;
+    phonePad.mx = 0;
+    phonePad.my = 0;
+    phonePad.dash = false;
+    phonePad.pointerId = null;
+    if (ctrlStickBase) ctrlStickBase.classList.remove('active');
+    if (ctrlStickKnob) ctrlStickKnob.style.transform = 'translate(0px, 0px)';
+    if (ctrlTrackDot) ctrlTrackDot.style.transform = 'translate(0px, 0px)';
+    if (ctrlDashBtn) ctrlDashBtn.classList.remove('pressed');
+  }
+
+  function applyPhonePadModeUI() {
+    const isTrack = phonePad.mode === 'trackpad';
+    if (btnCtrlMode) {
+      btnCtrlMode.textContent = isTrack ? '👆 Trackpad' : '🕹️ Stick';
+      btnCtrlMode.classList.toggle('active', isTrack);
+    }
+    if (ctrlSteerLabel) {
+      ctrlSteerLabel.textContent = isTrack
+        ? 'SLIDE TO STEER UFO (TRACKPAD MODE)'
+        : 'HOLD & STEER UFO (VIRTUAL JOYSTICK)';
+    }
+    if (ctrlStickBase) ctrlStickBase.classList.toggle('hidden', isTrack);
+    if (ctrlTrackVisual) ctrlTrackVisual.classList.toggle('hidden', !isTrack);
+  }
+  applyPhonePadModeUI();
+
+  if (btnCtrlMode) {
+    btnCtrlMode.addEventListener('click', () => {
+      phonePad.mode = phonePad.mode === 'stick' ? 'trackpad' : 'stick';
+      try { localStorage.setItem('astro_ctrl_mode', phonePad.mode); } catch (e) {}
+      resetPhonePad();
+      applyPhonePadModeUI();
+      SFX.xp();
+    });
+  }
+
+  if (ctrlSteerPad) {
+    const updateSteerFromPoint = (clientX, clientY) => {
+      const dx = clientX - phonePad.originX;
+      const dy = clientY - phonePad.originY;
+      const maxR = phonePad.mode === 'trackpad' ? 54 : 60;
+      const d = Math.hypot(dx, dy);
+      const clampedD = Math.min(d, maxR);
+      const nx = d > 0.001 ? (dx / d) * (clampedD / maxR) : 0;
+      const ny = d > 0.001 ? (dy / d) * (clampedD / maxR) : 0;
+      const dead = 0.12;
+      if (Math.hypot(nx, ny) < dead) {
+        phonePad.mx = 0;
+        phonePad.my = 0;
+      } else {
+        phonePad.mx = Math.round(nx * 100) / 100;
+        phonePad.my = Math.round(ny * 100) / 100;
+      }
+      const visX = (d > 0.001 ? (dx / d) * clampedD : 0);
+      const visY = (d > 0.001 ? (dy / d) * clampedD : 0);
+      if (phonePad.mode === 'stick' && ctrlStickKnob) {
+        ctrlStickKnob.style.transform = `translate(${visX.toFixed(1)}px, ${visY.toFixed(1)}px)`;
+      } else if (ctrlTrackDot) {
+        ctrlTrackDot.style.transform = `translate(${(visX * 0.85).toFixed(1)}px, ${(visY * 0.85).toFixed(1)}px)`;
+      }
+    };
+
+    ctrlSteerPad.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      SFX.ensure();
+      if (phonePad.pointerId !== null) return;
+      phonePad.pointerId = e.pointerId;
+      phonePad.active = true;
+      if (ctrlSteerPad.setPointerCapture) {
+        try { ctrlSteerPad.setPointerCapture(e.pointerId); } catch (err) {}
+      }
+      // In Stick mode, anchor to the touch-down point (floating stick feel!) so thumb never has to hunt!
+      phonePad.originX = e.clientX;
+      phonePad.originY = e.clientY;
+      if (ctrlStickBase) ctrlStickBase.classList.add('active');
+      updateSteerFromPoint(e.clientX, e.clientY);
+    }, { passive: false });
+
+    ctrlSteerPad.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== phonePad.pointerId || !phonePad.active) return;
+      e.preventDefault();
+      updateSteerFromPoint(e.clientX, e.clientY);
+    }, { passive: false });
+
+    const releaseSteer = (e) => {
+      if (e.pointerId !== phonePad.pointerId) return;
+      phonePad.active = false;
+      phonePad.pointerId = null;
+      phonePad.mx = 0;
+      phonePad.my = 0;
+      if (ctrlStickBase) ctrlStickBase.classList.remove('active');
+      if (ctrlStickKnob) ctrlStickKnob.style.transform = 'translate(0px, 0px)';
+      if (ctrlTrackDot) ctrlTrackDot.style.transform = 'translate(0px, 0px)';
+    };
+    ctrlSteerPad.addEventListener('pointerup', releaseSteer);
+    ctrlSteerPad.addEventListener('pointercancel', releaseSteer);
+  }
+
+  if (ctrlDashBtn) {
+    ctrlDashBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      SFX.ensure();
+      phonePad.dash = true;
+      ctrlDashBtn.classList.add('pressed');
+      if (navigator.vibrate) { try { navigator.vibrate(18); } catch (err) {} }
+    }, { passive: false });
+    const endCtrlDash = () => {
+      phonePad.dash = false;
+      ctrlDashBtn.classList.remove('pressed');
+    };
+    ctrlDashBtn.addEventListener('pointerup', endCtrlDash);
+    ctrlDashBtn.addEventListener('pointercancel', endCtrlDash);
+    ctrlDashBtn.addEventListener('pointerleave', endCtrlDash);
+  }
+
+  window.addEventListener('blur', resetPhonePad);
+
   function readLocalInput(localSlot, pads) {
     const pad = pads[localSlot] || null;
     let mx = 0;
@@ -579,12 +739,21 @@
         if (keys.has('ArrowLeft')) mx -= 1;
         if (keys.has('ArrowRight')) mx += 1;
       }
-      // Follow-the-finger touch input ONLY while finger is actively pressed down
-      if (touchCtrl.active && touchCtrl.tx !== null && touchCtrl.ty !== null) {
-        tx = touchCtrl.tx;
-        ty = touchCtrl.ty;
+      // Dedicated Phone Controller input (Virtual Joystick / Trackpad + Arcade Dash!)
+      if (typeof isPhoneControllerActive === 'function' && isPhoneControllerActive()) {
+        if (phonePad.mx || phonePad.my) {
+          mx = phonePad.mx;
+          my = phonePad.my;
+        }
+        if (phonePad.dash) dash = true;
+      } else {
+        // Follow-the-finger touch input ONLY while finger is actively pressed down
+        if (touchCtrl.active && touchCtrl.tx !== null && touchCtrl.ty !== null) {
+          tx = touchCtrl.tx;
+          ty = touchCtrl.ty;
+        }
+        if (touchCtrl.dash) dash = true;
       }
-      if (touchCtrl.dash) dash = true;
     } else {
       if (keys.has('ArrowUp')) my -= 1;
       if (keys.has('ArrowDown')) my += 1;
@@ -748,20 +917,37 @@
     };
   }
 
-  // ---- Room Setup ----
+  // ---- Room Setup (Normal Play, TV Screen Mode, or Phone Controller!) ----
   const urlParams = new URLSearchParams(window.location.search);
   const initialRoomParam = urlParams.get('room');
   const explicitHost = urlParams.get('host') === '1';
   const isHostStart = !initialRoomParam || explicitHost;
+  const initialTvParam = urlParams.get('tv') === '1';
+  const initialControllerParam = urlParams.get('controller') === '1';
+
+  let phoneControllerMode = !isHostStart && initialControllerParam;
+
+  function isPhoneControllerActive() {
+    return !room.isHost && phoneControllerMode && state.mode === 'playing';
+  }
+
+  function isCouchCaptain() {
+    if (room.isHost) return false;
+    const ordered = room.getOrderedPlayers();
+    return Boolean(room.roomHasTv && ordered.length > 0 && ordered[0].id === room.myId);
+  }
 
   const room = new RoomSync({
     gameId: 'astro_purge',
     maxPlayers: 4,
     roomCode: initialRoomParam || '',
     isHost: isHostStart,
+    tvMode: isHostStart && initialTvParam,
+    controllerMode: !isHostStart && initialControllerParam,
     playerName: getSavedPlayerName(),
     onRosterChange: (roster) => {
       renderLobbyRoster(roster);
+      syncTvAndControllerLobbyUI(roster);
       if (room.isHost && state.mode === 'playing') {
         syncMidGamePlayers(roster);
       }
@@ -785,6 +971,8 @@
     },
     onKicked: () => {
       state.mode = 'kicked';
+      resetPhonePad();
+      if (controllerUi) controllerUi.classList.add('hidden');
       hudEl.classList.add('hidden');
       titleOverlay.classList.add('hidden');
       upgradeOverlay.classList.add('hidden');
@@ -798,23 +986,180 @@
   lobbyPlayerName.value = room.myName;
   lobbyPlayerName.addEventListener('input', () => room.setPlayerName(lobbyPlayerName.value));
 
+  function renderTvQrCode() {
+    if (!tvQrBox || !room.roomCode) return;
+    const ctrlUrl = room.getInviteUrl({ controller: true });
+    if (window.CouchQR && window.CouchQR.renderSvg) {
+      tvQrBox.innerHTML = window.CouchQR.renderSvg(ctrlUrl, { fg: '#111827', bg: '#ffffff', quiet: 3 });
+    }
+    if (tvBigCode) tvBigCode.textContent = room.roomCode;
+  }
+
+  function syncTvAndControllerLobbyUI(roster = room.getOrderedPlayers()) {
+    const isTvHost = room.isHost && room.tvMode;
+    if (tvQrPanel) tvQrPanel.classList.toggle('hidden', !isTvHost);
+    if (isTvHost) renderTvQrCode();
+
+    if (lobbyPlayerName) lobbyPlayerName.classList.toggle('hidden', isTvHost);
+    if (btnAddLocal) btnAddLocal.classList.toggle('hidden', !room.isHost || isTvHost);
+    if (lobbyControlsBox) lobbyControlsBox.classList.toggle('hidden', isTvHost);
+
+    if (btnToggleTv) {
+      if (room.isHost) {
+        btnToggleTv.classList.remove('hidden');
+        btnToggleTv.textContent = isTvHost ? '💻 Exit TV Mode' : '📺 TV Screen Mode';
+      } else {
+        // On a Guest phone, let them toggle between Phone Controller and Full Arena View!
+        btnToggleTv.classList.remove('hidden');
+        btnToggleTv.textContent = phoneControllerMode ? '🎮 Controller Mode: ON' : '📱 Switch to Phone Controller';
+      }
+    }
+
+    if (btnCopyInvite) {
+      btnCopyInvite.textContent = isTvHost ? 'Copy Controller Link' : 'Copy Invite Link';
+    }
+
+    if (room.isHost) {
+      if (isTvHost) {
+        btnLaunch.disabled = roster.length === 0;
+        btnLaunch.textContent =
+          roster.length === 0
+            ? 'Waiting for Phone Controllers (0/4)...'
+            : `▶ Launch Mission (${roster.length}/4 Ready)`;
+        titlePadHint.textContent = 'Cast/mirror this screen to your TV! Phone 1 (Captain) can also press Launch right from the couch.';
+      } else {
+        btnLaunch.disabled = roster.length === 0;
+        btnLaunch.textContent = `Launch Mission (${roster.length}/4)`;
+        titlePadHint.textContent = 'Send the Invite Link to friends on iPhones/laptops, or switch to TV Screen Mode so phones act as controllers!';
+      }
+    } else {
+      const captain = isCouchCaptain();
+      if (captain) {
+        btnLaunch.disabled = false;
+        btnLaunch.textContent = `▶ Launch Mission on TV (${roster.length}/4)`;
+        titlePadHint.textContent = phoneControllerMode
+          ? '🎮 You are the Couch Captain! Tap Launch Mission when everyone has scanned in.'
+          : 'You are the Couch Captain! Tap Launch Mission when everyone is ready.';
+      } else {
+        btnLaunch.disabled = true;
+        btnLaunch.textContent = room.roomHasTv ? 'Waiting for Captain / TV to Start...' : 'Waiting for Host...';
+        titlePadHint.textContent = phoneControllerMode
+          ? '🎮 Phone Controller Ready! Watch the TV screen — your joystick & personal upgrades will appear when the mission starts.'
+          : 'Connected! Waiting for Host to launch the mission...';
+      }
+    }
+  }
+
+  function syncPhoneControllerVisibility() {
+    const showCtrl = isPhoneControllerActive();
+    if (controllerUi) controllerUi.classList.toggle('hidden', !showCtrl);
+    if (showCtrl) {
+      hudEl.classList.add('hidden');
+      if (touchDashBtn) touchDashBtn.classList.remove('visible');
+    } else if (state.mode === 'playing') {
+      hudEl.classList.remove('hidden');
+    }
+    if (btnCtrlPause) {
+      btnCtrlPause.classList.toggle('hidden', !isCouchCaptain());
+    }
+    if (btnCtrlSwap) {
+      btnCtrlSwap.textContent = phoneControllerMode ? '👁 Arena' : '🎮 Pad';
+    }
+  }
+
+  function updatePhoneControllerHUD() {
+    if (!isPhoneControllerActive()) return;
+    const me = state.players.find((p) => p.id === room.myId);
+    const mySlot = me ? me.slot : (room.getMyPlayer()?.slot || 0);
+    const pal = PLAYER_COLORS[mySlot % PLAYER_COLORS.length];
+
+    if (ctrlColorDot) {
+      ctrlColorDot.style.background = pal.hex;
+      ctrlColorDot.style.boxShadow = `0 0 10px ${pal.glow}`;
+    }
+    if (ctrlPilotName) ctrlPilotName.textContent = (me && me.name) || room.myName;
+    if (ctrlMeta) ctrlMeta.textContent = `W${state.wave} · LV${state.level}`;
+
+    if (me) {
+      const hpPct = clamp((me.hp / Math.max(1, me.maxHp)) * 100, 0, 100);
+      if (ctrlHpFill) {
+        ctrlHpFill.style.width = hpPct.toFixed(1) + '%';
+        ctrlHpFill.style.background = hpPct <= 30 ? '#ef4444' : hpPct <= 60 ? '#facc15' : '#22c55e';
+      }
+      if (ctrlHpText) ctrlHpText.textContent = me.downed ? 'DOWNED' : `${Math.ceil(me.hp)}/${me.maxHp}`;
+      if (ctrlDownedBanner) ctrlDownedBanner.classList.toggle('hidden', !me.downed);
+
+      const dashReady = (me.dashCooldown || 0) <= 0.05;
+      if (ctrlDashBtn) ctrlDashBtn.classList.toggle('cooling', !dashReady);
+      if (ctrlDashSub) ctrlDashSub.textContent = dashReady ? 'READY!' : `${me.dashCooldown.toFixed(1)}s`;
+
+      if (ctrlWeaponsMini && me.upgrades) {
+        const chips = [];
+        for (const u of UPGRADES) {
+          const lv = me.upgrades[u.id] || 0;
+          if (lv > 0) chips.push(`<span class="weapon-chip">${u.icon} Lv${lv}</span>`);
+        }
+        ctrlWeaponsMini.innerHTML = chips.join('');
+      }
+    }
+
+    if (ctrlHurtFlash) {
+      ctrlHurtFlash.style.opacity = state.hurtVignette > 0.02 ? String(clamp(state.hurtVignette * 1.4, 0, 0.9)) : '0';
+    }
+  }
+
   room.connect().then(() => {
     lobbyRoomCode.textContent = `ROOM ${room.roomCode}`;
     btnHudInvite.textContent = `Room: ${room.roomCode} · Copy Link`;
-    if (!room.isHost) {
-      btnLaunch.textContent = 'Waiting for Host...';
-      btnLaunch.disabled = true;
-      btnAddLocal.classList.add('hidden');
-    }
+    syncTvAndControllerLobbyUI();
   });
 
+  if (btnToggleTv) {
+    btnToggleTv.addEventListener('click', () => {
+      if (room.isHost) {
+        room.setTvMode(!room.tvMode);
+        syncTvAndControllerLobbyUI();
+      } else {
+        phoneControllerMode = !phoneControllerMode;
+        syncTvAndControllerLobbyUI();
+      }
+    });
+  }
+
+  if (btnTvFullscreen) {
+    btnTvFullscreen.addEventListener('click', () => {
+      const docEl = document.documentElement;
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      } else if (docEl.requestFullscreen) {
+        docEl.requestFullscreen().catch(() => {});
+      }
+    });
+  }
+
+  if (btnCtrlSwap) {
+    btnCtrlSwap.addEventListener('click', () => {
+      phoneControllerMode = !phoneControllerMode;
+      resetPhonePad();
+      syncPhoneControllerVisibility();
+    });
+  }
+
+  if (btnCtrlPause) {
+    btnCtrlPause.addEventListener('click', () => {
+      if (isCouchCaptain()) {
+        room.sendSignal({ type: 'CAPTAIN_PAUSE' });
+      }
+    });
+  }
+
   function copyInviteLink(btnEl) {
-    const url = room.getInviteUrl();
+    const url = room.getInviteUrl({ controller: room.tvMode });
     const prev = btnEl.textContent;
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(url).catch(() => {});
     }
-    btnEl.textContent = 'Invite Link Copied!';
+    btnEl.textContent = room.tvMode ? 'Controller Link Copied!' : 'Invite Link Copied!';
     setTimeout(() => { btnEl.textContent = prev; }, 1800);
   }
 
@@ -822,16 +1167,16 @@
   btnHudInvite.addEventListener('click', () => copyInviteLink(btnHudInvite));
 
   btnAddLocal.addEventListener('click', () => {
-    if (!room.isHost) return;
+    if (!room.isHost || room.tvMode) return;
     if (countLocalPlayers() >= 2) {
       btnAddLocal.textContent = 'Max 2 Local Players';
-      setTimeout(() => (btnAddLocal.textContent = '+ Add Local Couch Player'), 1400);
+      setTimeout(() => (btnAddLocal.textContent = '+ Add Local Player'), 1400);
       return;
     }
     const added = room.addLocalPlayer('Local P2');
     if (!added) {
       btnAddLocal.textContent = 'Room Full (4/4)';
-      setTimeout(() => (btnAddLocal.textContent = '+ Add Local Couch Player'), 1400);
+      setTimeout(() => (btnAddLocal.textContent = '+ Add Local Player'), 1400);
     }
   });
 
@@ -849,13 +1194,15 @@
         card.style.borderTop = `3px solid ${pal.hex}`;
         const canKick = room.isHost && p.id !== room.myId;
         const kickLabel = p.isLocal ? 'Remove' : 'Kick';
+        const isCap = room.roomHasTv && roster.length > 0 && roster[0].id === p.id;
+        const roleTag = p.isHost ? 'HOST' : isCap ? '★ CAPTAIN' : p.isController ? '📱 PAD' : p.isLocal ? 'LOCAL' : 'ONLINE';
         card.innerHTML = `
           <div class="slot-head">
             <span style="color:${pal.hex}">P${s + 1} · ${pal.name}</span>
-            ${canKick ? `<button type="button" class="slot-remove" data-kick="${p.id}">${kickLabel}</button>` : `<span>${p.isHost ? 'HOST' : p.isLocal ? 'LOCAL' : 'ONLINE'}</span>`}
+            ${canKick ? `<button type="button" class="slot-remove" data-kick="${p.id}">${kickLabel}</button>` : `<span>${roleTag}</span>`}
           </div>
           <div class="slot-name">${escapeHtml(p.name)}</div>
-          <div class="slot-sub">${p.id === room.myId ? 'You' : p.isLocal ? 'Same Screen' : 'Connected'}</div>
+          <div class="slot-sub">${p.id === room.myId ? 'You' : p.isController ? 'Phone Controller' : p.isLocal ? 'Same Screen' : 'Connected'}</div>
         `;
         if (canKick) {
           card.querySelector('.slot-remove').addEventListener('click', () => {
@@ -866,16 +1213,13 @@
         card.className = 'slot-card empty';
         card.innerHTML = `
           <div>Open Slot (P${s + 1})</div>
-          <div style="font-size:0.7rem; opacity:0.75;">Share invite link</div>
+          <div style="font-size:0.7rem; opacity:0.75;">${room.tvMode ? 'Scan QR with phone' : 'Share invite link'}</div>
         `;
       }
       lobbyRosterGrid.appendChild(card);
     }
 
-    if (room.isHost) {
-      btnLaunch.textContent = `Launch Mission (${roster.length}/4)`;
-      btnLaunch.disabled = false;
-    }
+    syncTvAndControllerLobbyUI(roster);
   }
 
   function syncMidGamePlayers(roster) {
@@ -901,7 +1245,7 @@
     }[m]));
   }
 
-  // ---- Room Message Handling (Host & Guest Sync) ----
+  // ---- Room Message Handling (Host, TV & Guest/Controller Sync) ----
   function handleRoomMessage(msg) {
     if (!msg || !msg.type) return;
 
@@ -910,32 +1254,45 @@
         remoteInputs[msg.senderId] = msg.input;
       } else if (msg.type === 'PERSONAL_PICK' && state.mode === 'upgrade' && msg.senderId) {
         applyPlayerDraftPick(msg.senderId, msg.idx);
+      } else if (msg.type === 'CAPTAIN_START' && room.tvMode && (state.mode === 'title' || state.mode === 'gameover')) {
+        startGame();
+      } else if (msg.type === 'CAPTAIN_PAUSE' && room.tvMode && (state.mode === 'playing' || state.mode === 'paused')) {
+        togglePause();
+      } else if (msg.type === 'CAPTAIN_LOBBY' && room.tvMode && (state.mode === 'paused' || state.mode === 'gameover')) {
+        room.sendSignal({ type: 'RETURN_LOBBY' });
+        returnToLobbyUI();
       }
       return;
     }
 
-    // Guest handlers
+    // Guest / Phone Controller handlers
     if (msg.type === 'GAME_START') {
       state.mode = 'playing';
       clearTouchSteer();
+      resetPhonePad();
       titleOverlay.classList.add('hidden');
       upgradeOverlay.classList.add('hidden');
       pauseOverlay.classList.add('hidden');
       gameoverOverlay.classList.add('hidden');
-      hudEl.classList.remove('hidden');
+      syncPhoneControllerVisibility();
+      updatePhoneControllerHUD();
       SFX.levelUp();
     } else if (msg.type === 'SNAP') {
       applySnapshot(msg.s);
+      updatePhoneControllerHUD();
     } else if (msg.type === 'WAVE_BANNER') {
-      showWaveBanner(msg.title, msg.sub);
+      if (!isPhoneControllerActive()) showWaveBanner(msg.title, msg.sub);
     } else if (msg.type === 'BOSS_WARN') {
-      bossWarningTitle.textContent = '⚠ GIANT SPACE VIRUS BOSS!';
-      bossWarningSub.textContent = msg.sub;
-      bossWarningEl.classList.remove('hidden');
+      if (!isPhoneControllerActive()) {
+        bossWarningTitle.textContent = '⚠ RAID BOSS ENCOUNTER!';
+        bossWarningSub.textContent = msg.sub;
+        bossWarningEl.classList.remove('hidden');
+        setTimeout(() => bossWarningEl.classList.add('hidden'), 2600);
+      }
       SFX.bossWarn();
-      setTimeout(() => bossWarningEl.classList.add('hidden'), 2600);
     } else if (msg.type === 'PERSONAL_DRAFT') {
       clearTouchSteer();
+      resetPhonePad();
       state.mode = 'upgrade';
       state.myDraftPicked = false;
       state.draftIsBoss = msg.isBoss;
@@ -952,6 +1309,7 @@
       renderDraftCards(msg.myUpgrades || defaultUpgrades());
       upgradeOverlay.scrollTop = 0;
       upgradeOverlay.classList.remove('hidden');
+      if (navigator.vibrate) { try { navigator.vibrate([30, 40, 30]); } catch (e) {} }
       SFX.levelUp();
     } else if (msg.type === 'DRAFT_STATUS') {
       if (state.myDraftPicked) {
@@ -963,17 +1321,26 @@
       draftWaitingEl.classList.add('hidden');
       state.myDraftPicked = false;
       state.mode = 'playing';
+      syncPhoneControllerVisibility();
+      updatePhoneControllerHUD();
       SFX.xp();
       renderHud();
     } else if (msg.type === 'PAUSE_STATE') {
       state.mode = msg.paused ? 'paused' : 'playing';
+      resetPhonePad();
+      const cap = isCouchCaptain();
+      btnResume.disabled = !cap;
+      btnRestartPause.disabled = !cap;
       pauseOverlay.classList.toggle('hidden', !msg.paused);
+      syncPhoneControllerVisibility();
     } else if (msg.type === 'GAME_OVER') {
       state.wave = msg.wave || state.wave;
       state.level = msg.level;
       state.score = msg.score;
       state.bossesDefeated = msg.bosses;
       state.kills = msg.kills;
+      resetPhonePad();
+      if (controllerUi) controllerUi.classList.add('hidden');
       showGameOverUI(msg.dmgSummary || []);
     } else if (msg.type === 'RETURN_LOBBY') {
       returnToLobbyUI();
@@ -1387,10 +1754,12 @@
 
   function returnToLobbyUI() {
     clearTouchSteer();
+    resetPhonePad();
     state.mode = 'title';
     state.hazards = [];
     state.bossBeams = [];
     state.bossCast = null;
+    if (controllerUi) controllerUi.classList.add('hidden');
     hudEl.classList.add('hidden');
     pauseOverlay.classList.add('hidden');
     upgradeOverlay.classList.add('hidden');
@@ -1400,6 +1769,7 @@
     bossWarningEl.classList.add('hidden');
     if (waveBannerEl) waveBannerEl.classList.add('hidden');
     titleOverlay.classList.remove('hidden');
+    syncTvAndControllerLobbyUI();
   }
 
   // ---- Enemy Spawning (Tuned Harder!) ----
@@ -1695,20 +2065,42 @@
     checkAllDraftsPicked();
   }
 
+  function renderTvDraftStatus(eyebrow, title) {
+    draftEyebrow.textContent = eyebrow || `Team Level ${state.level}!`;
+    draftTitle.textContent = room.tvMode ? '📱 Check Your Phones to Upgrade!' : (title || 'Upgrade Locked In!');
+    draftSub.textContent = room.tvMode
+      ? 'Each pilot picks their personal UFO upgrade on their own phone!'
+      : 'Waiting for teammates to lock in their upgrades...';
+    upgradeGrid.innerHTML = '';
+    if (draftHintFooter) draftHintFooter.classList.toggle('hidden', Boolean(room.tvMode));
+
+    const { ready, total } = countDraftReady();
+    if (room.tvMode) {
+      const pills = state.players
+        .map((pl) => {
+          const done = state.activeDraftMap[pl.id] && state.activeDraftMap[pl.id].picked;
+          return `<span style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;margin:4px;border-radius:999px;background:${done ? 'rgba(34,197,94,0.22)' : 'rgba(15,23,42,0.75)'};border:2px solid ${done ? '#4ade80' : pl.color};color:#f8fafc;font-weight:700;">${done ? '✓' : '⏳'} ${escapeHtml(pl.name)}</span>`;
+        })
+        .join('');
+      draftWaitingEl.innerHTML = `<div style="margin-bottom:6px;">Pilots Ready: <strong>${ready} / ${total}</strong></div><div>${pills}</div>`;
+    } else {
+      draftWaitingEl.textContent = `Your UFO upgrade is locked in! Waiting for teammates (${ready}/${total} ready)...`;
+    }
+    draftWaitingEl.classList.remove('hidden');
+    upgradeOverlay.classList.remove('hidden');
+  }
+
   function showNextLocalDraft(eyebrow, title, sub) {
     const nextLocalId = state.localDraftQueue.find(
       (pid) => state.activeDraftMap[pid] && !state.activeDraftMap[pid].picked
     );
     if (!nextLocalId) {
       state.myDraftPicked = true;
-      upgradeGrid.innerHTML = '';
-      const { ready, total } = countDraftReady();
-      draftWaitingEl.textContent = `Your UFO upgrade is locked in! Waiting for teammates (${ready}/${total} ready)...`;
-      draftWaitingEl.classList.remove('hidden');
-      upgradeOverlay.classList.remove('hidden');
+      renderTvDraftStatus(eyebrow, title);
       return;
     }
 
+    if (draftHintFooter) draftHintFooter.classList.remove('hidden');
     state.activeLocalDraftId = nextLocalId;
     state.myDraftPicked = false;
     state.draftFocus = 0;
@@ -1820,7 +2212,7 @@
     if (p.isLocal) {
       showNextLocalDraft(draftEyebrow.textContent, draftTitle.textContent, draftSub.textContent);
     } else if (state.myDraftPicked) {
-      draftWaitingEl.textContent = `Your UFO upgrade is locked in! Waiting for teammates (${ready}/${total} ready)...`;
+      renderTvDraftStatus(draftEyebrow.textContent, draftTitle.textContent);
     }
 
     checkAllDraftsPicked();
@@ -2358,8 +2750,15 @@
           .join('')
       : '';
 
-    btnPlayAgain.disabled = !room.isHost;
-    btnPlayAgain.textContent = room.isHost ? 'Play Again' : 'Waiting for Host...';
+    const canRestart = room.isHost || isCouchCaptain();
+    btnPlayAgain.disabled = !canRestart;
+    btnPlayAgain.textContent = room.isHost
+      ? 'Play Again'
+      : canRestart
+        ? '▶ Play Again on TV!'
+        : room.roomHasTv
+          ? 'Waiting for Captain / TV...'
+          : 'Waiting for Host...';
     gameoverOverlay.classList.remove('hidden');
   }
 
@@ -5128,18 +5527,32 @@
     btnMute.textContent = `SFX: ${SFX.muted ? 'OFF' : 'ON'}`;
   }
 
-  btnLaunch.addEventListener('click', startGame);
-  btnPause.addEventListener('click', togglePause);
+  btnLaunch.addEventListener('click', () => {
+    if (room.isHost) startGame();
+    else if (isCouchCaptain()) room.sendSignal({ type: 'CAPTAIN_START' });
+  });
+  btnPause.addEventListener('click', () => {
+    if (room.isHost) togglePause();
+    else if (isCouchCaptain()) room.sendSignal({ type: 'CAPTAIN_PAUSE' });
+  });
   btnAutofire.addEventListener('click', toggleAutofire);
   btnMute.addEventListener('click', toggleMute);
-  btnResume.addEventListener('click', togglePause);
+  btnResume.addEventListener('click', () => {
+    if (room.isHost) togglePause();
+    else if (isCouchCaptain()) room.sendSignal({ type: 'CAPTAIN_PAUSE' });
+  });
   btnRestartPause.addEventListener('click', () => {
     if (room.isHost) {
       room.sendSignal({ type: 'RETURN_LOBBY' });
       returnToLobbyUI();
+    } else if (isCouchCaptain()) {
+      room.sendSignal({ type: 'CAPTAIN_LOBBY' });
     }
   });
-  btnPlayAgain.addEventListener('click', startGame);
+  btnPlayAgain.addEventListener('click', () => {
+    if (room.isHost) startGame();
+    else if (isCouchCaptain()) room.sendSignal({ type: 'CAPTAIN_START' });
+  });
 
   // ---- Main RAF Loop ----
   let lastTs = performance.now();
@@ -5181,13 +5594,18 @@
       }
     }
 
+    const ctrlActive = isPhoneControllerActive();
     if (touchDashBtn) {
-      const showDash = touchCtrl.isTouchDevice && state.mode === 'playing';
+      const showDash = touchCtrl.isTouchDevice && state.mode === 'playing' && !ctrlActive && !room.tvMode;
       touchDashBtn.classList.toggle('visible', showDash);
       if (!showDash && touchCtrl.active) clearTouchSteer();
     }
 
-    draw();
+    if (ctrlActive) {
+      updatePhoneControllerHUD();
+    } else {
+      draw();
+    }
     requestAnimationFrame(loop);
   }
 

@@ -110,10 +110,24 @@
         </button>
       </div>
 
+      <!-- TV Mode Scannable QR Join Panel (Shown when TV Screen Mode is ON!) -->
+      <div id="tv-qr-panel" class="tv-qr-panel hidden">
+        <div id="tv-qr-box" class="tv-qr-box" aria-label="QR Code to connect phone controller"></div>
+        <div class="tv-qr-info">
+          <div class="tv-qr-badge">📺 TV SCREEN MODE · PHONES = CONTROLLERS</div>
+          <h3>Scan with Your Phone Camera!</h3>
+          <p>Point your iPhone or Android camera at the QR code to turn your phone into a UFO controller with personal upgrade cards.</p>
+          <div class="tv-qr-code-row">
+            <span class="tv-big-code" id="tv-big-code">------</span>
+            <button type="button" class="btn btn-secondary" id="btn-tv-fullscreen" style="padding: 8px 14px; font-size: 0.84rem;">⛶ TV Fullscreen</button>
+          </div>
+        </div>
+      </div>
+
       <!-- 4-Player Live Roster -->
       <div class="roster-grid" id="lobby-roster-grid"></div>
 
-      <div class="controls-box">
+      <div class="controls-box" id="lobby-controls-box">
         <div class="ctrl-col p1">
           <h4>Your UFO Controls (Touch, Keyboard, or Gamepad)</h4>
           <p>
@@ -122,22 +136,76 @@
           </p>
         </div>
         <div class="ctrl-col p2">
-          <h4>Local Couch Co-op (Optional 2nd Local Player)</h4>
+          <h4>TV Casting &amp; Couch Co-op</h4>
           <p>
-            Move: <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> or Gamepad 2 Stick<br />
-            Fire: Auto / <kbd>Enter</kbd> / <kbd>RT</kbd> · Dash: <kbd>R-Shift</kbd> / <kbd>/</kbd> / <kbd>B</kbd>
+            <strong>TV + Phones:</strong> Tap <strong>📺 TV Screen Mode</strong>, mirror to your TV, and scan the QR code!<br />
+            <strong>Local 2P:</strong> <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> or Gamepad 2 · Dash: <kbd>R-Shift</kbd> / <kbd>/</kbd>
           </p>
         </div>
       </div>
 
       <div class="btn-row">
         <button type="button" class="btn btn-primary" id="btn-launch">Launch Mission</button>
-        <button type="button" class="btn btn-secondary" id="btn-add-local">+ Add Local Couch Player</button>
+        <button type="button" class="btn btn-secondary" id="btn-toggle-tv">📺 TV Screen Mode</button>
+        <button type="button" class="btn btn-secondary" id="btn-add-local">+ Add Local Player</button>
         <a href="../../index.html" class="btn btn-secondary">← Back to Hub</a>
       </div>
       <p class="draft-hint" id="title-pad-hint" style="margin-top: 14px;">
-        Send the Invite Link to friends on iPhones/laptops, or connect Bluetooth controllers — press A / Enter to launch.
+        Send the Invite Link to friends on iPhones/laptops, or switch to TV Screen Mode so everyone's phones act as controllers!
       </p>
+    </div>
+  </div>
+
+  <!-- DEDICATED PHONE GAMEPAD CONTROLLER UI (When connected as a Phone Controller!) -->
+  <div id="controller-ui" class="controller-ui hidden" aria-label="Phone Gamepad Controller">
+    <div class="ctrl-topbar">
+      <div class="ctrl-pilot-pill">
+        <span class="ctrl-color-dot" id="ctrl-color-dot"></span>
+        <span class="ctrl-pilot-name" id="ctrl-pilot-name">Pilot</span>
+        <span class="ctrl-meta" id="ctrl-meta">W1 · LV1</span>
+      </div>
+      <div class="ctrl-hp-wrap">
+        <div class="ctrl-hp-track">
+          <div class="ctrl-hp-fill" id="ctrl-hp-fill"></div>
+        </div>
+        <span class="ctrl-hp-text" id="ctrl-hp-text">100/100</span>
+      </div>
+      <div class="ctrl-top-actions">
+        <button type="button" class="ctrl-chip-btn" id="btn-ctrl-mode" title="Switch between Virtual Joystick and Trackpad">🕹️ Stick</button>
+        <button type="button" class="ctrl-chip-btn hidden" id="btn-ctrl-pause">Pause</button>
+        <button type="button" class="ctrl-chip-btn" id="btn-ctrl-swap" title="Switch to viewing the game on this screen">👁 View</button>
+      </div>
+    </div>
+
+    <div class="ctrl-pad-wrap">
+      <!-- Left Steering Zone (Virtual Joystick OR Trackpad!) -->
+      <div id="ctrl-steer-pad" class="ctrl-steer-pad">
+        <div class="ctrl-steer-label" id="ctrl-steer-label">HOLD &amp; STEER UFO (VIRTUAL JOYSTICK)</div>
+        <div id="ctrl-stick-base" class="ctrl-stick-base">
+          <div id="ctrl-stick-knob" class="ctrl-stick-knob">🛸</div>
+        </div>
+        <div id="ctrl-track-visual" class="ctrl-track-visual hidden">
+          <div class="ctrl-track-ring" id="ctrl-track-ring">
+            <div class="ctrl-track-dot" id="ctrl-track-dot"></div>
+          </div>
+          <span class="ctrl-track-sub">Slide anywhere to fly · Lift finger to brake</span>
+        </div>
+      </div>
+
+      <!-- Right Action Zone (Big Tactile Arcade DASH Button + Mini Upgrades) -->
+      <div class="ctrl-action-pad">
+        <button type="button" id="ctrl-dash-btn" class="ctrl-dash-btn">
+          <span class="ctrl-dash-title">DASH</span>
+          <span class="ctrl-dash-sub" id="ctrl-dash-sub">READY!</span>
+        </button>
+        <div class="ctrl-autofire-note">⚡ Auto-Fire ON · Watch the TV!</div>
+        <div class="ctrl-weapons-mini" id="ctrl-weapons-mini"></div>
+      </div>
+    </div>
+
+    <div id="ctrl-hurt-flash" class="ctrl-hurt-flash"></div>
+    <div id="ctrl-downed-banner" class="ctrl-downed-banner hidden">
+      💥 UFO DOWNED! Tell a teammate on TV to fly near you to revive!
     </div>
   </div>
 
@@ -151,7 +219,7 @@
       <div class="upgrade-grid" id="upgrade-grid"></div>
       <div id="draft-waiting" class="draft-waiting hidden">Upgrade locked in! Waiting for teammates to choose...</div>
 
-      <p class="draft-hint" style="margin-top: 10px;">
+      <p class="draft-hint" id="draft-hint-footer" style="margin-top: 10px;">
         Tap a card, press <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>, <kbd>←</kbd><kbd>→</kbd> + <kbd>Enter</kbd>/<kbd>Space</kbd>, or Controller D-Pad + <kbd>A</kbd>
       </p>
     </div>
@@ -162,7 +230,7 @@
     <div class="modal-panel">
       <div class="eyebrow">Mission Paused</div>
       <h2 class="modal-title" style="font-family: 'Fredoka', 'Space Grotesk', sans-serif;">Systems on Standby</h2>
-      <p class="modal-sub">Catch your breath or pair another controller.</p>
+      <p class="modal-sub">Catch your breath or pair another phone controller.</p>
       <div class="btn-row">
         <button type="button" class="btn btn-primary" id="btn-resume">Resume</button>
         <button type="button" class="btn btn-secondary" id="btn-restart-pause">Return to Room</button>
@@ -181,7 +249,7 @@
       <div class="summary-grid">
         <div class="summary-box">
           <span class="val" id="sum-level">1</span>
-          <span class="lbl">Level Reached</span>
+          <span class="lbl">Wave / Level</span>
         </div>
         <div class="summary-box">
           <span class="val" id="sum-score">0</span>
@@ -214,6 +282,7 @@
     </div>
   </div>
 
+  <script src="../../shared/qr.js"></script>
   <script src="../../shared/room-sync.js"></script>
   <script src="game.js"></script>
 </body>

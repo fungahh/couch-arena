@@ -803,6 +803,137 @@
       display: flex;
       gap: 10px;
     }
+
+    /* TV Screen Mode & Phone Keyboard Controller Mode */
+    .tv-join-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      flex-wrap: wrap;
+      background: linear-gradient(135deg, rgba(34, 197, 94, 0.14), rgba(234, 179, 8, 0.14));
+      border: 2px solid rgba(234, 179, 8, 0.55);
+      border-radius: 16px;
+      padding: 14px 18px;
+      margin-bottom: 16px;
+    }
+
+    .tv-join-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .tv-qr-box {
+      width: 124px;
+      height: 124px;
+      flex-shrink: 0;
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 6px;
+      border: 3px solid #090d16;
+      box-shadow: 0 4px 0 #090d16;
+      display: grid;
+      place-items: center;
+    }
+
+    .tv-qr-box svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .tv-join-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: #fef08a;
+      margin-bottom: 4px;
+    }
+
+    .tv-join-sub {
+      font-size: 0.86rem;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .tv-code-big {
+      display: inline-block;
+      font-family: monospace;
+      font-size: 1.55rem;
+      font-weight: 800;
+      letter-spacing: 0.2em;
+      color: #86efac;
+      background: rgba(15, 23, 42, 0.9);
+      border: 2px solid rgba(34, 197, 94, 0.5);
+      border-radius: 10px;
+      padding: 4px 14px;
+    }
+
+    .tv-join-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    body.tv-mode #arena-view {
+      grid-template-columns: 1fr;
+      max-width: 1380px;
+    }
+
+    body.tv-mode #my-board-panel {
+      display: none !important;
+    }
+
+    body.tv-mode .players-grid {
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+
+    body.tv-mode .mini-row {
+      grid-template-columns: repeat(5, 28px);
+      gap: 6px;
+    }
+
+    body.tv-mode .mini-cell {
+      width: 28px;
+      height: 28px;
+      border-radius: 5px;
+    }
+
+    body.tv-mode .mini-grid {
+      min-height: 190px;
+      max-height: 360px;
+      padding: 12px;
+      gap: 6px;
+    }
+
+    body.tv-mode .slot-name {
+      font-size: 1.15rem;
+    }
+
+    body.controller-mode #arena-view {
+      grid-template-columns: 1fr;
+      max-width: 540px;
+    }
+
+    body.controller-mode #opponents-panel {
+      display: none !important;
+    }
+
+    .ctrl-tv-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      background: rgba(34, 197, 94, 0.14);
+      border: 1px solid rgba(34, 197, 94, 0.45);
+      border-radius: 10px;
+      padding: 7px 12px;
+      margin-bottom: 10px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #86efac;
+    }
   </style>
 </head>
 <body>
@@ -859,11 +990,15 @@
         </div>
       </div>
 
-      <button type="button" id="host-btn" class="btn btn-primary" onclick="createMultiplayerRoom()">
+      <button type="button" id="host-btn" class="btn btn-primary" onclick="createMultiplayerRoom(false)">
         Create Multiplayer Room
       </button>
 
-      <div class="divider"><span>OR JOIN COLLEAGUE'S ROOM</span></div>
+      <button type="button" id="tv-host-btn" class="btn btn-secondary" style="margin-top: 10px; width: 100%;" onclick="createMultiplayerRoom(true)">
+        📺 Host on TV Screen (Phones = Controllers)
+      </button>
+
+      <div class="divider"><span>OR JOIN A ROOM</span></div>
 
       <div class="field-group" style="margin-bottom: 14px;">
         <div class="join-row">
@@ -879,15 +1014,23 @@
       </button>
 
       <div class="firewall-note">
-        Uses standard HTTPS port 443 polling (no WebSockets) + instant browser-tab sync.
+        Direct P2P sync for phones, laptops, and TV casting — scan the TV QR code to use phones as private Wordle keyboards!
       </div>
     </div>
   </main>
 
   <!-- VIEW 2: LIVE ARENA -->
   <main id="arena-view" class="arena-layout hidden">
-    <!-- Left Panel: Active Player Board & Keyboard -->
-    <section class="panel">
+    <!-- Left Panel: Active Player Board & Keyboard (Full-screen Phone Controller when connected to TV!) -->
+    <section class="panel" id="my-board-panel">
+      <div id="ctrl-tv-banner" class="ctrl-tv-banner hidden">
+        <span>📺 Phone Keyboard Controller · Look at TV!</span>
+        <div style="display: flex; gap: 6px; flex-shrink: 0;">
+          <button type="button" id="btn-ctrl-new-round" class="pill pill-btn" style="padding: 3px 9px; font-size: 0.72rem;" onclick="playAgain()">🔄 New Round</button>
+          <button type="button" id="btn-ctrl-view" class="pill pill-btn" style="padding: 3px 9px; font-size: 0.72rem;" onclick="toggleControllerView()">👁 Show Others</button>
+        </div>
+      </div>
+
       <div id="word-stepper" class="word-stepper"></div>
 
       <div class="stats-strip">
@@ -900,11 +1043,27 @@
       <div id="keyboard" class="keyboard"></div>
     </section>
 
-    <!-- Right Panel: Live Room Players (Up to 4) -->
-    <section class="panel">
+    <!-- Right Panel: Live Room Players (Full-width Big TV Race Board in TV Mode!) -->
+    <section class="panel" id="opponents-panel">
+      <div id="tv-join-bar" class="tv-join-bar hidden">
+        <div class="tv-join-left">
+          <div id="tv-qr-box" class="tv-qr-box" aria-label="QR code to join Wordle Arena on your phone"></div>
+          <div>
+            <div class="tv-join-title">📺 TV Screen · Scan with Your Phones!</div>
+            <div class="tv-join-sub">Each phone becomes a private Wordle keyboard while everyone's live colored tiles race on the TV.</div>
+            <span class="tv-code-big" id="tv-code-big">------</span>
+          </div>
+        </div>
+        <div class="tv-join-actions">
+          <button type="button" class="btn btn-primary" style="padding: 9px 16px;" onclick="playAgain()">🔄 New 5-Word Round</button>
+          <button type="button" class="btn btn-secondary" style="padding: 9px 14px;" onclick="toggleTvFullscreen()">⛶ TV Fullscreen</button>
+          <button type="button" class="btn btn-ghost" style="padding: 9px 14px;" onclick="copyInviteLink()">Copy Link</button>
+        </div>
+      </div>
+
       <div class="players-header">
         <h2>Room Players (<span id="player-count">1</span> / 4)</h2>
-        <span style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">
+        <span id="players-sub-hint" style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">
           Up to 4 players per room · Share the invite link
         </span>
       </div>
@@ -930,6 +1089,7 @@
     </div>
   </div>
 
+  <script src="../../shared/qr.js"></script>
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script>
     /**********************************************************************
@@ -1067,6 +1227,9 @@
 
     const state = {
       mode: 'solo',        // 'solo' | 'host' | 'guest'
+      tvMode: false,       // true when hosting as a dedicated TV Spectator Screen
+      controllerMode: false, // true when phone acts as a clean Wordle keyboard controller
+      roomHasTv: false,
       language: 'en',      // 'en' | 'sv'
       roomCode: '',
       myId: getOrCreatePlayerId(),
@@ -1102,11 +1265,58 @@
       { urls: 'stun:stun1.l.google.com:19302' }
     ];
 
+    function applyTvAndControllerClasses() {
+      document.body.classList.toggle('tv-mode', Boolean(state.tvMode));
+      document.body.classList.toggle('controller-mode', Boolean(state.controllerMode && !state.tvMode));
+      const tvBar = document.getElementById('tv-join-bar');
+      const ctrlBanner = document.getElementById('ctrl-tv-banner');
+      if (tvBar) tvBar.classList.toggle('hidden', !state.tvMode);
+      const showCtrlBanner = !state.tvMode && (state.controllerMode || state.roomHasTv);
+      if (ctrlBanner) ctrlBanner.classList.toggle('hidden', !showCtrlBanner);
+      const ctrlViewBtn = document.getElementById('btn-ctrl-view');
+      if (ctrlViewBtn) {
+        ctrlViewBtn.textContent = state.controllerMode ? '👁 Show Others' : '⌨️ Focus Keys';
+      }
+      if (state.tvMode && state.roomCode) {
+        const ctrlUrl = `${window.location.origin}${window.location.pathname}?room=${state.roomCode}&lang=${state.language}&controller=1`;
+        const qrBox = document.getElementById('tv-qr-box');
+        if (qrBox && window.CouchQR && window.CouchQR.renderSvg) {
+          qrBox.innerHTML = window.CouchQR.renderSvg(ctrlUrl, { fg: '#111827', bg: '#ffffff', quiet: 3 });
+        }
+        const bigCode = document.getElementById('tv-code-big');
+        if (bigCode) bigCode.textContent = state.roomCode;
+        const subHint = document.getElementById('players-sub-hint');
+        if (subHint) subHint.textContent = 'Live colored tiles update as phones guess — letters stay hidden!';
+      }
+      const playAgainBtn = document.getElementById('play-again-btn');
+      if (playAgainBtn) {
+        const canNewRound = state.mode !== 'guest' || state.roomHasTv;
+        playAgainBtn.classList.toggle('hidden', !canNewRound);
+      }
+    }
+
+    function toggleTvFullscreen() {
+      const docEl = document.documentElement;
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      } else if (docEl.requestFullscreen) {
+        docEl.requestFullscreen().catch(() => {});
+      }
+    }
+
+    function toggleControllerView() {
+      state.controllerMode = !state.controllerMode;
+      applyTvAndControllerClasses();
+    }
+
     function saveSession() {
       if (state.mode === 'solo' || !state.roomCode || state.secretWords.length !== TOTAL_WORDS) return;
       try {
         localStorage.setItem(SESSION_KEY, JSON.stringify({
           mode: state.mode,
+          tvMode: state.tvMode,
+          controllerMode: state.controllerMode,
+          roomHasTv: state.roomHasTv,
           language: state.language,
           roomCode: state.roomCode,
           myName: state.myName,
@@ -1162,6 +1372,8 @@
       const roomParam = params.get('room');
       const langParam = params.get('lang');
       const autoCreate = params.get('autocreate');
+      const tvParam = params.get('tv') === '1';
+      const controllerParam = params.get('controller') === '1';
 
       if (langParam === 'sv' || langParam === 'en') {
         setLanguage(langParam);
@@ -1173,13 +1385,21 @@
 
       // Restore active session on reload if it matches the room in URL (or URL has no room)
       const saved = loadSession();
-      if (saved && autoCreate !== '1' && (!cleanParamCode || saved.roomCode === cleanParamCode)) {
+      if (saved && autoCreate !== '1' && !tvParam && (!cleanParamCode || saved.roomCode === cleanParamCode)) {
+        if (controllerParam) saved.controllerMode = true;
         restoreSession(saved);
+      } else if (tvParam) {
+        createMultiplayerRoom(true);
       } else if (cleanParamCode) {
         document.getElementById('join-code-input').value = cleanParamCode;
-        showToast(`Invite loaded for Room ${cleanParamCode}! Click Join Room to enter.`);
+        if (controllerParam) {
+          state.controllerMode = true;
+          joinMultiplayerRoom(true);
+        } else {
+          showToast(`Invite loaded for Room ${cleanParamCode}! Click Join Room to enter.`);
+        }
       } else if (autoCreate === '1') {
-        createMultiplayerRoom();
+        createMultiplayerRoom(false);
       }
 
       window.addEventListener('keydown', handlePhysicalKey);
@@ -1199,6 +1419,9 @@
 
     function restoreSession(saved) {
       state.mode = saved.mode;
+      state.tvMode = Boolean(saved.tvMode && saved.mode === 'host');
+      state.controllerMode = Boolean(saved.controllerMode && saved.mode === 'guest');
+      state.roomHasTv = Boolean(saved.roomHasTv || state.tvMode);
       state.language = saved.language || 'en';
       state.roomCode = saved.roomCode;
       state.myName = saved.myName || getNickname();
@@ -1209,7 +1432,8 @@
       setLanguage(state.language);
       document.getElementById('nickname-input').value = state.myName;
 
-      const newUrl = `${window.location.pathname}?room=${state.roomCode}&lang=${state.language}`;
+      const extra = state.tvMode ? '&tv=1' : state.controllerMode ? '&controller=1' : '';
+      const newUrl = `${window.location.pathname}?room=${state.roomCode}&lang=${state.language}${extra}`;
       window.history.replaceState({}, '', newUrl);
 
       document.getElementById('lobby-view').classList.add('hidden');
@@ -1218,7 +1442,6 @@
       document.getElementById('lang-pill').textContent = state.language === 'sv' ? 'SV (ÅÄÖ)' : 'EN';
       document.getElementById('room-code-display').textContent = state.roomCode;
       document.getElementById('invite-pill').classList.remove('hidden');
-      document.getElementById('play-again-btn').classList.toggle('hidden', state.mode === 'guest');
 
       // Restore personal progress without resetting
       state.currentWordIdx = saved.currentWordIdx || 0;
@@ -1231,6 +1454,7 @@
       state.keyColors = saved.keyColors || {};
       state.isFinished = Boolean(saved.isFinished);
 
+      applyTvAndControllerClasses();
       initChannelSync(state.roomCode);
       renderStepper();
       renderBoard();
@@ -1372,6 +1596,7 @@
                 senderId: state.myId,
                 roomCode: state.roomCode,
                 hostId: state.myId,
+                tvMode: state.tvMode,
                 language: state.language,
                 secretWords: state.secretWords,
                 roundId: state.roundId,
@@ -1530,13 +1755,20 @@
         state.language = data.language || state.language;
         state.secretWords = data.secretWords || [];
         state.roundId = data.roundId || 1;
+        state.roomHasTv = Boolean(data.tvMode);
+        applyTvAndControllerClasses();
         saveSession();
 
         if (state.mode === 'guest' && isNewRound && state.secretWords.length === TOTAL_WORDS) {
-          showToast('Host started a new 5-word round!');
+          showToast('New 5-word round started!');
           closeResultsModal();
           resetPlayerMarathon();
         }
+        return;
+      }
+
+      if (data.type === 'CAPTAIN_NEW_ROUND' && state.mode === 'host' && state.tvMode) {
+        playAgain();
         return;
       }
 
@@ -1546,6 +1778,7 @@
             type: 'ROOM_INIT',
             roomCode: state.roomCode,
             hostId: state.myId,
+            tvMode: state.tvMode,
             language: state.language,
             secretWords: state.secretWords,
             roundId: state.roundId,
@@ -1583,6 +1816,11 @@
     }
 
     function broadcastMyProgress() {
+      // TV Screen Host is a pure spectator display and does NOT take a player slot!
+      if (state.tvMode) {
+        saveSession();
+        return;
+      }
       const snapshot = {
         id: state.myId,
         name: state.myName,
@@ -1609,23 +1847,29 @@
     }
 
     /**********************************************************************
-     * 5. LAUNCH MODES (CREATE ROOM / JOIN ROOM / SOLO PRACTICE)
+     * 5. LAUNCH MODES (CREATE ROOM / TV MODE / JOIN ROOM / SOLO PRACTICE)
      **********************************************************************/
-    async function createMultiplayerRoom() {
-      const btn = document.getElementById('host-btn');
-      btn.disabled = true;
-      btn.textContent = 'Creating Room...';
+    async function createMultiplayerRoom(asTv = false) {
+      const btn = document.getElementById(asTv ? 'tv-host-btn' : 'host-btn');
+      const prevLabel = btn ? btn.textContent : '';
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = asTv ? 'Opening TV Screen...' : 'Creating Room...';
+      }
 
       try {
         clearSession();
         state.mode = 'host';
+        state.tvMode = Boolean(asTv);
+        state.controllerMode = false;
+        state.roomHasTv = Boolean(asTv);
         state.myName = getNickname();
         state.roomCode = generateRoomCode();
         state.secretWords = pickFiveWords(state.language);
         state.roundId = 1;
         state.players = {};
 
-        const newUrl = `${window.location.pathname}?room=${state.roomCode}&lang=${state.language}`;
+        const newUrl = `${window.location.pathname}?room=${state.roomCode}&lang=${state.language}${state.tvMode ? '&tv=1' : ''}`;
         window.history.replaceState({}, '', newUrl);
 
         initChannelSync(state.roomCode);
@@ -1635,6 +1879,7 @@
           type: 'ROOM_INIT',
           roomCode: state.roomCode,
           hostId: state.myId,
+          tvMode: state.tvMode,
           language: state.language,
           secretWords: state.secretWords,
           roundId: state.roundId,
@@ -1642,14 +1887,20 @@
         });
 
         enterArena();
-        showToast(`Room ${state.roomCode} created! Click "Copy Invite Link" to share.`);
+        showToast(
+          state.tvMode
+            ? `📺 TV Room ${state.roomCode} ready! Scan the QR code with phones to play.`
+            : `Room ${state.roomCode} created! Click "Copy Invite Link" to share.`
+        );
       } finally {
-        btn.disabled = false;
-        btn.textContent = 'Create Multiplayer Room';
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = prevLabel || 'Create Multiplayer Room';
+        }
       }
     }
 
-    async function joinMultiplayerRoom() {
+    async function joinMultiplayerRoom(asController = false) {
       const code = document.getElementById('join-code-input').value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
       if (code.length < 4) {
         showToast('Please enter a valid 6-character Room Code.');
@@ -1662,6 +1913,8 @@
 
       clearSession();
       state.mode = 'guest';
+      state.tvMode = false;
+      state.controllerMode = Boolean(asController || state.controllerMode);
       state.myName = getNickname();
       state.roomCode = code;
       state.secretWords = [];
@@ -1683,10 +1936,10 @@
           joined = true;
           btn.disabled = false;
           btn.textContent = 'Join Room';
-          const newUrl = `${window.location.pathname}?room=${state.roomCode}&lang=${state.language}`;
+          const newUrl = `${window.location.pathname}?room=${state.roomCode}&lang=${state.language}${state.controllerMode ? '&controller=1' : ''}`;
           window.history.replaceState({}, '', newUrl);
           enterArena();
-          showToast(`Joined Room ${state.roomCode}!`);
+          showToast(state.controllerMode ? `📱 Connected to TV Room ${state.roomCode}!` : `Joined Room ${state.roomCode}!`);
         }
       }, 200);
 
@@ -1705,6 +1958,9 @@
       clearSession();
       stopNetworkSync();
       state.mode = 'solo';
+      state.tvMode = false;
+      state.controllerMode = false;
+      state.roomHasTv = false;
       state.myName = getNickname();
       state.roomCode = 'SOLO';
       state.secretWords = pickFiveWords(state.language);
@@ -1725,14 +1981,14 @@
       document.getElementById('lang-pill').textContent = state.language === 'sv' ? 'SV (ÅÄÖ)' : 'EN';
       document.getElementById('room-code-display').textContent = state.roomCode;
       document.getElementById('invite-pill').classList.toggle('hidden', state.mode === 'solo');
-      document.getElementById('play-again-btn').classList.toggle('hidden', state.mode === 'guest');
+      applyTvAndControllerClasses();
 
       resetPlayerMarathon();
     }
 
     function returnToLobby() {
       if (!document.getElementById('lobby-view').classList.contains('hidden')) return;
-      if (state.mode !== 'solo' && !state.isFinished) {
+      if (state.mode !== 'solo' && !state.tvMode && !state.isFinished) {
         if (!window.confirm('Leave this active room and return to the start screen?')) {
           return;
         }
@@ -1743,9 +1999,13 @@
       clearSession();
       closeResultsModal();
 
+      state.tvMode = false;
+      state.controllerMode = false;
+      state.roomHasTv = false;
       state.roomCode = '';
       state.secretWords = [];
       state.players = {};
+      applyTvAndControllerClasses();
       window.history.replaceState({}, '', window.location.pathname);
 
       const hostBtn = document.getElementById('host-btn');
@@ -1761,10 +2021,11 @@
     }
 
     function copyInviteLink() {
-      const url = `${window.location.origin}${window.location.pathname}?room=${state.roomCode}&lang=${state.language}`;
+      const extra = state.tvMode ? '&controller=1' : '';
+      const url = `${window.location.origin}${window.location.pathname}?room=${state.roomCode}&lang=${state.language}${extra}`;
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(url).then(() => {
-          showToast(`Invite link copied for Room ${state.roomCode}!`);
+          showToast(state.tvMode ? `Controller link copied for TV Room ${state.roomCode}!` : `Invite link copied for Room ${state.roomCode}!`);
         }).catch(() => fallbackCopy(url));
       } else {
         fallbackCopy(url);
@@ -2134,10 +2395,11 @@
     function renderPlayersGrid() {
       const grid = document.getElementById('players-grid');
       const allPlayers = Object.values(state.players);
-      const otherPlayers = allPlayers.filter(p => p.id !== state.myId);
+      // In TV Screen Mode, show ALL connected phone players; in normal play, hide yourself so you're not shown twice!
+      const visiblePlayers = state.tvMode ? [...allPlayers] : allPlayers.filter(p => p.id !== state.myId);
 
-      // Rank other players by solvedCount desc, triesUsed asc
-      otherPlayers.sort((a, b) => {
+      // Rank players by solvedCount desc, triesUsed asc
+      visiblePlayers.sort((a, b) => {
         if (b.solvedCount !== a.solvedCount) return b.solvedCount - a.solvedCount;
         return a.triesUsed - b.triesUsed;
       });
@@ -2145,22 +2407,27 @@
       document.getElementById('player-count').textContent = allPlayers.length;
       grid.innerHTML = '';
 
-      if (otherPlayers.length === 0) {
+      if (visiblePlayers.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'player-slot';
         empty.style.gridColumn = '1 / -1';
         empty.style.textAlign = 'center';
-        empty.style.padding = '28px 18px';
+        empty.style.padding = state.tvMode ? '44px 20px' : '28px 18px';
         empty.style.color = 'var(--text-muted)';
-        empty.innerHTML = `
-          <div style="font-weight:700; color:var(--text-main); margin-bottom:6px;">Waiting for other players...</div>
-          <div style="font-size:0.84rem;">Click <strong>Copy Invite Link</strong> in the top bar so up to 3 friends can join your room.</div>
-        `;
+        empty.innerHTML = state.tvMode
+          ? `
+            <div style="font-size:1.2rem; font-weight:800; color:#fef08a; margin-bottom:8px;">📱 Waiting for Phone Players (0 / 4)</div>
+            <div style="font-size:0.94rem;">Point your phone cameras at the <strong>QR Code</strong> above — up to 4 players can race side-by-side on the TV!</div>
+          `
+          : `
+            <div style="font-weight:700; color:var(--text-main); margin-bottom:6px;">Waiting for other players...</div>
+            <div style="font-size:0.84rem;">Click <strong>Copy Invite Link</strong> in the top bar so up to 3 friends can join your room.</div>
+          `;
         grid.appendChild(empty);
         return;
       }
 
-      otherPlayers.forEach(p => {
+      visiblePlayers.forEach(p => {
         const card = document.createElement('div');
         card.className = `player-slot${p.isFinished ? ' is-finished' : ''}`;
 
@@ -2224,7 +2491,8 @@
     function openResultsModal() {
       renderStandingsList();
       const revealBox = document.getElementById('word-reveal-box');
-      if (state.isFinished && state.secretWords.length === TOTAL_WORDS) {
+      const allDoneOnTv = state.tvMode && Object.keys(state.players).length > 0 && Object.values(state.players).every(p => p.isFinished);
+      if ((state.isFinished || allDoneOnTv) && state.secretWords.length === TOTAL_WORDS) {
         revealBox.classList.remove('hidden');
         revealBox.innerHTML = `Secret Words: <strong>${state.secretWords.join(' · ')}</strong>`;
       } else {
@@ -2258,16 +2526,34 @@
     }
 
     async function playAgain() {
-      if (state.mode === 'guest') return;
+      if (state.mode === 'guest') {
+        if (state.roomHasTv) {
+          publishEvent({ type: 'CAPTAIN_NEW_ROUND' });
+          showToast('Requested a new 5-word round on TV...');
+        }
+        return;
+      }
       closeResultsModal();
       state.secretWords = pickFiveWords(state.language);
       state.roundId += 1;
+      if (state.tvMode) {
+        // Reset displayed progress on TV immediately until phones push fresh round state
+        Object.values(state.players).forEach((pl) => {
+          pl.currentWordIdx = 0;
+          pl.triesUsed = 0;
+          pl.solvedCount = 0;
+          pl.isFinished = false;
+          pl.wordHistory = [];
+          pl.liveRows = [];
+        });
+      }
 
       if (state.mode === 'host') {
         await publishEvent({
           type: 'ROOM_INIT',
           roomCode: state.roomCode,
           hostId: state.myId,
+          tvMode: state.tvMode,
           language: state.language,
           secretWords: state.secretWords,
           roundId: state.roundId,

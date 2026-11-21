@@ -80,6 +80,9 @@
       this.myName = opts.playerName || getSavedPlayerName();
       this.roomCode = (opts.roomCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
       this.isHost = Boolean(opts.isHost);
+      this.tvMode = Boolean(opts.tvMode) && this.isHost;
+      this.controllerMode = Boolean(opts.controllerMode) && !this.isHost;
+      this.roomHasTv = this.tvMode;
 
       this.onRosterChange = opts.onRosterChange || (() => {});
       this.onMessage = opts.onMessage || (() => {});
@@ -87,7 +90,7 @@
       this.onRoomFull = opts.onRoomFull || (() => {});
       this.onKicked = opts.onKicked || (() => {});
 
-      this.players = {}; // id -> { id, name, slot, isHost, isLocal, ready }
+      this.players = {}; // id -> { id, name, slot, isHost, isLocal, isController, ready }
       this.bc = null;
       this.peer = null;
       this.conns = {}; // peerId -> DataConnection (host: guest conns; guest: host conn)
@@ -115,11 +118,18 @@
       return `ca-${this.gameId}-${this.roomCode}`;
     }
 
-    getInviteUrl() {
+    getInviteUrl(opts = {}) {
       const url = new URL(window.location.href);
       url.searchParams.set('room', this.roomCode);
       url.searchParams.delete('host');
       url.searchParams.delete('autocreate');
+      url.searchParams.delete('tv');
+      const forController = opts.controller !== undefined ? Boolean(opts.controller) : this.tvMode;
+      if (forController) {
+        url.searchParams.set('controller', '1');
+      } else {
+        url.searchParams.delete('controller');
+      }
       return url.toString();
     }
 
@@ -131,6 +141,39 @@
       return this.players[this.myId] || null;
     }
 
+    setTvMode(enabled) {
+      if (!this.isHost) return;
+      this.tvMode = Boolean(enabled);
+      this.roomHasTv = this.tvMode;
+      if (this.tvMode) {
+        // TV is a pure spectator display: remove local host from player slots
+        delete this.players[this.myId];
+      } else if (!this.players[this.myId]) {
+        const used = new Set(Object.values(this.players).map((p) => p.slot));
+        let freeSlot = 0;
+        while (used.has(freeSlot) && freeSlot < this.maxPlayers) freeSlot++;
+        if (freeSlot < this.maxPlayers) {
+          this.players[this.myId] = {
+            id: this.myId,
+            name: this.myName,
+            slot: freeSlot,
+            isHost: true,
+            isLocal: true,
+            isController: false,
+            ready: true,
+          };
+        }
+      }
+      try {
+        const url = new URL(window.location.href);
+        if (this.tvMode) url.searchParams.set('tv', '1');
+        else url.searchParams.delete('tv');
+        window.history.replaceState({}, '', url.toString());
+      } catch (e) {}
+      this.emitRoster();
+      this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId, tvMode: this.tvMode });
+    }
+
     setPlayerName(name) {
       this.myName = (name || '').trim().slice(0, 18) || this.myName;
       savePlayerName(this.myName);
@@ -138,10 +181,12 @@
         this.players[this.myId].name = this.myName;
         this.emitRoster();
         if (this.isHost) {
-          this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId });
+          this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId, tvMode: this.tvMode });
         } else {
           this.sendSignal({ type: 'NAME_UPDATE', name: this.myName });
         }
+      } else if (!this.isHost) {
+        this.sendSignal({ type: 'NAME_UPDATE', name: this.myName });
       }
     }
 
@@ -156,6 +201,7 @@
         url.searchParams.set('room', this.roomCode);
         url.searchParams.delete('host');
         url.searchParams.delete('autocreate');
+        if (this.isHost && this.tvMode) url.searchParams.set('tv', '1');
         window.history.replaceState({}, '', url.toString());
       } catch (e) {}
 
@@ -168,14 +214,17 @@
       }
 
       if (this.isHost) {
-        this.players[this.myId] = {
-          id: this.myId,
-          name: this.myName,
-          slot: 0,
-          isHost: true,
-          isLocal: true,
-          ready: true,
-        };
+        if (!this.tvMode) {
+          this.players[this.myId] = {
+            id: this.myId,
+            name: this.myName,
+            slot: 0,
+            isHost: true,
+            isLocal: true,
+            isController: false,
+            ready: true,
+          };
+        }
         this.emitRoster();
       }
 
@@ -292,6 +341,7 @@
           type: 'JOIN_REQ',
           senderId: this.myId,
           name: this.myName,
+          isController: this.controllerMode,
         });
       });
 
@@ -457,15 +507,17 @@
             slot: freeSlot,
             isHost: false,
             isLocal: false,
+            isController: Boolean(data.isController),
             ready: true,
           };
           this.emitRoster();
-        } else if (data.name) {
-          this.players[sender].name = data.name.slice(0, 18);
+        } else {
+          if (data.name) this.players[sender].name = data.name.slice(0, 18);
+          if (data.isController !== undefined) this.players[sender].isController = Boolean(data.isController);
           this.emitRoster();
         }
 
-        this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId });
+        this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId, tvMode: this.tvMode });
         return;
       }
 
@@ -474,7 +526,7 @@
         if (this.players[sender] && data.name) {
           this.players[sender].name = data.name.slice(0, 18);
           this.emitRoster();
-          this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId });
+          this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId, tvMode: this.tvMode });
         }
         return;
       }
@@ -482,6 +534,7 @@
       if (data.type === 'ROSTER' && !this.isHost && data.players) {
         this.players = data.players;
         this.hostId = data.hostId;
+        this.roomHasTv = Boolean(data.tvMode);
         this.emitRoster();
         return;
       }

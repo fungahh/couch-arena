@@ -38,6 +38,10 @@
     </div>
 
     <div class="hub-status-bar">
+      <button type="button" id="btn-tv-mode" class="tv-mode-btn" title="Display the game on your TV and scan with phones as controllers!">
+        <span aria-hidden="true">📺</span>
+        <span id="tv-mode-label">TV Mode: OFF</span>
+      </button>
       <label class="hub-name-wrap" title="Your display name in game rooms">
         <span>Pilot</span>
         <input type="text" id="hub-player-name" class="hub-name-input" maxlength="18" placeholder="Your name..." />
@@ -59,7 +63,7 @@
         </div>
         <h1>Pick a Cartoon Adventure</h1>
         <p>
-          Tap any game to open a cozy private room for up to 4 players and share an instant invite link — play together on phones, laptops, or the big TV!
+          Tap any game to open a cozy private room for up to 4 players — or toggle <strong>📺 TV Mode</strong> to put the game on your big screen and use everyone's phones as controllers!
         </p>
       </div>
       <div class="nav-hint">
@@ -72,7 +76,7 @@
 
   <footer class="hub-footer">
     <span>Made for playing together · Add new games in <code>games-registry.js</code></span>
-    <span>✦ 4-Player Rooms · Controllers &amp; iOS Touch Ready</span>
+    <span>✦ 4-Player Rooms · TV Mode &amp; Phone Controllers Ready</span>
   </footer>
 
   <script src="shared/room-sync.js"></script>
@@ -83,7 +87,11 @@
       const statusChip = document.getElementById('gamepad-status');
       const statusText = document.getElementById('gamepad-status-text');
       const nameInput = document.getElementById('hub-player-name');
+      const tvModeBtn = document.getElementById('btn-tv-mode');
+      const tvModeLabel = document.getElementById('tv-mode-label');
       const games = window.GAME_HUB_REGISTRY || [];
+
+      let tvMode = sessionStorage.getItem('couch_arcade_tv_mode') === '1';
 
       if (window.CouchRoom && nameInput) {
         nameInput.value = window.CouchRoom.getSavedPlayerName();
@@ -93,18 +101,39 @@
       }
 
       function buildRoomLaunchUrl(game) {
+        const sep = game.path.includes('?') ? '&' : '?';
+        const tvParam = tvMode ? '&tv=1' : '';
         if (game.launchParams) {
-          const sep = game.path.includes('?') ? '&' : '?';
           if (game.launchParams.includes('host=1') && window.CouchRoom) {
-            return `${game.path}${sep}room=${window.CouchRoom.generateRoomCode()}&${game.launchParams}`;
+            return `${game.path}${sep}room=${window.CouchRoom.generateRoomCode()}&${game.launchParams}${tvParam}`;
           }
-          return `${game.path}${sep}${game.launchParams}`;
+          return `${game.path}${sep}${game.launchParams}${tvParam}`;
         }
-        return game.path;
+        return `${game.path}${tvMode ? `${sep}tv=1` : ''}`;
       }
 
       let focusIndex = 0;
       const cards = [];
+
+      function syncTvModeUI() {
+        if (tvModeBtn) tvModeBtn.classList.toggle('active', tvMode);
+        if (tvModeLabel) tvModeLabel.textContent = tvMode ? 'TV Mode: ON' : 'TV Mode: OFF';
+        cards.forEach((c, i) => {
+          const ctaSpan = c.querySelector('.game-cta-text');
+          if (ctaSpan) {
+            ctaSpan.textContent = tvMode ? '📺 Open on TV Screen!' : 'Create Room & Play!';
+          }
+          if (games[i]) c.href = buildRoomLaunchUrl(games[i]);
+        });
+      }
+
+      if (tvModeBtn) {
+        tvModeBtn.addEventListener('click', () => {
+          tvMode = !tvMode;
+          try { sessionStorage.setItem('couch_arcade_tv_mode', tvMode ? '1' : '0'); } catch (e) {}
+          syncTvModeUI();
+        });
+      }
 
       games.forEach((game, idx) => {
         const card = document.createElement('a');
@@ -139,7 +168,7 @@
             </div>
             ${statHtml}
             <div class="game-cta" style="background: ${game.ctaBg || game.accent}">
-              <span>Create Room &amp; Play!</span>
+              <span class="game-cta-text">Create Room &amp; Play!</span>
               <span aria-hidden="true">→</span>
             </div>
           </div>
@@ -157,6 +186,8 @@
         grid.appendChild(card);
         cards.push(card);
       });
+
+      syncTvModeUI();
 
       // Cheerful "Next Adventure Slot" card
       const nextSlot = document.createElement('div');

@@ -167,6 +167,38 @@ body {
   color: #14532d;
 }
 
+.tv-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 15px;
+  border-radius: 999px;
+  background: var(--card-white);
+  border: 2.5px solid var(--ink);
+  box-shadow: 0 3px 0 var(--ink);
+  font-family: "Fredoka", system-ui, sans-serif;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform 0.14s ease, background 0.16s ease, box-shadow 0.14s ease;
+}
+
+.tv-mode-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 0 var(--ink);
+}
+
+.tv-mode-btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 2px 0 var(--ink);
+}
+
+.tv-mode-btn.active {
+  background: var(--gold);
+  color: var(--ink);
+}
+
 .dot {
   width: 9px;
   height: 9px;
