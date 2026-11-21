@@ -11,9 +11,21 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Inter:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
+  <script>
+    if (new URLSearchParams(window.location.search).get('autostart') === '1') {
+      document.documentElement.classList.add('autostart-boot');
+    }
+  </script>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div id="boot-splash" class="boot-splash" aria-live="polite">
+    <div class="boot-splash-card">
+      <div class="boot-splash-icon">🛸</div>
+      <h2>Launching Astro Purge...</h2>
+      <p>Syncing UFOs &amp; phone controllers!</p>
+    </div>
+  </div>
   <canvas id="game-canvas" aria-label="Astro Purge Game Arena"></canvas>
   <button type="button" id="touch-dash-btn" aria-label="Dash">DASH</button>
 

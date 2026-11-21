@@ -1017,11 +1017,13 @@
       lobbyRoomStatus.classList.toggle('ok', status === 'ok');
     },
     onRoomFull: () => {
+      document.documentElement.classList.remove('autostart-boot');
       lobbyRoomStatus.textContent = 'Room Full (4/4)';
       titlePadHint.textContent = 'This room already has 4 players. Return to the Hub to create a new room.';
       btnLaunch.disabled = true;
     },
     onKicked: () => {
+      document.documentElement.classList.remove('autostart-boot');
       state.mode = 'kicked';
       resetPhonePad();
       if (controllerUi) controllerUi.classList.add('hidden');
@@ -1323,6 +1325,7 @@
 
     // Guest / Phone Controller handlers
     if (msg.type === 'GAME_START') {
+      document.documentElement.classList.remove('autostart-boot');
       state.mode = 'playing';
       clearTouchSteer();
       resetPhonePad();
@@ -1341,6 +1344,13 @@
       }
       SFX.levelUp();
     } else if (msg.type === 'SNAP') {
+      if (state.mode === 'title') {
+        // Guest arrived slightly after GAME_START -> seamlessly jump straight into live match!
+        document.documentElement.classList.remove('autostart-boot');
+        state.mode = 'playing';
+        titleOverlay.classList.add('hidden');
+        syncPhoneControllerVisibility();
+      }
       if (state.mode === 'upgrade' && state.myDraftPicked && Date.now() - (state.myDraftPickedAt || 0) > 1200) {
         // Self-heal if DRAFT_DONE packet was ever missed after player already picked
         upgradeOverlay.classList.add('hidden');
@@ -1817,6 +1827,7 @@
     state.players = roster.map((rp) => createPlayerFromRoster(rp, rp.isLocal ? localIdx++ : -1));
 
     titleOverlay.classList.add('hidden');
+    document.documentElement.classList.remove('autostart-boot');
     upgradeOverlay.classList.add('hidden');
     draftWaitingEl.classList.add('hidden');
     pauseOverlay.classList.add('hidden');

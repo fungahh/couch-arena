@@ -1821,5 +1821,63 @@ body.clean-hud #damage-meter:active {
   }
 }
 
+/* Zero-flash pre-paint launch splash when entering from unified Pre-Game Room */
+.boot-splash {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(94, 234, 212, 0.3), transparent 45%),
+    radial-gradient(circle at 80% 25%, rgba(254, 240, 138, 0.35), transparent 45%),
+    #fff8ec;
+}
+
+html.autostart-boot #title-overlay {
+  display: none !important;
+}
+
+html.autostart-boot #boot-splash {
+  display: flex;
+}
+
+.boot-splash-card {
+  background: #ffffff;
+  color: #1e1b2e;
+  border: 3.5px solid #1e1b2e;
+  border-radius: 26px;
+  padding: 28px 34px;
+  text-align: center;
+  box-shadow: 0 7px 0 #1e1b2e, 0 20px 40px rgba(30, 27, 46, 0.2);
+  font-family: "Fredoka", system-ui, sans-serif;
+}
+
+.boot-splash-icon {
+  font-size: 2.8rem;
+  margin-bottom: 8px;
+  animation: bootBob 1s ease-in-out infinite alternate;
+}
+
+@keyframes bootBob {
+  from { transform: translateY(0); }
+  to { transform: translateY(-7px); }
+}
+
+.boot-splash-card h2 {
+  margin: 0 0 6px;
+  font-size: 1.5rem;
+}
+
+.boot-splash-card p {
+  margin: 0;
+  font-size: 0.94rem;
+  color: #5b5575;
+  font-weight: 700;
+}
+
+
 
 

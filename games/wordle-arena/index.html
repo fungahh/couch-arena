@@ -4,6 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Wordle Arena — 5-Word Live Multiplayer Marathon</title>
+  <script>
+    (function () {
+      var p = new URLSearchParams(window.location.search);
+      if (p.get('autostart') === '1' || p.get('autocreate') === '1' || p.get('tv') === '1' || p.get('controller') === '1') {
+        document.documentElement.classList.add('autostart-boot');
+      }
+    })();
+  </script>
   <style>
     :root {
       --bg-app: #0b0f17;
@@ -934,9 +942,62 @@
       font-weight: 700;
       color: #86efac;
     }
+
+    .boot-splash {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background:
+        radial-gradient(circle at 20% 20%, rgba(254, 240, 138, 0.55), transparent 45%),
+        radial-gradient(circle at 80% 25%, rgba(187, 247, 208, 0.55), transparent 45%),
+        #fff8ec;
+    }
+
+    html.autostart-boot #lobby-view {
+      display: none !important;
+    }
+
+    html.autostart-boot #boot-splash {
+      display: flex;
+    }
+
+    .boot-splash-card {
+      background: #ffffff;
+      color: #1e1b2e;
+      border: 3.5px solid #1e1b2e;
+      border-radius: 26px;
+      padding: 28px 34px;
+      text-align: center;
+      box-shadow: 0 7px 0 #1e1b2e, 0 20px 40px rgba(30, 27, 46, 0.18);
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    .boot-splash-card h2 {
+      margin: 8px 0 6px;
+      font-size: 1.45rem;
+      font-weight: 800;
+    }
+
+    .boot-splash-card p {
+      margin: 0;
+      font-size: 0.92rem;
+      color: #5b5575;
+      font-weight: 700;
+    }
   </style>
 </head>
 <body>
+  <div id="boot-splash" class="boot-splash" aria-live="polite">
+    <div class="boot-splash-card">
+      <div style="font-size: 2.6rem;">🔤</div>
+      <h2>Starting Wordle Arena...</h2>
+      <p>Syncing 5 secret words &amp; players!</p>
+    </div>
+  </div>
 
   <!-- Header -->
   <header>
@@ -1443,6 +1504,7 @@
       const newUrl = `${window.location.pathname}?room=${state.roomCode}&lang=${state.language}${extra}`;
       window.history.replaceState({}, '', newUrl);
 
+      document.documentElement.classList.remove('autostart-boot');
       document.getElementById('lobby-view').classList.add('hidden');
       document.getElementById('arena-view').classList.remove('hidden');
       document.getElementById('header-controls').classList.remove('hidden');
@@ -1988,6 +2050,7 @@
       setTimeout(() => {
         clearInterval(checkInterval);
         if (!joined) {
+          document.documentElement.classList.remove('autostart-boot');
           btn.disabled = false;
           btn.textContent = 'Join Room';
           stopNetworkSync();
@@ -2016,6 +2079,7 @@
     }
 
     function enterArena() {
+      document.documentElement.classList.remove('autostart-boot');
       document.getElementById('lobby-view').classList.add('hidden');
       document.getElementById('arena-view').classList.remove('hidden');
       document.getElementById('header-controls').classList.remove('hidden');
@@ -2036,6 +2100,7 @@
     }
 
     function returnToLobby() {
+      document.documentElement.classList.remove('autostart-boot');
       if (!document.getElementById('lobby-view').classList.contains('hidden')) return;
       if (state.mode !== 'solo' && !state.tvMode && !state.isFinished) {
         if (!window.confirm('Leave this active room and return to the start screen?')) {
