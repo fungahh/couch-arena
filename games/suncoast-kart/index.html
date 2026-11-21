@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Suncoast Kart — 3D Online Arcade Kart Racer</title>
+    <meta
+      name="description"
+      content="Race across Suncoast Grand Circuit in a vibrant 3D low-poly kart racer with drift mini-turbos, item boxes, jump tricks, shortcuts, and online multiplayer rooms."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=JetBrains+Mono:wght@600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      if (new URLSearchParams(window.location.search).get('autostart') === '1') {
+        document.documentElement.classList.add('autostart-boot');
+      }
+    </script>
+    <script src="../../shared/ws-relay.js"></script>
+    <script src="../../shared/accounts.js"></script>
+    <script src="../../shared/room-sync.js"></script>
+    <script type="module" crossorigin src="./assets/index-DcIiVWyl.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DXxdBxG8.css">
+  </head>
+  <body>
+    <div id="boot-splash" class="boot-splash" aria-live="polite">
+      <div class="boot-splash-card">
+        <div class="boot-splash-icon">🏎️</div>
+        <h2>Revving Engines...</h2>
+        <p>Syncing karts on Suncoast Grand Circuit!</p>
+      </div>
+    </div>
+    <main id="app">
+      <div id="canvas-mount" aria-label="3D Kart Race Viewport"></div>
+      <div id="ui-root"></div>
+    </main>
+  </body>
+</html>

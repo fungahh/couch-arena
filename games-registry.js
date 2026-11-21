@@ -4,6 +4,122 @@
  */
 window.GAME_HUB_REGISTRY = [
   {
+    id: 'suncoast-kart',
+    codePrefix: 'S',
+    title: 'Suncoast Kart',
+    tagline: '3D Coastal Drift Grand Prix',
+    description:
+      'Drift across Suncoast Grand Circuit in vibrant 3D! Charge 3-tier spark mini-turbos, launch off jump ramps, blast through the Palm Dune shortcut, and fling shells in online rooms.',
+    path: 'games/suncoast-kart/index.html',
+    launchParams: 'host=1',
+    players: '1–5P Room · + AI Rivals',
+    input: 'Keyboard & Touch',
+    accent: '#0284c7',
+    ctaBg: '#ef4444',
+    badge: 'NEW!',
+    roomFlair: {
+      icon: '🏎️',
+      themeClass: 'flair-kart',
+      eyebrow: 'Suncoast Grand Circuit · 3D Drift Grand Prix',
+      bannerBg: 'linear-gradient(135deg, #0284c7 0%, #0ea5e9 52%, #f59e0b 100%)',
+      bannerText: '#fffdf8',
+      accent: '#ef4444',
+      pillBg: '#fef08a',
+      pillText: '#9a3412',
+      launchLabel: 'Start 3D Grand Prix!',
+      controlsTip: 'Drive with WASD/Arrows or Touch · Hold Space to Hop & Drift Turbo · Tap Space on Ramps for Jump Tricks · Press E for Items!',
+    },
+    statKey: 'suncoast_kart_best',
+    formatStat: (raw) => {
+      try {
+        const d = JSON.parse(raw);
+        if (!d || !d.races) return null;
+        const ord = d.bestPlace === 1 ? '1st' : d.bestPlace === 2 ? '2nd' : d.bestPlace === 3 ? '3rd' : `#${d.bestPlace}`;
+        if (d.bestLapMs) {
+          const sec = (d.bestLapMs / 1000).toFixed(2);
+          return `🏆 Best: ${ord} · Lap ${sec}s`;
+        }
+        return `🏆 Best: ${ord} · ${d.wins || 0} Wins`;
+      } catch {
+        return null;
+      }
+    },
+    artSvg: `
+      <svg viewBox="0 0 360 195" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <!-- Sunny Mediterranean Sky & Golden Sun -->
+        <rect width="360" height="195" fill="#7dd3fc"/>
+        <circle cx="304" cy="40" r="24" fill="#fde047" stroke="#1e1b2e" stroke-width="3"/>
+        <!-- Fluffy Cartoon Clouds -->
+        <g fill="#ffffff" stroke="#1e1b2e" stroke-width="2.6" stroke-linejoin="round">
+          <path d="M26 48 Q26 32 42 32 Q50 20 66 26 Q82 22 86 38 Q98 40 94 52 L28 52 Z"/>
+          <path d="M168 38 Q168 26 180 26 Q188 18 200 24 Q212 22 214 36 L168 38 Z"/>
+        </g>
+        <!-- Sparkling Turquoise Ocean Bay -->
+        <rect x="0" y="96" width="360" height="52" fill="#06b6d4"/>
+        <path d="M18 112 Q34 106 50 112 M270 114 Q288 108 306 114 M220 124 Q236 118 252 124" stroke="#cffafe" stroke-width="3" stroke-linecap="round"/>
+        <!-- Emerald Coastal Hill & Striped Lighthouse -->
+        <path d="M210 112 Q278 52 360 84 L360 124 L210 124 Z" fill="#22c55e" stroke="#1e1b2e" stroke-width="3"/>
+        <g transform="translate(274, 34)">
+          <rect x="-7" y="14" width="14" height="36" fill="#ffffff" stroke="#1e1b2e" stroke-width="2.6"/>
+          <rect x="-7" y="22" width="14" height="8" fill="#ef4444" stroke="#1e1b2e" stroke-width="2"/>
+          <rect x="-7" y="38" width="14" height="8" fill="#ef4444" stroke="#1e1b2e" stroke-width="2"/>
+          <rect x="-8" y="8" width="16" height="7" fill="#fef08a" stroke="#1e1b2e" stroke-width="2.2"/>
+          <path d="M-10 8 L0 -4 L10 8 Z" fill="#ef4444" stroke="#1e1b2e" stroke-width="2.4" stroke-linejoin="round"/>
+        </g>
+        <!-- Sweeping Coastal Road & Red/White Curbs -->
+        <path d="M-10 195 Q70 120 198 122 Q294 124 370 144 L370 195 Z" fill="#4ade80" stroke="#1e1b2e" stroke-width="3"/>
+        <path d="M-15 195 Q75 116 205 126 Q292 132 375 162 L375 195 Z" fill="#ef4444" stroke="#1e1b2e" stroke-width="3"/>
+        <path d="M-4 195 Q80 124 202 133 Q286 139 375 170 L375 195 Z" fill="#334155" stroke="#1e1b2e" stroke-width="2.8"/>
+        <path d="M22 184 Q96 146 196 154 Q266 160 332 182" stroke="#facc15" stroke-width="4" stroke-dasharray="14 12" stroke-linecap="round"/>
+        <!-- Palm Tree on Left Coast -->
+        <g transform="translate(42, 74)">
+          <path d="M0 54 Q6 28 2 4" stroke="#92400e" stroke-width="7" stroke-linecap="round"/>
+          <path d="M2 4 Q-20 -4 -28 12 Q-12 6 2 8 Z" fill="#16a34a" stroke="#1e1b2e" stroke-width="2.2"/>
+          <path d="M2 4 Q20 -8 30 6 Q14 4 2 8 Z" fill="#22c55e" stroke="#1e1b2e" stroke-width="2.2"/>
+          <path d="M2 4 Q-8 -18 14 -14 Q6 -4 2 4 Z" fill="#4ade80" stroke="#1e1b2e" stroke-width="2.2"/>
+        </g>
+        <!-- Floating Mystery ? Item Box -->
+        <g transform="translate(230, 86) rotate(12)">
+          <rect x="-14" y="-14" width="28" height="28" rx="6" fill="#facc15" stroke="#1e1b2e" stroke-width="3"/>
+          <text x="0" y="7" text-anchor="middle" fill="#1e1b2e" font-family="Fredoka, system-ui, sans-serif" font-weight="700" font-size="20">?</text>
+        </g>
+        <!-- Blue Drift Sparks -->
+        <path d="M74 166 L54 156 M76 172 L48 172 M80 178 L58 184" stroke="#38bdf8" stroke-width="4" stroke-linecap="round"/>
+        <circle cx="50" cy="162" r="4" fill="#fef08a" stroke="#1e1b2e" stroke-width="1.8"/>
+        <circle cx="44" cy="174" r="3.5" fill="#38bdf8" stroke="#1e1b2e" stroke-width="1.8"/>
+        <!-- Cartoon Red Hero Kart Drifting! -->
+        <g transform="translate(132, 148) rotate(-8)">
+          <!-- Exhaust Flame -->
+          <path d="M-40 4 Q-58 -6 -66 4 Q-56 14 -40 4 Z" fill="#38bdf8" stroke="#1e1b2e" stroke-width="2.4"/>
+          <path d="M-40 4 Q-51 -1 -55 4 Q-50 9 -40 4 Z" fill="#fef08a"/>
+          <!-- Chassis -->
+          <rect x="-36" y="-4" width="70" height="20" rx="8" fill="#ef4444" stroke="#1e1b2e" stroke-width="3.2"/>
+          <rect x="-8" y="-2" width="38" height="6" rx="3" fill="#ffffff"/>
+          <!-- Spoiler -->
+          <path d="M-36 -4 L-44 -18 L-26 -18 L-24 -4 Z" fill="#facc15" stroke="#1e1b2e" stroke-width="2.6" stroke-linejoin="round"/>
+          <!-- Driver Head & Cap -->
+          <circle cx="-4" cy="-18" r="12" fill="#fdba74" stroke="#1e1b2e" stroke-width="2.8"/>
+          <path d="M-16 -20 A12 12 0 0 1 10 -20 Z" fill="#ef4444" stroke="#1e1b2e" stroke-width="2.6"/>
+          <rect x="2" y="-23" width="14" height="5" rx="2.5" fill="#ef4444" stroke="#1e1b2e" stroke-width="2.2"/>
+          <circle cx="2" cy="-16" r="2" fill="#1e1b2e"/>
+          <!-- Wheels -->
+          <circle cx="-22" cy="16" r="11" fill="#1e293b" stroke="#1e1b2e" stroke-width="3"/>
+          <circle cx="-22" cy="16" r="4.5" fill="#f8fafc"/>
+          <circle cx="22" cy="16" r="10" fill="#1e293b" stroke="#1e1b2e" stroke-width="3"/>
+          <circle cx="22" cy="16" r="4" fill="#f8fafc"/>
+        </g>
+        <!-- Rival Teal Kart Behind -->
+        <g transform="translate(232, 134) scale(0.72) rotate(5)">
+          <rect x="-34" y="-4" width="66" height="19" rx="8" fill="#0ea5e9" stroke="#1e1b2e" stroke-width="3.4"/>
+          <circle cx="-4" cy="-17" r="11" fill="#fdba74" stroke="#1e1b2e" stroke-width="3"/>
+          <path d="M-15 -19 A11 11 0 0 1 9 -19 Z" fill="#facc15" stroke="#1e1b2e" stroke-width="2.8"/>
+          <circle cx="-20" cy="15" r="10" fill="#1e293b" stroke="#1e1b2e" stroke-width="3.2"/>
+          <circle cx="20" cy="15" r="9.5" fill="#1e293b" stroke="#1e1b2e" stroke-width="3.2"/>
+        </g>
+      </svg>
+    `,
+  },
+  {
     id: 'astro-purge',
     codePrefix: 'A',
     title: 'Astro Purge',
@@ -16,7 +132,7 @@ window.GAME_HUB_REGISTRY = [
     input: 'Touch, Keyboard & Pad',
     accent: '#0d9488',
     ctaBg: '#14b8a6',
-    badge: 'NEW!',
+    badge: 'CO-OP',
     roomFlair: {
       icon: '🛸',
       themeClass: 'flair-astro',

@@ -106,6 +106,48 @@
       desc: 'Finish #1 in a multiplayer Wordle Arena match.',
     },
 
+    // Suncoast Kart
+    {
+      id: 'sk_first_race',
+      game: 'suncoast-kart',
+      gameTitle: 'Suncoast Kart',
+      icon: '🏎️',
+      title: 'Checkered Rookie',
+      desc: 'Finish your first 3-lap race on Suncoast Grand Circuit.',
+    },
+    {
+      id: 'sk_podium_1st',
+      game: 'suncoast-kart',
+      gameTitle: 'Suncoast Kart',
+      icon: '🏆',
+      title: 'Suncoast Champion!',
+      desc: 'Cross the finish line in 1st place on Suncoast Grand Circuit.',
+    },
+    {
+      id: 'sk_ultra_drift',
+      game: 'suncoast-kart',
+      gameTitle: 'Suncoast Kart',
+      icon: '🔥',
+      title: 'Ultra Drift Master',
+      desc: 'Charge and unleash a Tier 3 Ultra Mini-Turbo spark drift.',
+    },
+    {
+      id: 'sk_trick_star',
+      game: 'suncoast-kart',
+      gameTitle: 'Suncoast Kart',
+      icon: '✨',
+      title: 'Canyon Stunt Ace',
+      desc: 'Land a mid-air Jump Trick Boost off a track ramp.',
+    },
+    {
+      id: 'sk_online_crew',
+      game: 'suncoast-kart',
+      gameTitle: 'Suncoast Kart',
+      icon: '🏁',
+      title: 'Grand Prix Crew',
+      desc: 'Finish an online Suncoast Kart race with 2 or more human racers.',
+    },
+
     // Couch Arcade Party
     {
       id: 'hub_tv_party',
@@ -803,6 +845,7 @@
           </div>
           <div class="ca-ach-filter">
             <button type="button" class="ca-filter-pill ${achFilter === 'all' ? 'active' : ''}" data-filter="all">All (${earned}/${totalAch})</button>
+            <button type="button" class="ca-filter-pill ${achFilter === 'suncoast-kart' ? 'active' : ''}" data-filter="suncoast-kart">🏎️ Suncoast Kart</button>
             <button type="button" class="ca-filter-pill ${achFilter === 'astro-purge' ? 'active' : ''}" data-filter="astro-purge">🛸 Astro Purge</button>
             <button type="button" class="ca-filter-pill ${achFilter === 'wordle-arena' ? 'active' : ''}" data-filter="wordle-arena">🔤 Wordle Arena</button>
             <button type="button" class="ca-filter-pill ${achFilter === 'couch-arcade' ? 'active' : ''}" data-filter="couch-arcade">📺 Party</button>
