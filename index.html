@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Couch Arcade — Our Game Hub</title>
-  <meta name="description" content="A growing collection of couch co-op and multiplayer games built for desktop and TV controllers." />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Couch Arcade — Our Cartoon Game Hub</title>
+  <meta name="description" content="A joyful retro-cartoon collection of 4-player couch & online games built for phones, laptops, and TV controllers." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="hub.css" />
   <script>
     // Preserve backward compatibility for direct Wordle Arena room invite links (?room=XXXXXX)
@@ -22,35 +22,48 @@
 <body>
   <header class="hub-header">
     <div class="hub-brand">
-      <div class="hub-logo" aria-hidden="true">CA</div>
+      <div class="hub-logo" aria-hidden="true">
+        <!-- Happy Vintage Cartoon Mascot Star -->
+        <svg width="32" height="32" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M18 3 L22.2 12.6 L32.6 13.7 L24.8 20.6 L27 30.8 L18 25.5 L9 30.8 L11.2 20.6 L3.4 13.7 L13.8 12.6 Z" fill="#fffbeb" stroke="#1e1b2e" stroke-width="2.6" stroke-linejoin="round"/>
+          <circle cx="14.5" cy="16.5" r="1.8" fill="#1e1b2e"/>
+          <circle cx="21.5" cy="16.5" r="1.8" fill="#1e1b2e"/>
+          <path d="M14.5 21 Q18 24.2 21.5 21" stroke="#1e1b2e" stroke-width="2" stroke-linecap="round" fill="none"/>
+        </svg>
+      </div>
       <div class="hub-brand-text">
-        <span class="hub-brand-name">COUCH ARCADE</span>
-        <span class="hub-brand-sub">Two-Player Game Hub · TV &amp; Controller Ready</span>
+        <span class="hub-brand-name">Couch Arcade</span>
+        <span class="hub-brand-sub">4-Player Cartoon Game Hub · TV &amp; Touch Ready</span>
       </div>
     </div>
 
     <div class="hub-status-bar">
       <label class="hub-name-wrap" title="Your display name in game rooms">
-        <span>Name</span>
+        <span>Pilot</span>
         <input type="text" id="hub-player-name" class="hub-name-input" maxlength="18" placeholder="Your name..." />
       </label>
       <div id="gamepad-status" class="status-chip" role="status" aria-live="polite">
         <span class="dot"></span>
-        <span id="gamepad-status-text">No Controllers Connected</span>
+        <span id="gamepad-status-text">No Controllers</span>
       </div>
     </div>
   </header>
 
   <main class="hub-main">
-    <section class="hub-intro">
-      <div>
-        <h1>Pick a Game</h1>
+    <section class="hub-hero">
+      <div class="hero-title-wrap">
+        <div class="hero-kicker">
+          <span class="sparkle-star" aria-hidden="true">✦</span>
+          Welcome to Our Living-Room Arcade!
+          <span class="sparkle-star" aria-hidden="true">✦</span>
+        </div>
+        <h1>Pick a Cartoon Adventure</h1>
         <p>
-          Choose any game to open a private room for up to 4 players and share a direct invite link — or play together on the couch with controllers.
+          Tap any game to open a cozy private room for up to 4 players and share an instant invite link — play together on phones, laptops, or the big TV!
         </p>
       </div>
       <div class="nav-hint">
-        Navigate: <kbd>←</kbd><kbd>→</kbd> or D-Pad · Launch: <kbd>Enter</kbd> or <kbd>A</kbd>
+        Browse: <kbd>←</kbd><kbd>→</kbd> or D-Pad · Play: <kbd>Enter</kbd> or <kbd>A</kbd>
       </div>
     </section>
 
@@ -58,8 +71,8 @@
   </main>
 
   <footer class="hub-footer">
-    <span>Built together · Add new games in <code>games-registry.js</code></span>
-    <span>4-Player Game Rooms · HTML5 Gamepad API</span>
+    <span>Made for playing together · Add new games in <code>games-registry.js</code></span>
+    <span>✦ 4-Player Rooms · Controllers &amp; iOS Touch Ready</span>
   </footer>
 
   <script src="shared/room-sync.js"></script>
@@ -125,8 +138,8 @@
               <span class="meta-tag">${game.input}</span>
             </div>
             ${statHtml}
-            <div class="game-cta">
-              <span>Create Room &amp; Play</span>
+            <div class="game-cta" style="background: ${game.ctaBg || game.accent}">
+              <span>Create Room &amp; Play!</span>
               <span aria-hidden="true">→</span>
             </div>
           </div>
@@ -145,13 +158,13 @@
         cards.push(card);
       });
 
-      // Add a "Next Game Slot" card so the hub visually invites adding more games
+      // Cheerful "Next Adventure Slot" card
       const nextSlot = document.createElement('div');
       nextSlot.className = 'game-card coming-soon';
       nextSlot.innerHTML = `
-        <div class="coming-soon-icon" aria-hidden="true">+</div>
-        <h3>Next Game Slot</h3>
-        <p>Drop a new folder in <code>games/</code> and register it in <code>games-registry.js</code> to expand the hub.</p>
+        <div class="coming-soon-icon" aria-hidden="true">★</div>
+        <h3>Next Game Coming Soon!</h3>
+        <p>Drop your next creation in <code>games/</code> and register it in <code>games-registry.js</code> to grow your arcade.</p>
       `;
       grid.appendChild(nextSlot);
 
@@ -194,11 +207,11 @@
         const pads = navigator.getGamepads ? Array.from(navigator.getGamepads()).filter(Boolean) : [];
         if (pads.length === 0) {
           statusChip.classList.remove('connected');
-          statusText.textContent = 'No Controllers Connected';
+          statusText.textContent = 'No Controllers';
         } else {
           statusChip.classList.add('connected');
           statusText.textContent =
-            pads.length === 1 ? '1 Controller Connected' : `${pads.length} Controllers Connected`;
+            pads.length === 1 ? '1 Controller Ready!' : `${pads.length} Controllers Ready!`;
         }
         return pads;
       }
@@ -223,7 +236,7 @@
           }
 
           if (confirm && !prevConfirm) {
-            window.location.href = cards[focusIndex].href;
+            window.location.href = buildRoomLaunchUrl(games[focusIndex]);
           }
           prevConfirm = confirm;
         }

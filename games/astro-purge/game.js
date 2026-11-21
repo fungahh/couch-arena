@@ -3398,10 +3398,12 @@
     const barX = p.x - barW * 0.5;
     const barY = p.y - 34;
     let barColor = '#22c55e'; // Healthy green (>60%)
-    if (hpRatio <= 0.3) {
-      barColor = Math.floor(state.time * 10) % 2 === 0 ? '#ef4444' : '#fb7185'; // Critical pulsing red
+    if (hpRatio < 0.15) {
+      barColor = Math.floor(state.time * 10) % 2 === 0 ? '#ef4444' : '#fca5a5'; // Critical pulsing red (<15%)
+    } else if (hpRatio <= 0.3) {
+      barColor = '#ef4444'; // Low solid red (15%–30%)
     } else if (hpRatio <= 0.6) {
-      barColor = '#facc15'; // Mid yellow/amber
+      barColor = '#facc15'; // Mid yellow/amber (30%–60%)
     }
 
     ctx.save();

@@ -1,116 +1,170 @@
 /**
- * Game Hub Registry
+ * Couch Arcade — Game Hub Registry
  * Add new games here as you build them together!
  */
 window.GAME_HUB_REGISTRY = [
   {
     id: 'astro-purge',
     title: 'Astro Purge',
-    tagline: 'Co-op Space Virus Asteroids',
+    tagline: 'Cartoon UFO Co-op Adventure',
     description:
-      'Pilot twin starships together against waves of space viruses and infected asteroids. Share XP, unlock new weapons, and face a mutant boss every 10 levels.',
+      'Pilot cartoon UFOs together against grumpy space viruses! Earn personal visual saucer upgrades, climb the live damage meter, and battle a giant boss every 10 levels.',
     path: 'games/astro-purge/index.html',
     launchParams: 'host=1',
     players: '1–4P Room · Co-op',
-    input: 'Keyboard + Controllers',
-    accent: '#14b8a6',
-    accentSoft: 'rgba(20, 184, 166, 0.14)',
-    badge: 'NEW',
+    input: 'Touch, Keyboard & Pad',
+    accent: '#0d9488',
+    ctaBg: '#14b8a6',
+    badge: 'NEW!',
     statKey: 'astro_purge_best',
     formatStat: (raw) => {
       try {
         const d = JSON.parse(raw);
         if (!d || !d.bestLevel) return null;
-        return `Best: Lv ${d.bestLevel} · ${Number(d.bestScore || 0).toLocaleString()} pts`;
+        return `★ Best: Lv ${d.bestLevel} · ${Number(d.bestScore || 0).toLocaleString()} pts`;
       } catch {
         return null;
       }
     },
     artSvg: `
-      <svg viewBox="0 0 360 190" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect width="360" height="190" fill="#0b1320"/>
-        <circle cx="42" cy="36" r="1.5" fill="#94a3b8" opacity="0.6"/>
-        <circle cx="110" cy="24" r="1.2" fill="#e2e8f0" opacity="0.7"/>
-        <circle cx="192" cy="48" r="1.8" fill="#cbd5e1" opacity="0.5"/>
-        <circle cx="318" cy="30" r="1.4" fill="#94a3b8" opacity="0.7"/>
-        <circle cx="76" cy="148" r="1.3" fill="#e2e8f0" opacity="0.5"/>
-        <circle cx="290" cy="156" r="1.6" fill="#94a3b8" opacity="0.6"/>
-        <!-- Virus Boss Silhouette -->
-        <g transform="translate(262, 92)">
-          <circle r="38" fill="#1f1620" stroke="#f43f5e" stroke-width="2.5"/>
-          <circle r="24" fill="#3a1626"/>
-          <circle cx="-8" cy="-4" r="5" fill="#fb7185"/>
-          <circle cx="10" cy="6" r="3.5" fill="#fb7185"/>
-          <circle cx="4" cy="-12" r="2.5" fill="#fda4af"/>
-          <path d="M0 -38 L0 -50 M27 -27 L36 -36 M38 0 L50 0 M27 27 L36 36 M0 38 L0 50 M-27 27 L-36 36 M-38 0 L-50 0 M-27 -27 L-36 -36" stroke="#f43f5e" stroke-width="3" stroke-linecap="round"/>
-          <circle cx="0" cy="-52" r="4" fill="#fb7185"/>
-          <circle cx="38" cy="-38" r="4" fill="#fb7185"/>
-          <circle cx="52" cy="0" r="4" fill="#fb7185"/>
-          <circle cx="38" cy="38" r="4" fill="#fb7185"/>
-          <circle cx="0" cy="52" r="4" fill="#fb7185"/>
-          <circle cx="-38" cy="38" r="4" fill="#fb7185"/>
-          <circle cx="-52" cy="0" r="4" fill="#fb7185"/>
-          <circle cx="-38" cy="-38" r="4" fill="#fb7185"/>
+      <svg viewBox="0 0 360 195" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <!-- Vintage Cartoon Night Sky -->
+        <rect width="360" height="195" fill="#182644"/>
+        <circle cx="56" cy="48" r="28" fill="#fef08a" stroke="#1e1b2e" stroke-width="3"/>
+        <circle cx="67" cy="42" r="23" fill="#182644"/>
+        <!-- Twinkling 4-point Retro Disney Stars -->
+        <path d="M138 22 L141 31 L150 34 L141 37 L138 46 L135 37 L126 34 L135 31 Z" fill="#fef08a"/>
+        <path d="M214 148 L216 154 L222 156 L216 158 L214 164 L212 158 L206 156 L212 154 Z" fill="#bae6fd"/>
+        <path d="M322 26 L324 32 L330 34 L324 36 L322 42 L320 36 L314 34 L320 32 Z" fill="#fde68a"/>
+        <circle cx="34" cy="148" r="3" fill="#fef08a" opacity="0.8"/>
+        <circle cx="176" cy="24" r="2.5" fill="#ffffff" opacity="0.85"/>
+        <!-- Ringed Pastel Planet -->
+        <circle cx="316" cy="154" r="18" fill="#f9a8d4" stroke="#1e1b2e" stroke-width="2.5"/>
+        <ellipse cx="316" cy="154" rx="32" ry="8" transform="rotate(-14 316 154)" stroke="#fde68a" stroke-width="3.5" fill="none"/>
+        <!-- Grumpy Cartoon Virus Boss -->
+        <g transform="translate(264, 88)">
+          <path d="M0 -34 L0 -48 M24 -24 L35 -35 M34 0 L48 0 M24 24 L35 35 M0 34 L0 48 M-24 24 L-35 35 M-34 0 L-48 0 M-24 -24 L-35 -35" stroke="#1e1b2e" stroke-width="7" stroke-linecap="round"/>
+          <path d="M0 -34 L0 -48 M24 -24 L35 -35 M34 0 L48 0 M24 24 L35 35 M0 34 L0 48 M-24 24 L-35 35 M-34 0 L-48 0 M-24 -24 L-35 -35" stroke="#f43f5e" stroke-width="3.5" stroke-linecap="round"/>
+          <circle cx="0" cy="-49" r="5" fill="#fda4af" stroke="#1e1b2e" stroke-width="2"/>
+          <circle cx="36" cy="-36" r="5" fill="#fda4af" stroke="#1e1b2e" stroke-width="2"/>
+          <circle cx="49" cy="0" r="5" fill="#fda4af" stroke="#1e1b2e" stroke-width="2"/>
+          <circle cx="36" cy="36" r="5" fill="#fda4af" stroke="#1e1b2e" stroke-width="2"/>
+          <circle cx="0" cy="49" r="5" fill="#fda4af" stroke="#1e1b2e" stroke-width="2"/>
+          <circle cx="-36" cy="36" r="5" fill="#fda4af" stroke="#1e1b2e" stroke-width="2"/>
+          <circle cx="-49" cy="0" r="5" fill="#fda4af" stroke="#1e1b2e" stroke-width="2"/>
+          <circle cx="-36" cy="-36" r="5" fill="#fda4af" stroke="#1e1b2e" stroke-width="2"/>
+          <circle r="35" fill="#f43f5e" stroke="#1e1b2e" stroke-width="3.5"/>
+          <ellipse cx="-11" cy="-6" rx="7" ry="9" fill="#ffffff" stroke="#1e1b2e" stroke-width="2.2"/>
+          <ellipse cx="11" cy="-6" rx="7" ry="9" fill="#ffffff" stroke="#1e1b2e" stroke-width="2.2"/>
+          <circle cx="-13" cy="-5" r="3.2" fill="#1e1b2e"/>
+          <circle cx="9" cy="-5" r="3.2" fill="#1e1b2e"/>
+          <path d="M-20 -17 L-4 -11 M20 -17 L4 -11" stroke="#1e1b2e" stroke-width="3.5" stroke-linecap="round"/>
+          <path d="M-16 12 L-8 17 L0 13 L8 17 L16 12 L10 24 L-10 24 Z" fill="#1e1b2e"/>
         </g>
-        <!-- Laser Streams -->
-        <line x1="126" y1="68" x2="206" y2="82" stroke="#2dd4bf" stroke-width="3" stroke-linecap="round" opacity="0.9"/>
-        <line x1="120" y1="126" x2="208" y2="104" stroke="#f59e0b" stroke-width="3" stroke-linecap="round" opacity="0.9"/>
-        <!-- Ship 1 (Cyan) -->
-        <g transform="translate(96, 64) rotate(10)">
-          <polygon points="24,0 -14,-13 -8,0 -14,13" fill="#14b8a6" stroke="#99f6e4" stroke-width="1.8"/>
-          <polygon points="-14,-5 -24,0 -14,5" fill="#5eead4" opacity="0.8"/>
+        <!-- Happy Ray Bolts -->
+        <circle cx="176" cy="78" r="5" fill="#5eead4" stroke="#1e1b2e" stroke-width="2"/>
+        <circle cx="198" cy="83" r="5" fill="#fde047" stroke="#1e1b2e" stroke-width="2"/>
+        <circle cx="164" cy="120" r="5" fill="#fde68a" stroke="#1e1b2e" stroke-width="2"/>
+        <!-- Cartoon UFO 1 (Cyan) with Thruster Flame & Smiling Alien -->
+        <g transform="translate(116, 72) rotate(8)">
+          <path d="M-24 2 Q-42 -8 -52 2 Q-42 12 -24 2 Z" fill="#f97316" stroke="#1e1b2e" stroke-width="2.5"/>
+          <path d="M-24 2 Q-36 -4 -42 2 Q-36 8 -24 2 Z" fill="#fde047"/>
+          <ellipse cx="0" cy="4" rx="28" ry="12" fill="#14b8a6" stroke="#1e1b2e" stroke-width="3"/>
+          <circle cx="-14" cy="6" r="2.8" fill="#fef08a" stroke="#1e1b2e" stroke-width="1.3"/>
+          <circle cx="0" cy="8" r="2.8" fill="#ffffff" stroke="#1e1b2e" stroke-width="1.3"/>
+          <circle cx="14" cy="6" r="2.8" fill="#fef08a" stroke="#1e1b2e" stroke-width="1.3"/>
+          <path d="M-16 1 A16 16 0 0 1 16 1 Z" fill="#bae6fd" stroke="#1e1b2e" stroke-width="3"/>
+          <circle cx="0" cy="-4" r="7.5" fill="#86efac" stroke="#1e1b2e" stroke-width="1.8"/>
+          <circle cx="-3" cy="-5.5" r="2.4" fill="#fff" stroke="#1e1b2e" stroke-width="1.2"/>
+          <circle cx="3" cy="-5.5" r="2.4" fill="#fff" stroke="#1e1b2e" stroke-width="1.2"/>
+          <circle cx="-2.4" cy="-5.5" r="1.1" fill="#1e1b2e"/>
+          <circle cx="3.6" cy="-5.5" r="1.1" fill="#1e1b2e"/>
+          <path d="M-2.5 -2 Q0 0.5 2.5 -2" stroke="#1e1b2e" stroke-width="1.4" stroke-linecap="round"/>
         </g>
-        <!-- Ship 2 (Amber) -->
-        <g transform="translate(88, 130) rotate(-14)">
-          <polygon points="24,0 -14,-13 -8,0 -14,13" fill="#f59e0b" stroke="#fde68a" stroke-width="1.8"/>
-          <polygon points="-14,-5 -24,0 -14,5" fill="#fcd34d" opacity="0.8"/>
+        <!-- Cartoon UFO 2 (Amber) -->
+        <g transform="translate(94, 134) rotate(-10)">
+          <path d="M-24 2 Q-40 -7 -48 2 Q-40 11 -24 2 Z" fill="#f97316" stroke="#1e1b2e" stroke-width="2.5"/>
+          <path d="M-24 2 Q-35 -3 -40 2 Q-35 7 -24 2 Z" fill="#fde047"/>
+          <ellipse cx="0" cy="4" rx="26" ry="11" fill="#f59e0b" stroke="#1e1b2e" stroke-width="3"/>
+          <circle cx="-12" cy="6" r="2.6" fill="#fef08a" stroke="#1e1b2e" stroke-width="1.3"/>
+          <circle cx="0" cy="7.5" r="2.6" fill="#ffffff" stroke="#1e1b2e" stroke-width="1.3"/>
+          <circle cx="12" cy="6" r="2.6" fill="#fef08a" stroke="#1e1b2e" stroke-width="1.3"/>
+          <path d="M-14.5 1 A14.5 14.5 0 0 1 14.5 1 Z" fill="#bae6fd" stroke="#1e1b2e" stroke-width="3"/>
+          <circle cx="0" cy="-3.5" r="6.8" fill="#86efac" stroke="#1e1b2e" stroke-width="1.8"/>
+          <circle cx="-2.8" cy="-5" r="2.2" fill="#fff" stroke="#1e1b2e" stroke-width="1.2"/>
+          <circle cx="2.8" cy="-5" r="2.2" fill="#fff" stroke="#1e1b2e" stroke-width="1.2"/>
+          <circle cx="-2.2" cy="-5" r="1" fill="#1e1b2e"/>
+          <circle cx="3.4" cy="-5" r="1" fill="#1e1b2e"/>
         </g>
-        <!-- Small Asteroid -->
-        <polygon points="164,146 178,136 194,144 190,162 172,166 158,158" fill="#1e293b" stroke="#475569" stroke-width="2"/>
       </svg>
     `,
   },
   {
     id: 'wordle-arena',
     title: 'Wordle Arena',
-    tagline: '5-Word Live Multiplayer Marathon',
+    tagline: '5-Word Live Race Marathon',
     description:
-      'Race across 5 secret words in English or Swedish with 25 total guesses. Create a room to play live together or practice solo against bots.',
+      'Race friends across 5 secret words in English or Swedish with 25 total guesses. Share your room link and watch colorful tiles flip live!',
     path: 'games/wordle-arena/index.html',
     launchParams: 'autocreate=1',
     players: '1–4P Room · Online',
     input: 'Keyboard / Touch',
-    accent: '#22c55e',
-    accentSoft: 'rgba(34, 197, 94, 0.14)',
+    accent: '#15803d',
+    ctaBg: '#22c55e',
     badge: 'CLASSIC',
     statKey: null,
     artSvg: `
-      <svg viewBox="0 0 360 190" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect width="360" height="190" fill="#0d1522"/>
-        <g transform="translate(68, 34)">
+      <svg viewBox="0 0 360 195" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <!-- Sunny Retro Storybook Sky -->
+        <rect width="360" height="195" fill="#fef3c7"/>
+        <circle cx="52" cy="36" r="24" fill="#fde68a"/>
+        <circle cx="314" cy="158" r="34" fill="#fde68a"/>
+        <!-- Sparkling Disney Stars -->
+        <path d="M38 142 L41 151 L50 154 L41 157 L38 166 L35 157 L26 154 L35 151 Z" fill="#f59e0b"/>
+        <path d="M322 24 L325 33 L334 36 L325 39 L322 48 L319 39 L310 36 L319 33 Z" fill="#f43f5e"/>
+        <path d="M298 62 L300 68 L306 70 L300 72 L298 78 L296 72 L290 70 L296 68 Z" fill="#14b8a6"/>
+        <!-- Chunky Inked Cartoon Wordle Tiles -->
+        <g transform="translate(62, 26)">
           <!-- Row 1 -->
-          <rect x="0" y="0" width="38" height="38" rx="7" fill="#334155"/>
-          <rect x="46" y="0" width="38" height="38" rx="7" fill="#eab308"/>
-          <rect x="92" y="0" width="38" height="38" rx="7" fill="#334155"/>
-          <rect x="138" y="0" width="38" height="38" rx="7" fill="#22c55e"/>
-          <rect x="184" y="0" width="38" height="38" rx="7" fill="#334155"/>
+          <rect x="0" y="3" width="40" height="40" rx="10" fill="#1e1b2e"/>
+          <rect x="0" y="0" width="40" height="40" rx="10" fill="#cbd5e1" stroke="#1e1b2e" stroke-width="2.8"/>
+          <rect x="48" y="3" width="40" height="40" rx="10" fill="#1e1b2e"/>
+          <rect x="48" y="0" width="40" height="40" rx="10" fill="#fbbf24" stroke="#1e1b2e" stroke-width="2.8"/>
+          <rect x="96" y="3" width="40" height="40" rx="10" fill="#1e1b2e"/>
+          <rect x="96" y="0" width="40" height="40" rx="10" fill="#cbd5e1" stroke="#1e1b2e" stroke-width="2.8"/>
+          <rect x="144" y="3" width="40" height="40" rx="10" fill="#1e1b2e"/>
+          <rect x="144" y="0" width="40" height="40" rx="10" fill="#22c55e" stroke="#1e1b2e" stroke-width="2.8"/>
+          <rect x="192" y="3" width="40" height="40" rx="10" fill="#1e1b2e"/>
+          <rect x="192" y="0" width="40" height="40" rx="10" fill="#cbd5e1" stroke="#1e1b2e" stroke-width="2.8"/>
           <!-- Row 2 -->
-          <rect x="0" y="46" width="38" height="38" rx="7" fill="#22c55e"/>
-          <rect x="46" y="46" width="38" height="38" rx="7" fill="#22c55e"/>
-          <rect x="92" y="46" width="38" height="38" rx="7" fill="#334155"/>
-          <rect x="138" y="46" width="38" height="38" rx="7" fill="#22c55e"/>
-          <rect x="184" y="46" width="38" height="38" rx="7" fill="#eab308"/>
-          <!-- Row 3 (Solved) -->
-          <rect x="0" y="92" width="38" height="38" rx="7" fill="#22c55e"/>
-          <rect x="46" y="92" width="38" height="38" rx="7" fill="#22c55e"/>
-          <rect x="92" y="92" width="38" height="38" rx="7" fill="#22c55e"/>
-          <rect x="138" y="92" width="38" height="38" rx="7" fill="#22c55e"/>
-          <rect x="184" y="92" width="38" height="38" rx="7" fill="#22c55e"/>
-          <text x="19" y="117" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-weight="800" font-size="18">W</text>
-          <text x="65" y="117" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-weight="800" font-size="18">O</text>
-          <text x="111" y="117" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-weight="800" font-size="18">R</text>
-          <text x="157" y="117" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-weight="800" font-size="18">D</text>
-          <text x="203" y="117" text-anchor="middle" fill="#ffffff" font-family="system-ui, sans-serif" font-weight="800" font-size="18">S</text>
+          <rect x="0" y="51" width="40" height="40" rx="10" fill="#1e1b2e"/>
+          <rect x="0" y="48" width="40" height="40" rx="10" fill="#22c55e" stroke="#1e1b2e" stroke-width="2.8"/>
+          <rect x="48" y="51" width="40" height="40" rx="10" fill="#1e1b2e"/>
+          <rect x="48" y="48" width="40" height="40" rx="10" fill="#22c55e" stroke="#1e1b2e" stroke-width="2.8"/>
+          <rect x="96" y="51" width="40" height="40" rx="10" fill="#1e1b2e"/>
+          <rect x="96" y="48" width="40" height="40" rx="10" fill="#fbbf24" stroke="#1e1b2e" stroke-width="2.8"/>
+          <rect x="144" y="51" width="40" height="40" rx="10" fill="#1e1b2e"/>
+          <rect x="144" y="48" width="40" height="40" rx="10" fill="#22c55e" stroke="#1e1b2e" stroke-width="2.8"/>
+          <rect x="192" y="51" width="40" height="40" rx="10" fill="#1e1b2e"/>
+          <rect x="192" y="48" width="40" height="40" rx="10" fill="#fbbf24" stroke="#1e1b2e" stroke-width="2.8"/>
+          <!-- Row 3 (Joyful Solved Row!) -->
+          <g transform="translate(0, 96)">
+            <rect x="0" y="4" width="40" height="40" rx="10" fill="#1e1b2e"/>
+            <rect x="0" y="0" width="40" height="40" rx="10" fill="#22c55e" stroke="#1e1b2e" stroke-width="3"/>
+            <text x="20" y="27" text-anchor="middle" fill="#ffffff" font-family="Fredoka, system-ui, sans-serif" font-weight="700" font-size="21">W</text>
+            <rect x="48" y="4" width="40" height="40" rx="10" fill="#1e1b2e"/>
+            <rect x="48" y="0" width="40" height="40" rx="10" fill="#22c55e" stroke="#1e1b2e" stroke-width="3"/>
+            <text x="68" y="27" text-anchor="middle" fill="#ffffff" font-family="Fredoka, system-ui, sans-serif" font-weight="700" font-size="21">O</text>
+            <rect x="96" y="4" width="40" height="40" rx="10" fill="#1e1b2e"/>
+            <rect x="96" y="0" width="40" height="40" rx="10" fill="#22c55e" stroke="#1e1b2e" stroke-width="3"/>
+            <text x="116" y="27" text-anchor="middle" fill="#ffffff" font-family="Fredoka, system-ui, sans-serif" font-weight="700" font-size="21">R</text>
+            <rect x="144" y="4" width="40" height="40" rx="10" fill="#1e1b2e"/>
+            <rect x="144" y="0" width="40" height="40" rx="10" fill="#22c55e" stroke="#1e1b2e" stroke-width="3"/>
+            <text x="164" y="27" text-anchor="middle" fill="#ffffff" font-family="Fredoka, system-ui, sans-serif" font-weight="700" font-size="21">D</text>
+            <rect x="192" y="4" width="40" height="40" rx="10" fill="#1e1b2e"/>
+            <rect x="192" y="0" width="40" height="40" rx="10" fill="#22c55e" stroke="#1e1b2e" stroke-width="3"/>
+            <text x="212" y="27" text-anchor="middle" fill="#ffffff" font-family="Fredoka, system-ui, sans-serif" font-weight="700" font-size="21">S</text>
+          </g>
         </g>
       </svg>
     `,
