@@ -1,0 +1,393 @@
+:root {
+  --bg-base: #0b1019;
+  --bg-surface: #131b29;
+  --bg-elevated: #1a2436;
+  --border-subtle: rgba(148, 163, 184, 0.14);
+  --border-strong: rgba(148, 163, 184, 0.28);
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-dim: #64748b;
+  --accent-teal: #14b8a6;
+  --accent-amber: #f59e0b;
+  --accent-green: #22c55e;
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  --shadow-card: 0 18px 40px rgba(0, 0, 0, 0.42);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  min-height: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background-image: radial-gradient(circle at 18% 0%, rgba(20, 184, 166, 0.08), transparent 42%),
+    radial-gradient(circle at 86% 10%, rgba(245, 158, 11, 0.06), transparent 38%);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+.hub-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 20px clamp(20px, 4vw, 56px);
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(11, 16, 25, 0.85);
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.hub-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hub-logo {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #14b8a6, #0d9488);
+  display: grid;
+  place-items: center;
+  color: #042f2e;
+  font-weight: 900;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 1.1rem;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.hub-brand-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.hub-brand-name {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+}
+
+.hub-brand-sub {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.hub-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.status-chip.connected {
+  color: #e2e8f0;
+  border-color: rgba(20, 184, 166, 0.35);
+  background: rgba(20, 184, 166, 0.1);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+
+.status-chip.connected .dot {
+  background: var(--accent-teal);
+}
+
+/* Main Content */
+.hub-main {
+  flex: 1;
+  width: 100%;
+  max-width: 1220px;
+  margin: 0 auto;
+  padding: clamp(28px, 4vw, 52px) clamp(20px, 4vw, 48px) 64px;
+}
+
+.hub-intro {
+  margin-bottom: 32px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.hub-intro h1 {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: clamp(1.9rem, 3.6vw, 2.75rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.12;
+  margin-bottom: 8px;
+}
+
+.hub-intro p {
+  color: var(--text-secondary);
+  font-size: clamp(0.95rem, 1.3vw, 1.08rem);
+  max-width: 58ch;
+}
+
+.nav-hint {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+}
+
+.nav-hint kbd {
+  font-family: inherit;
+  font-weight: 700;
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin: 0 2px;
+}
+
+/* Game Grid */
+.games-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 24px;
+}
+
+.game-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  text-decoration: none;
+  color: inherit;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+  outline: none;
+}
+
+.game-card:hover,
+.game-card:focus-visible,
+.game-card[data-focused="true"] {
+  transform: translateY(-4px) scale(1.012);
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.55), 0 0 0 3px rgba(248, 250, 252, 0.16);
+}
+
+.game-art {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 360 / 190;
+  background: #0b1320;
+  border-bottom: 1px solid var(--border-subtle);
+  overflow: hidden;
+}
+
+.game-art svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.game-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  background: rgba(11, 16, 25, 0.84);
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.game-body {
+  padding: 20px 22px 22px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 10px;
+}
+
+.game-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.game-title {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.game-tagline {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent-teal);
+}
+
+.game-desc {
+  font-size: 0.92rem;
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+.game-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.meta-tag {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+.game-stat {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--accent-amber);
+  margin-top: 2px;
+}
+
+.game-cta {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 16px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.06);
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--text-primary);
+  transition: background 0.15s ease;
+}
+
+.game-card:hover .game-cta,
+.game-card:focus-visible .game-cta,
+.game-card[data-focused="true"] .game-cta {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* Coming Soon Slot */
+.game-card.coming-soon {
+  border-style: dashed;
+  background: rgba(19, 27, 41, 0.45);
+  box-shadow: none;
+  cursor: default;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 36px 24px;
+  min-height: 320px;
+}
+
+.game-card.coming-soon:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: var(--border-subtle);
+  background: rgba(19, 27, 41, 0.45);
+}
+
+.coming-soon-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid var(--border-subtle);
+  display: grid;
+  place-items: center;
+  font-size: 1.5rem;
+  color: var(--text-dim);
+  margin-bottom: 14px;
+}
+
+.coming-soon h3 {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 1.15rem;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.coming-soon p {
+  font-size: 0.88rem;
+  color: var(--text-dim);
+  max-width: 28ch;
+}
+
+/* Footer */
+.hub-footer {
+  padding: 18px clamp(20px, 4vw, 56px);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+@media (max-width: 640px) {
+  .games-grid {
+    grid-template-columns: 1fr;
+  }
+  .nav-hint {
+    display: none;
+  }
+}

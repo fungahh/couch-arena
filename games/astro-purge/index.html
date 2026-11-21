@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Astro Purge — Co-op Space Virus Asteroids</title>
+  <meta name="description" content="Pilot starships together, level up your fleet, unlock new weapons, and defeat space virus bosses every 10 levels." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <canvas id="game-canvas" aria-label="Astro Purge Game Arena"></canvas>
+
+  <!-- LIVE HUD -->
+  <div id="hud" class="hidden">
+    <div>
+      <div class="hud-top">
+        <div class="hud-group">
+          <a href="../../index.html" class="hud-pill hud-btn" id="btn-back-hub">← Hub</a>
+          <button type="button" class="hud-pill hud-btn" id="btn-pause" title="Pause (P / Esc / Start)">Pause</button>
+          <button type="button" class="hud-pill hud-btn" id="btn-autofire" title="Toggle Auto-Fire (T)">Auto-Fire: ON</button>
+          <button type="button" class="hud-pill hud-btn" id="btn-mute" title="Toggle Sound (M)">SFX: ON</button>
+        </div>
+
+        <div class="hud-center">
+          <div class="level-row">
+            <span class="level-badge" id="hud-level">LEVEL 1</span>
+            <span class="score-text" id="hud-score">0 PTS</span>
+          </div>
+          <div class="xp-track">
+            <div class="xp-fill" id="hud-xp-fill"></div>
+          </div>
+          <div class="next-boss-hint" id="hud-boss-hint">Boss in 9 levels (Lv 10)</div>
+        </div>
+
+        <div class="hud-group right">
+          <div class="hud-pill" id="hud-controllers">Controllers: 0</div>
+          <div class="hud-pill" id="hud-kills">Purged: 0</div>
+        </div>
+      </div>
+
+      <!-- Boss Health Bar -->
+      <div id="boss-bar-wrap" class="hidden">
+        <div class="boss-header">
+          <span id="boss-name">ALPHA CORONA-LEVIATHAN</span>
+          <span id="boss-hp-text">100%</span>
+        </div>
+        <div class="boss-hp-track">
+          <div class="boss-hp-fill" id="boss-hp-fill"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="hud-bottom">
+      <div class="player-cards" id="player-hud-cards"></div>
+      <div class="weapons-tray" id="weapons-tray"></div>
+    </div>
+  </div>
+
+  <!-- BOSS WARNING BANNER -->
+  <div id="boss-warning" class="hidden" role="alert">
+    <h2 id="boss-warning-title">⚠ BIO-HAZARD BOSS DETECTED</h2>
+    <p id="boss-warning-sub">LEVEL 10 — ALPHA CORONA-LEVIATHAN INCOMING</p>
+  </div>
+
+  <!-- OVERLAY 1: TITLE SCREEN -->
+  <div id="title-overlay" class="overlay">
+    <div class="modal-panel">
+      <div class="eyebrow">Couch Arcade · Space Co-op</div>
+      <h1 class="modal-title">ASTRO PURGE</h1>
+      <p class="modal-sub">
+        Defend deep space from mutating viruses and infected asteroids. Level up your ships together, unlock new weapons, and survive a giant Boss every 10 levels.
+      </p>
+
+      <div class="mode-grid">
+        <button type="button" class="mode-btn selected" id="mode-2p" data-mode="2">
+          <strong>2 Players · Couch Co-op</strong>
+          <span>Shared XP &amp; upgrades, revive pods, and Plasma Tether link.</span>
+        </button>
+        <button type="button" class="mode-btn" id="mode-1p" data-mode="1">
+          <strong>1 Player · Solo Pilot</strong>
+          <span>Solo run with Wingman Drone upgrades. P2 can drop in anytime!</span>
+        </button>
+      </div>
+
+      <div class="controls-box">
+        <div class="ctrl-col p1">
+          <h4>Player 1 · Alpha Ship (Cyan)</h4>
+          <p>
+            Move: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or Gamepad 1 Stick<br />
+            Fire: Auto / <kbd>Space</kbd> / <kbd>RT</kbd><br />
+            Dash: <kbd>L-Shift</kbd> / <kbd>E</kbd> / <kbd>B</kbd>
+          </p>
+        </div>
+        <div class="ctrl-col p2">
+          <h4>Player 2 · Beta Ship (Amber)</h4>
+          <p>
+            Move: <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> or Gamepad 2 Stick<br />
+            Fire: Auto / <kbd>Enter</kbd> / <kbd>RT</kbd><br />
+            Dash: <kbd>R-Shift</kbd> / <kbd>/</kbd> / <kbd>B</kbd>
+          </p>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button type="button" class="btn btn-primary" id="btn-launch">Launch Mission</button>
+        <a href="../../index.html" class="btn btn-secondary">← Back to Hub</a>
+      </div>
+      <p class="draft-hint" id="title-pad-hint" style="margin-top: 14px;">
+        Tip: Connect 1 or 2 Bluetooth controllers anytime — press A / Enter to launch.
+      </p>
+    </div>
+  </div>
+
+  <!-- OVERLAY 2: SHARED LEVEL-UP UPGRADE DRAFT -->
+  <div id="upgrade-overlay" class="overlay hidden">
+    <div class="modal-panel wide">
+      <div class="eyebrow" id="draft-eyebrow">Fleet Level Up!</div>
+      <h2 class="modal-title" id="draft-title">Choose a Shared Ship Upgrade</h2>
+      <p class="modal-sub" id="draft-sub">Upgrades empower both ships together.</p>
+
+      <div class="upgrade-grid" id="upgrade-grid"></div>
+
+      <p class="draft-hint">
+        Select with Click, <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd>, <kbd>←</kbd><kbd>→</kbd> + <kbd>Enter</kbd>/<kbd>Space</kbd>, or Controller D-Pad + <kbd>A</kbd>
+      </p>
+    </div>
+  </div>
+
+  <!-- OVERLAY 3: PAUSE -->
+  <div id="pause-overlay" class="overlay hidden">
+    <div class="modal-panel">
+      <div class="eyebrow">Mission Paused</div>
+      <h2 class="modal-title">Systems on Standby</h2>
+      <p class="modal-sub">Catch your breath or pair another controller.</p>
+      <div class="btn-row">
+        <button type="button" class="btn btn-primary" id="btn-resume">Resume</button>
+        <button type="button" class="btn btn-secondary" id="btn-restart-pause">Restart Run</button>
+        <a href="../../index.html" class="btn btn-secondary">Exit to Hub</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- OVERLAY 4: GAME OVER -->
+  <div id="gameover-overlay" class="overlay hidden">
+    <div class="modal-panel">
+      <div class="eyebrow" style="color: #fb7185;">Fleet Destroyed</div>
+      <h2 class="modal-title">Mission Over</h2>
+      <p class="modal-sub" id="gameover-sub">The space virus swarm overwhelmed your fleet.</p>
+
+      <div class="summary-grid">
+        <div class="summary-box">
+          <span class="val" id="sum-level">1</span>
+          <span class="lbl">Level Reached</span>
+        </div>
+        <div class="summary-box">
+          <span class="val" id="sum-score">0</span>
+          <span class="lbl">Final Score</span>
+        </div>
+        <div class="summary-box">
+          <span class="val" id="sum-bosses">0</span>
+          <span class="lbl">Bosses Defeated</span>
+        </div>
+      </div>
+
+      <div class="btn-row">
+        <button type="button" class="btn btn-primary" id="btn-play-again">Play Again</button>
+        <a href="../../index.html" class="btn btn-secondary">Back to Hub</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
