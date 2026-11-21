@@ -63,6 +63,14 @@
       title: 'UFO Squadron',
       desc: 'Play Astro Purge in a room with 2 or more pilots.',
     },
+    {
+      id: 'ap_victory_100',
+      game: 'astro-purge',
+      gameTitle: 'Astro Purge',
+      icon: '🏆',
+      title: 'Galactic Purifier!',
+      desc: 'Cleanse all 10 infected planets and beat Wave 100 in Astro Purge!',
+    },
 
     // Wordle Arena
     {

@@ -45,14 +45,15 @@
 
         <div class="hud-center">
           <div class="level-row">
-            <span class="wave-badge" id="hud-wave">WAVE 1</span>
+            <span class="wave-badge" id="hud-wave">WAVE 1 / 100</span>
+            <span class="planet-badge" id="hud-planet">🪐 VERDANTIA</span>
             <span class="level-badge" id="hud-level">LV 1</span>
             <span class="score-text" id="hud-score">0 PTS</span>
           </div>
           <div class="xp-track">
             <div class="xp-fill" id="hud-xp-fill"></div>
           </div>
-          <div class="next-boss-hint" id="hud-boss-hint">Wave 1 · 12 left · Boss at Wave 10</div>
+          <div class="next-boss-hint" id="hud-boss-hint">Planet 1 · 10 left · Boss @ Wave 10</div>
         </div>
 
         <div class="hud-group right">
@@ -260,11 +261,11 @@
     </div>
   </div>
 
-  <!-- OVERLAY 4: GAME OVER -->
+  <!-- OVERLAY 4: GAME OVER / VICTORY -->
   <div id="gameover-overlay" class="overlay hidden">
-    <div class="modal-panel">
-      <div class="eyebrow" style="color: #fb7185;">Fleet Destroyed</div>
-      <h2 class="modal-title" style="font-family: 'Fredoka', 'Space Grotesk', sans-serif;">Mission Over</h2>
+    <div class="modal-panel" id="gameover-panel">
+      <div class="eyebrow" id="gameover-eyebrow" style="color: #fb7185;">Fleet Destroyed</div>
+      <h2 class="modal-title" id="gameover-title" style="font-family: 'Fredoka', 'Space Grotesk', sans-serif;">Mission Over</h2>
       <p class="modal-sub" id="gameover-sub">The space virus swarm overwhelmed your fleet.</p>
 
       <div class="summary-grid">

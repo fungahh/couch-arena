@@ -252,7 +252,7 @@ window.GAME_HUB_REGISTRY = [
     title: 'Astro Purge',
     tagline: 'Cartoon UFO Co-op Adventure',
     description:
-      'Pilot cartoon UFOs together against grumpy space viruses! Earn personal visual saucer upgrades, climb the live damage meter, and battle a giant boss every 10 levels.',
+      'Cleanse 10 virus-infected planets across 100 waves! Earn personal visual saucer upgrades, climb the live damage meter, and battle a planet-themed Raid Boss every 10 waves.',
     path: 'games/astro-purge/index.html',
     launchParams: 'host=1',
     players: '1–5P Room · Co-op',
