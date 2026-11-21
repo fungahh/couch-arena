@@ -1687,7 +1687,7 @@ body.clean-hud #damage-meter:active {
 }
 
 /* Portrait phone controller stacks Steering Pad on top and DASH below cleanly! */
-@media (max-width: 640px) and (orientation: portrait) {
+@media (orientation: portrait) {
   .tv-qr-panel {
     flex-direction: column;
     text-align: center;
@@ -1704,5 +1704,122 @@ body.clean-hud #damage-meter:active {
     height: 124px;
   }
 }
+
+/* Horizontal / Landscape Phone Controller: Joystick on RIGHT-HAND side closer to edge, DASH on LEFT! */
+@media (orientation: landscape) {
+  .ctrl-pad-wrap {
+    grid-template-columns: 1fr 1.65fr;
+    gap: 10px;
+  }
+
+  .ctrl-action-pad {
+    order: 1;
+    align-items: flex-start;
+    padding-left: max(16px, 4vw);
+  }
+
+  .ctrl-steer-pad {
+    order: 2;
+    justify-content: flex-end;
+    padding-right: max(18px, 4.5vw);
+  }
+
+  .ctrl-steer-label {
+    left: auto;
+    right: max(18px, 4.5vw);
+    transform: none;
+  }
+}
+
+/* Ultra-clean compact spacing for short landscape phones (iPhone / Android horizontal!) */
+@media (orientation: landscape) and (max-height: 540px) {
+  .controller-ui {
+    padding: max(6px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  }
+
+  .ctrl-topbar {
+    padding: 4px 10px;
+    margin-bottom: 6px;
+    gap: 8px;
+    flex-wrap: nowrap;
+  }
+
+  .ctrl-pilot-pill {
+    font-size: 0.82rem;
+    white-space: nowrap;
+  }
+
+  .ctrl-chip-btn {
+    padding: 4px 9px;
+    font-size: 0.72rem;
+  }
+
+  .ctrl-stick-base {
+    width: 138px;
+    height: 138px;
+  }
+
+  .ctrl-stick-knob {
+    width: 60px;
+    height: 60px;
+    font-size: 1.5rem;
+  }
+
+  .ctrl-dash-btn {
+    width: min(124px, 34vh);
+    height: min(124px, 34vh);
+    min-width: 96px;
+    min-height: 96px;
+  }
+
+  .ctrl-dash-title {
+    font-size: 1.35rem;
+  }
+
+  .ctrl-autofire-note {
+    font-size: 0.68rem;
+  }
+
+  .ctrl-weapons-mini {
+    max-height: 36px;
+  }
+
+  /* Guarantee all 3 skill upgrade cards fit side-by-side & tappable in horizontal phone mode! */
+  #upgrade-overlay .modal-panel {
+    margin: 4px auto;
+    padding: 10px 14px;
+  }
+
+  #upgrade-overlay .modal-title {
+    font-size: 1.2rem;
+    margin-bottom: 4px;
+  }
+
+  #upgrade-overlay .modal-sub {
+    font-size: 0.76rem;
+    margin-bottom: 8px;
+  }
+
+  #upgrade-overlay .upgrade-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  #upgrade-overlay .upgrade-card {
+    padding: 8px 10px;
+    gap: 4px;
+  }
+
+  #upgrade-overlay .upg-name {
+    font-size: 0.88rem;
+  }
+
+  #upgrade-overlay .upg-desc {
+    font-size: 0.72rem;
+    line-height: 1.28;
+  }
+}
+
 
 

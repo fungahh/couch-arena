@@ -844,6 +844,10 @@
     pendingBossWave: null,
     pendingDrafts: [],
     // Personal draft tracking
+    draftSeq: 0,
+    activeDraftMeta: null,
+    activeDraftId: 0,
+    myDraftPickIdx: -1,
     activeDraftMap: {}, // playerId -> { choices: [Upgrade], picked: bool, isBoss: bool }
     localDraftQueue: [], // local playerIds needing to pick sequentially on host screen
     activeLocalDraftId: null,
@@ -1337,6 +1341,14 @@
       }
       SFX.levelUp();
     } else if (msg.type === 'SNAP') {
+      if (state.mode === 'upgrade' && state.myDraftPicked && Date.now() - (state.myDraftPickedAt || 0) > 1200) {
+        // Self-heal if DRAFT_DONE packet was ever missed after player already picked
+        upgradeOverlay.classList.add('hidden');
+        draftWaitingEl.classList.add('hidden');
+        state.myDraftPicked = false;
+        state.mode = 'playing';
+        syncPhoneControllerVisibility();
+      }
       applySnapshot(msg.s);
       updatePhoneControllerHUD();
     } else if (msg.type === 'WAVE_BANNER') {
@@ -1350,10 +1362,24 @@
       }
       SFX.bossWarn();
     } else if (msg.type === 'PERSONAL_DRAFT') {
+      const incomingId = msg.draftId || 0;
+      if (state.mode === 'upgrade' && incomingId && state.activeDraftId === incomingId) {
+        if (state.myDraftPicked && state.myDraftPickIdx >= 0) {
+          // Resend pick in case Host missed our first PERSONAL_PICK packet
+          room.sendSignal({ type: 'PERSONAL_PICK', idx: state.myDraftPickIdx, draftId: incomingId });
+        } else {
+          // Ensure controller stays hidden and upgrade modal stays visible without flickering
+          syncPhoneControllerVisibility();
+          upgradeOverlay.classList.remove('hidden');
+        }
+        return;
+      }
       clearTouchSteer();
       resetPhonePad();
       state.mode = 'upgrade';
+      state.activeDraftId = incomingId;
       state.myDraftPicked = false;
+      state.myDraftPickIdx = -1;
       state.draftIsBoss = msg.isBoss;
       state.draftFocus = 0;
       state.draftChoices = msg.choiceIds
@@ -1366,6 +1392,7 @@
       draftSub.textContent = msg.sub;
       draftWaitingEl.classList.add('hidden');
       renderDraftCards(msg.myUpgrades || defaultUpgrades());
+      syncPhoneControllerVisibility();
       upgradeOverlay.scrollTop = 0;
       upgradeOverlay.classList.remove('hidden');
       if (navigator.vibrate) { try { navigator.vibrate([30, 40, 30]); } catch (e) {} }
@@ -1379,6 +1406,7 @@
       upgradeOverlay.classList.add('hidden');
       draftWaitingEl.classList.add('hidden');
       state.myDraftPicked = false;
+      state.myDraftPickIdx = -1;
       state.mode = 'playing';
       syncPhoneControllerVisibility();
       updatePhoneControllerHUD();
@@ -2099,6 +2127,26 @@
     return pool.slice().sort(() => Math.random() - 0.5).slice(0, 3);
   }
 
+  function resendPendingDrafts() {
+    if (!room.isHost || state.mode !== 'upgrade' || !state.activeDraftMeta) return;
+    const { draftId, isBoss, eyebrow, title, sub } = state.activeDraftMeta;
+    for (const p of state.players) {
+      if (p.isLocal) continue;
+      const entry = state.activeDraftMap[p.id];
+      if (!entry || entry.picked || !entry.choices || entry.choices.length === 0) continue;
+      room.sendToPlayer(p.id, {
+        type: 'PERSONAL_DRAFT',
+        draftId,
+        isBoss,
+        eyebrow,
+        title,
+        sub,
+        choiceIds: entry.choices.map((c) => c.id),
+        myUpgrades: p.upgrades,
+      });
+    }
+  }
+
   function openNextPersonalDraft() {
     if (!room.isHost || state.pendingDrafts.length === 0) return;
     const req = state.pendingDrafts.shift();
@@ -2107,6 +2155,8 @@
     state.draftIsBoss = req.isBossReward;
     state.activeDraftMap = {};
     state.localDraftQueue = [];
+    state.draftSeq += 1;
+    const draftId = state.draftSeq;
 
     const eyebrow = req.isBossReward
       ? `Boss Defeated · Extra Bonus (${req.bonusIndex || 1}/${req.bonusTotal || 2})!`
@@ -2117,6 +2167,8 @@
     const sub = req.isBossReward
       ? 'Boss Victory grants 2 Personal Bonus Upgrades + Full Hull Repair!'
       : 'Every pilot chooses their own personal UFO upgrade!';
+
+    state.activeDraftMeta = { draftId, isBoss: req.isBossReward, eyebrow, title, sub };
 
     for (const p of state.players) {
       const choices = rollPersonalChoices(p, req.isBossReward);
@@ -2131,6 +2183,7 @@
       } else {
         room.sendToPlayer(p.id, {
           type: 'PERSONAL_DRAFT',
+          draftId,
           isBoss: req.isBossReward,
           eyebrow,
           title,
@@ -2262,11 +2315,13 @@
       }
     } else {
       state.myDraftPicked = true;
+      state.myDraftPickIdx = idx;
+      state.myDraftPickedAt = Date.now();
       SFX.xp();
       upgradeGrid.innerHTML = '';
       draftWaitingEl.textContent = 'Your UFO upgrade is locked in! Waiting for teammates...';
       draftWaitingEl.classList.remove('hidden');
-      room.sendSignal({ type: 'PERSONAL_PICK', idx });
+      room.sendSignal({ type: 'PERSONAL_PICK', idx, draftId: state.activeDraftId });
     }
   }
 
@@ -5641,6 +5696,15 @@
   let lastTs = performance.now();
   let hudTick = 0;
   let netTick = 0;
+  let draftResendTick = 0;
+
+  window.addEventListener('orientationchange', () => {
+    resetPhonePad();
+    if (state.mode === 'upgrade' && !room.isHost) {
+      syncPhoneControllerVisibility();
+      upgradeOverlay.classList.remove('hidden');
+    }
+  });
 
   function loop(ts) {
     const dt = Math.min(0.05, (ts - lastTs) / 1000);
@@ -5653,6 +5717,16 @@
     for (const s of stars) {
       s.y += (s.speed * (state.mode === 'playing' ? 1 : 0.4) * dt) / H;
       if (s.y > 1) { s.y = 0; s.x = Math.random(); }
+    }
+
+    if (state.mode === 'upgrade' && room.isHost) {
+      draftResendTick += dt;
+      if (draftResendTick >= 1.2) {
+        draftResendTick = 0;
+        resendPendingDrafts();
+      }
+    } else {
+      draftResendTick = 0;
     }
 
     if (state.mode === 'playing') {
