@@ -2054,11 +2054,10 @@
     function renderPlayersGrid() {
       const grid = document.getElementById('players-grid');
       const allPlayers = Object.values(state.players);
+      const otherPlayers = allPlayers.filter(p => p.id !== state.myId);
 
-      // Put local player first, then rank by solvedCount desc, triesUsed asc
-      allPlayers.sort((a, b) => {
-        if (a.id === state.myId) return -1;
-        if (b.id === state.myId) return 1;
+      // Rank other players by solvedCount desc, triesUsed asc
+      otherPlayers.sort((a, b) => {
         if (b.solvedCount !== a.solvedCount) return b.solvedCount - a.solvedCount;
         return a.triesUsed - b.triesUsed;
       });
@@ -2066,10 +2065,24 @@
       document.getElementById('player-count').textContent = allPlayers.length;
       grid.innerHTML = '';
 
-      allPlayers.forEach(p => {
-        const isMe = p.id === state.myId;
+      if (otherPlayers.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'player-slot';
+        empty.style.gridColumn = '1 / -1';
+        empty.style.textAlign = 'center';
+        empty.style.padding = '28px 18px';
+        empty.style.color = 'var(--text-muted)';
+        empty.innerHTML = `
+          <div style="font-weight:700; color:var(--text-main); margin-bottom:6px;">Waiting for other players...</div>
+          <div style="font-size:0.84rem;">Click <strong>Copy Invite Link</strong> in the top bar so up to 3 friends can join your room.</div>
+        `;
+        grid.appendChild(empty);
+        return;
+      }
+
+      otherPlayers.forEach(p => {
         const card = document.createElement('div');
-        card.className = `player-slot${isMe ? ' is-me' : ''}${p.isFinished ? ' is-finished' : ''}`;
+        card.className = `player-slot${p.isFinished ? ' is-finished' : ''}`;
 
         const badgeText = p.isFinished
           ? `DONE (${p.solvedCount}/5)`
@@ -2090,7 +2103,7 @@
 
         card.innerHTML = `
           <div class="slot-top">
-            <span class="slot-name">${escapeHtml(p.name)}${isMe ? ' (You)' : ''}</span>
+            <span class="slot-name">${escapeHtml(p.name)}</span>
             <span class="slot-badge${p.isFinished ? ' done' : ''}">${badgeText}</span>
           </div>
           <div class="slot-sub">
