@@ -1,15 +1,14 @@
 /**
- * Couch Arcade — Shared Room & Multiplayer Sync Engine
- * Supports up to 4 players per game room with direct invite links.
- * Transport:
- *  - BroadcastChannel (instant multi-tab on same device)
- *  - ntfy.sh HTTPS Server-Sent Events (1 persistent stream — zero polling rate limits!)
- *  - WebRTC DataChannels (low-latency real-time sync for action games)
+ * Couch Arcade — Shared 4-Player Room & Real-Time P2P Engine
+ * Uses PeerJS (WebRTC DataChannels via 0.peerjs.com) + BroadcastChannel.
+ * - Zero daily message limits (fixes ntfy.sh 250/day IP cap on shared Wi-Fi)
+ * - Direct sub-50ms P2P sync for both turn-based and 30Hz action games
+ * - Up to 4 players per room with direct ?room=XXXXXX invite links
  */
 (function (global) {
   'use strict';
 
-  const NTFY_BASE = 'https://ntfy.sh';
+  const PEERJS_CDN = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
   const STUN_SERVERS = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
@@ -59,11 +58,24 @@
     localStorage.setItem('wa_nickname', clean);
   }
 
+  let peerJsPromise = null;
+  function ensurePeerJs() {
+    if (typeof global.Peer === 'function') return Promise.resolve();
+    if (peerJsPromise) return peerJsPromise;
+    peerJsPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = PEERJS_CDN;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error('Failed to load PeerJS'));
+      document.head.appendChild(s);
+    });
+    return peerJsPromise;
+  }
+
   class RoomSync {
     constructor(opts) {
-      this.gameId = opts.gameId;
+      this.gameId = String(opts.gameId || 'game').replace(/[^a-z0-9_-]/gi, '');
       this.maxPlayers = opts.maxPlayers || 4;
-      this.enableRtc = Boolean(opts.enableRtc);
       this.myId = getStablePlayerId();
       this.myName = opts.playerName || getSavedPlayerName();
       this.roomCode = (opts.roomCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
@@ -74,28 +86,30 @@
       this.onStatusChange = opts.onStatusChange || (() => {});
       this.onRoomFull = opts.onRoomFull || (() => {});
 
-      this.players = {}; // id -> { id, name, slot, isHost, isLocal, lastSeen, ready }
-      this.seenEvents = new Set();
-      this.lastMsgId = 'all';
+      this.players = {}; // id -> { id, name, slot, isHost, isLocal, ready }
       this.bc = null;
-      this.sse = null;
+      this.peer = null;
+      this.conns = {}; // peerId -> DataConnection (host: guest conns; guest: host conn)
+      this.hostConn = null;
+      this.peerToPlayerId = {}; // remotePeerId -> playerId
       this.reconnectTimer = null;
-      this.heartbeatTimer = null;
-      this.sseErrors = 0;
-      this.peers = {}; // peerId -> { pc, dc, open }
+      this.retryCount = 0;
       this.destroyed = false;
 
       this._onVisibility = () => {
-        if (!this.destroyed && document.visibilityState === 'visible' && this.roomCode) {
-          if (!this.sse || this.sse.readyState === EventSource.CLOSED) {
-            this.openSseStream();
+        if (!this.destroyed && document.visibilityState === 'visible') {
+          if (this.peer && this.peer.disconnected && !this.peer.destroyed) {
+            try { this.peer.reconnect(); } catch (e) {}
+          }
+          if (!this.isHost && (!this.hostConn || !this.hostConn.open)) {
+            this.connectToHostPeer();
           }
         }
       };
     }
 
-    get topic() {
-      return `couch_arcade_${this.gameId}_${this.roomCode}`;
+    get hostPeerId() {
+      return `ca-${this.gameId}-${this.roomCode}`;
     }
 
     getInviteUrl() {
@@ -120,7 +134,11 @@
       if (this.players[this.myId]) {
         this.players[this.myId].name = this.myName;
         this.emitRoster();
-        this.broadcastRosterOrHello();
+        if (this.isHost) {
+          this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId });
+        } else {
+          this.sendSignal({ type: 'NAME_UPDATE', name: this.myName });
+        }
       }
     }
 
@@ -130,7 +148,6 @@
         this.isHost = true;
       }
 
-      // Reflect room code in URL so sharing/reloading keeps the room
       try {
         const url = new URL(window.location.href);
         url.searchParams.set('room', this.roomCode);
@@ -139,11 +156,11 @@
         window.history.replaceState({}, '', url.toString());
       } catch (e) {}
 
-      // 1. Local BroadcastChannel for instant multi-tab sync
+      // Local BroadcastChannel for instant same-browser multi-tab sync
       if ('BroadcastChannel' in window) {
         this.bc = new BroadcastChannel(`ca_bc_${this.gameId}_${this.roomCode}`);
         this.bc.onmessage = (ev) => {
-          if (ev.data) this.handleSignal(ev.data, true);
+          if (ev.data) this.handlePacket(ev.data, null);
         };
       }
 
@@ -155,74 +172,140 @@
           isHost: true,
           isLocal: true,
           ready: true,
-          lastSeen: Date.now(),
         };
         this.emitRoster();
       }
 
-      // 2. Open single persistent HTTPS SSE stream (no polling spam!)
-      this.openSseStream();
+      this.onStatusChange('warn', 'Connecting...');
       document.addEventListener('visibilitychange', this._onVisibility);
 
-      // 3. Announce presence (non-blocking)
-      if (this.isHost) {
-        this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId });
-      } else {
-        this.sendSignal({ type: 'JOIN_REQ', name: this.myName });
-      }
-
-      // Lightweight presence check every 15s (keeps rate limits safe on shared Wi-Fi)
-      this.heartbeatTimer = setInterval(() => this.heartbeat(), 15000);
-    }
-
-    openSseStream() {
-      if (this.destroyed || !this.roomCode) return;
-      if (this.sse) {
-        try { this.sse.close(); } catch (e) {}
-        this.sse = null;
-      }
-
-      this.onStatusChange('warn', 'Connecting...');
-      const since = this.lastMsgId || 'all';
-      const url = `${NTFY_BASE}/${this.topic}/sse?since=${encodeURIComponent(since)}`;
-
       try {
-        const es = new EventSource(url);
-        this.sse = es;
-
-        es.onopen = () => {
-          this.sseErrors = 0;
-          const hasRtc = Object.values(this.peers).some((p) => p && p.open);
-          this.onStatusChange('ok', hasRtc ? 'P2P Live' : 'Room Online');
-        };
-
-        es.onmessage = (ev) => {
-          this.sseErrors = 0;
-          const hasRtc = Object.values(this.peers).some((p) => p && p.open);
-          this.onStatusChange('ok', hasRtc ? 'P2P Live' : 'Room Online');
-          if (!ev.data) return;
-          try {
-            const env = JSON.parse(ev.data);
-            if (env.id) this.lastMsgId = env.id;
-            if (env.event === 'message' && env.message) {
-              const payload = JSON.parse(env.message);
-              this.handleSignal(payload, false);
-            }
-          } catch (e) {}
-        };
-
-        es.onerror = () => {
-          this.sseErrors += 1;
-          this.onStatusChange('warn', this.sseErrors >= 3 ? 'Local Only' : 'Reconnecting...');
-          if (es.readyState === EventSource.CLOSED && !this.destroyed) {
-            const delay = Math.min(12000, 2000 * this.sseErrors);
-            clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = setTimeout(() => this.openSseStream(), delay);
-          }
-        };
+        await ensurePeerJs();
+        this.openPeer();
       } catch (e) {
         this.onStatusChange('warn', 'Local Only');
       }
+    }
+
+    openPeer() {
+      if (this.destroyed) return;
+      if (this.peer) {
+        try { this.peer.destroy(); } catch (e) {}
+        this.peer = null;
+      }
+
+      const peerOpts = { config: { iceServers: STUN_SERVERS } };
+      const peer = this.isHost
+        ? new global.Peer(this.hostPeerId, peerOpts)
+        : new global.Peer(peerOpts);
+      this.peer = peer;
+
+      peer.on('open', () => {
+        this.retryCount = 0;
+        if (this.isHost) {
+          this.onStatusChange('ok', 'Room Online');
+        } else {
+          this.connectToHostPeer();
+        }
+      });
+
+      if (this.isHost) {
+        peer.on('connection', (conn) => {
+          this.bindHostConnection(conn);
+        });
+      }
+
+      peer.on('disconnected', () => {
+        if (this.destroyed) return;
+        this.onStatusChange('warn', 'Reconnecting...');
+        setTimeout(() => {
+          if (!this.destroyed && peer && !peer.destroyed) {
+            try { peer.reconnect(); } catch (e) {}
+          }
+        }, 1500);
+      });
+
+      peer.on('error', (err) => {
+        if (this.destroyed) return;
+        const type = err && err.type ? err.type : '';
+        if (type === 'unavailable-id' && this.isHost && this.retryCount < 4) {
+          this.retryCount += 1;
+          this.onStatusChange('warn', 'Reclaiming Room...');
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = setTimeout(() => this.openPeer(), 1200);
+          return;
+        }
+        if (type === 'peer-unavailable' && !this.isHost) {
+          this.onStatusChange('warn', 'Searching Room...');
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = setTimeout(() => this.connectToHostPeer(), 2000);
+          return;
+        }
+        this.onStatusChange('warn', 'Reconnecting...');
+      });
+    }
+
+    bindHostConnection(conn) {
+      this.conns[conn.peer] = conn;
+
+      conn.on('open', () => {
+        this.onStatusChange('ok', 'P2P Live');
+      });
+
+      conn.on('data', (data) => {
+        this.handlePacket(data, conn);
+      });
+
+      const onDrop = () => {
+        delete this.conns[conn.peer];
+        const pid = this.peerToPlayerId[conn.peer];
+        delete this.peerToPlayerId[conn.peer];
+        if (pid && this.players[pid] && !this.players[pid].isLocal) {
+          delete this.players[pid];
+          this.emitRoster();
+          this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId });
+        }
+        if (Object.keys(this.conns).length === 0 && !this.destroyed) {
+          this.onStatusChange('ok', 'Room Online');
+        }
+      };
+
+      conn.on('close', onDrop);
+      conn.on('error', onDrop);
+    }
+
+    connectToHostPeer() {
+      if (this.destroyed || this.isHost || !this.peer || this.peer.destroyed) return;
+      if (this.hostConn && this.hostConn.open) return;
+
+      this.onStatusChange('warn', 'Joining Room...');
+      const conn = this.peer.connect(this.hostPeerId, { reliable: true });
+      this.hostConn = conn;
+      this.conns[this.hostPeerId] = conn;
+
+      conn.on('open', () => {
+        this.onStatusChange('ok', 'P2P Live');
+        conn.send({
+          type: 'JOIN_REQ',
+          senderId: this.myId,
+          name: this.myName,
+        });
+      });
+
+      conn.on('data', (data) => {
+        this.handlePacket(data, conn);
+      });
+
+      const onDrop = () => {
+        if (this.destroyed) return;
+        this.hostConn = null;
+        this.onStatusChange('warn', 'Reconnecting...');
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = setTimeout(() => this.connectToHostPeer(), 2000);
+      };
+
+      conn.on('close', onDrop);
+      conn.on('error', onDrop);
     }
 
     addLocalPlayer(name) {
@@ -230,10 +313,7 @@
       const usedSlots = new Set(Object.values(this.players).map((p) => p.slot));
       let freeSlot = -1;
       for (let i = 0; i < this.maxPlayers; i++) {
-        if (!usedSlots.has(i)) {
-          freeSlot = i;
-          break;
-        }
+        if (!usedSlots.has(i)) { freeSlot = i; break; }
       }
       if (freeSlot === -1) return null;
 
@@ -245,7 +325,6 @@
         isHost: false,
         isLocal: true,
         ready: true,
-        lastSeen: Date.now(),
       };
       this.emitRoster();
       this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId });
@@ -259,145 +338,64 @@
       this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId });
     }
 
-    heartbeat() {
-      if (this.destroyed) return;
-      const now = Date.now();
-      if (this.isHost) {
-        let changed = false;
-        for (const p of Object.values(this.players)) {
-          if (p.isLocal) {
-            p.lastSeen = now;
-          } else if (now - p.lastSeen > 45000) {
-            delete this.players[p.id];
-            this.closePeer(p.id);
-            changed = true;
-          }
-        }
-        if (changed) {
-          this.emitRoster();
-          this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId });
-        }
-      } else {
-        // Guest only pings over ntfy if not yet in roster or no open RTC channel
-        const hasOpenRtc = Object.values(this.peers).some((p) => p && p.open);
-        if (!this.players[this.myId] || !hasOpenRtc) {
-          this.sendSignal({ type: 'PING', name: this.myName });
-        }
-      }
-    }
-
-    broadcastRosterOrHello() {
-      if (this.isHost) {
-        this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId });
-      } else {
-        this.sendSignal({ type: 'PING', name: this.myName });
-      }
-    }
-
     emitRoster() {
       this.onRosterChange(this.getOrderedPlayers());
     }
 
-    // ---- Low-Latency Realtime Channel (WebRTC -> BroadcastChannel) ----
-    sendRealtime(payload, targetId = null) {
+    sendRealtime(payload) {
       const msg = { ...payload, _rt: true, senderId: this.myId };
-
       if (this.bc) {
         try { this.bc.postMessage(msg); } catch (e) {}
       }
-
-      let sentViaRtc = false;
-      const raw = JSON.stringify(msg);
-      if (targetId && this.peers[targetId] && this.peers[targetId].open) {
-        try {
-          this.peers[targetId].dc.send(raw);
-          sentViaRtc = true;
-        } catch (e) {}
-      } else if (!targetId) {
-        for (const pid of Object.keys(this.peers)) {
-          const peer = this.peers[pid];
-          if (peer && peer.open) {
-            try {
-              peer.dc.send(raw);
-              sentViaRtc = true;
-            } catch (e) {}
+      if (this.isHost) {
+        for (const conn of Object.values(this.conns)) {
+          if (conn && conn.open) {
+            try { conn.send(msg); } catch (e) {}
           }
         }
+      } else if (this.hostConn && this.hostConn.open) {
+        try { this.hostConn.send(msg); } catch (e) {}
       }
-      return sentViaRtc;
     }
 
-    // Reliable signaling / game event (BC + open RTC + ntfy POST)
-    async sendSignal(payload) {
-      const enriched = {
-        ...payload,
-        eventId: `${this.myId}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        senderId: this.myId,
-        ts: Date.now(),
-      };
-      this.seenEvents.add(enriched.eventId);
-
+    sendSignal(payload) {
+      const msg = { ...payload, senderId: this.myId, ts: Date.now() };
       if (this.bc) {
-        try { this.bc.postMessage(enriched); } catch (e) {}
+        try { this.bc.postMessage(msg); } catch (e) {}
       }
-
-      const raw = JSON.stringify(enriched);
-      for (const pid of Object.keys(this.peers)) {
-        const peer = this.peers[pid];
-        if (peer && peer.open) {
-          try { peer.dc.send(raw); } catch (e) {}
+      if (this.isHost) {
+        for (const conn of Object.values(this.conns)) {
+          if (conn && conn.open) {
+            try { conn.send(msg); } catch (e) {}
+          }
         }
-      }
-
-      try {
-        const res = await fetch(`${NTFY_BASE}/${this.topic}`, {
-          method: 'POST',
-          body: raw,
-        });
-        if (res.ok) {
-          const hasRtc = Object.values(this.peers).some((p) => p && p.open);
-          this.onStatusChange('ok', hasRtc ? 'P2P Live' : 'Room Online');
-        }
-      } catch (e) {
-        // Keep current SSE/local status without getting stuck
+      } else if (this.hostConn && this.hostConn.open) {
+        try { this.hostConn.send(msg); } catch (e) {}
       }
     }
 
-    handleSignal(data, fromFastTransport) {
+    handlePacket(data, fromConn) {
       if (!data || data.senderId === this.myId) return;
 
       if (data._rt) {
-        if (this.isHost && this.players[data.senderId]) {
-          this.players[data.senderId].lastSeen = Date.now();
-        }
         this.onMessage(data);
         return;
       }
 
-      if (data.eventId) {
-        if (this.seenEvents.has(data.eventId)) return;
-        this.seenEvents.add(data.eventId);
-        if (this.seenEvents.size > 600) {
-          const first = this.seenEvents.values().next().value;
-          this.seenEvents.delete(first);
-        }
-      }
-
-      if (data.targetId && data.targetId !== this.myId) return;
-
       if (data.type === 'JOIN_REQ' && this.isHost) {
         const sender = data.senderId;
+        if (fromConn) this.peerToPlayerId[fromConn.peer] = sender;
+
         if (!this.players[sender]) {
           const used = new Set(Object.values(this.players).map((p) => p.slot));
           let freeSlot = -1;
           for (let i = 0; i < this.maxPlayers; i++) {
-            if (!used.has(i)) {
-              freeSlot = i;
-              break;
-            }
+            if (!used.has(i)) { freeSlot = i; break; }
           }
           if (freeSlot === -1) {
-            this.sendSignal({ type: 'ROOM_FULL', targetId: sender });
+            if (fromConn && fromConn.open) {
+              try { fromConn.send({ type: 'ROOM_FULL', senderId: this.myId }); } catch (e) {}
+            }
             return;
           }
           this.players[sender] = {
@@ -407,34 +405,23 @@
             isHost: false,
             isLocal: false,
             ready: true,
-            lastSeen: Date.now(),
           };
           this.emitRoster();
-        } else {
-          this.players[sender].lastSeen = Date.now();
-          if (data.name) this.players[sender].name = data.name.slice(0, 18);
+        } else if (data.name) {
+          this.players[sender].name = data.name.slice(0, 18);
+          this.emitRoster();
         }
+
         this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId });
-        if (this.enableRtc && !fromFastTransport) {
-          this.initiateRtcOffer(sender);
-        }
         return;
       }
 
-      if (data.type === 'PING' && this.isHost) {
+      if (data.type === 'NAME_UPDATE' && this.isHost) {
         const sender = data.senderId;
-        if (this.players[sender]) {
-          this.players[sender].lastSeen = Date.now();
-          if (data.name && this.players[sender].name !== data.name) {
-            this.players[sender].name = data.name.slice(0, 18);
-            this.emitRoster();
-            this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId });
-          }
-          if (this.enableRtc && !fromFastTransport && (!this.peers[sender] || !this.peers[sender].open)) {
-            this.initiateRtcOffer(sender);
-          }
-        } else {
-          this.handleSignal({ ...data, type: 'JOIN_REQ' }, fromFastTransport);
+        if (this.players[sender] && data.name) {
+          this.players[sender].name = data.name.slice(0, 18);
+          this.emitRoster();
+          this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId });
         }
         return;
       }
@@ -451,128 +438,18 @@
         return;
       }
 
-      if (data.type === 'RTC_OFFER' && this.enableRtc) {
-        this.handleRtcOffer(data.senderId, data.sdp);
-        return;
-      }
-
-      if (data.type === 'RTC_ANSWER' && this.enableRtc) {
-        this.handleRtcAnswer(data.senderId, data.sdp);
-        return;
-      }
-
-      if (data.type === 'RTC_ICE' && this.enableRtc) {
-        this.handleRtcIce(data.senderId, data.candidate);
-        return;
-      }
-
       this.onMessage(data);
-    }
-
-    // ---- WebRTC Peer Management (Star: Host <-> Guest) ----
-    async initiateRtcOffer(peerId) {
-      if (typeof RTCPeerConnection === 'undefined') return;
-      if (this.peers[peerId] && this.peers[peerId].open) return;
-      this.closePeer(peerId);
-
-      const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
-      const dc = pc.createDataChannel('game', { ordered: false, maxRetransmits: 0 });
-      const entry = { pc, dc, open: false };
-      this.peers[peerId] = entry;
-      this.bindDataChannel(peerId, entry);
-
-      pc.onicecandidate = (ev) => {
-        if (ev.candidate) {
-          this.sendSignal({ type: 'RTC_ICE', targetId: peerId, candidate: ev.candidate });
-        }
-      };
-
-      try {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        this.sendSignal({ type: 'RTC_OFFER', targetId: peerId, sdp: pc.localDescription });
-      } catch (e) {}
-    }
-
-    async handleRtcOffer(peerId, sdp) {
-      if (typeof RTCPeerConnection === 'undefined') return;
-      this.closePeer(peerId);
-
-      const pc = new RTCPeerConnection({ iceServers: STUN_SERVERS });
-      const entry = { pc, dc: null, open: false };
-      this.peers[peerId] = entry;
-
-      pc.ondatachannel = (ev) => {
-        entry.dc = ev.channel;
-        this.bindDataChannel(peerId, entry);
-      };
-      pc.onicecandidate = (ev) => {
-        if (ev.candidate) {
-          this.sendSignal({ type: 'RTC_ICE', targetId: peerId, candidate: ev.candidate });
-        }
-      };
-
-      try {
-        await pc.setRemoteDescription(new RTCSessionDescription(sdp));
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        this.sendSignal({ type: 'RTC_ANSWER', targetId: peerId, sdp: pc.localDescription });
-      } catch (e) {}
-    }
-
-    async handleRtcAnswer(peerId, sdp) {
-      const entry = this.peers[peerId];
-      if (!entry) return;
-      try {
-        await entry.pc.setRemoteDescription(new RTCSessionDescription(sdp));
-      } catch (e) {}
-    }
-
-    async handleRtcIce(peerId, candidate) {
-      const entry = this.peers[peerId];
-      if (!entry || !candidate) return;
-      try {
-        await entry.pc.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (e) {}
-    }
-
-    bindDataChannel(peerId, entry) {
-      entry.dc.onopen = () => {
-        entry.open = true;
-        this.onStatusChange('ok', 'P2P Live');
-      };
-      entry.dc.onclose = () => {
-        entry.open = false;
-      };
-      entry.dc.onmessage = (ev) => {
-        try {
-          const data = JSON.parse(ev.data);
-          this.handleSignal(data, true);
-        } catch (e) {}
-      };
-    }
-
-    closePeer(peerId) {
-      const entry = this.peers[peerId];
-      if (!entry) return;
-      try { if (entry.dc) entry.dc.close(); } catch (e) {}
-      try { if (entry.pc) entry.pc.close(); } catch (e) {}
-      delete this.peers[peerId];
     }
 
     destroy() {
       this.destroyed = true;
       document.removeEventListener('visibilitychange', this._onVisibility);
       if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-      if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
-      if (this.sse) {
-        try { this.sse.close(); } catch (e) {}
-      }
       if (this.bc) {
         try { this.bc.close(); } catch (e) {}
       }
-      for (const pid of Object.keys(this.peers)) {
-        this.closePeer(pid);
+      if (this.peer) {
+        try { this.peer.destroy(); } catch (e) {}
       }
     }
   }

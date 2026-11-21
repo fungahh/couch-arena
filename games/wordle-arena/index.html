@@ -930,6 +930,7 @@
     </div>
   </div>
 
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script>
     /**********************************************************************
      * 1. CURATED 5-LETTER WORD BANKS (ENGLISH & SWEDISH)
@@ -1084,17 +1085,22 @@
       keyColors: {},       // letter -> 'correct'|'present'|'absent'
       isFinished: false,
 
-      // SSE + BroadcastChannel State
-      sse: null,
+      // PeerJS P2P + BroadcastChannel State
+      peer: null,
+      peerConns: {},     // host: remotePeerId -> DataConnection
+      hostConn: null,    // guest: DataConnection to host
       reconnectTimer: null,
-      lastPingReplyAt: 0,
-      lastMsgId: 'all',
+      retryCount: 0,
       seenEventIds: new Set(),
       bc: null,
-      consecutiveErrors: 0,
       players: {},
       botTimers: []
     };
+
+    const PEER_ICE_SERVERS = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ];
 
     function saveSession() {
       if (state.mode === 'solo' || !state.roomCode || state.secretWords.length !== TOTAL_WORDS) return;
@@ -1127,7 +1133,6 @@
         if (!data || !data.roomCode || !Array.isArray(data.secretWords) || data.secretWords.length !== TOTAL_WORDS) {
           return null;
         }
-        // Expire sessions older than 6 hours
         if (Date.now() - (data.savedAt || 0) > 6 * 60 * 60 * 1000) {
           localStorage.removeItem(SESSION_KEY);
           return null;
@@ -1179,11 +1184,14 @@
 
       window.addEventListener('keydown', handlePhysicalKey);
 
-      // Reconnect SSE cleanly when waking phone / switching back to Safari tab
+      // Reconnect PeerJS cleanly when waking phone / switching back to Safari tab
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && state.mode !== 'solo' && state.roomCode) {
-          if (!state.sse || state.sse.readyState === EventSource.CLOSED) {
-            openSseStream(state.roomCode);
+          if (state.peer && state.peer.disconnected && !state.peer.destroyed) {
+            try { state.peer.reconnect(); } catch (e) {}
+          }
+          if (state.mode === 'guest' && (!state.hostConn || !state.hostConn.open)) {
+            connectGuestToHost(state.roomCode);
           }
         }
       });
@@ -1204,8 +1212,6 @@
       const newUrl = `${window.location.pathname}?room=${state.roomCode}&lang=${state.language}`;
       window.history.replaceState({}, '', newUrl);
 
-      initChannelSync(state.roomCode);
-
       document.getElementById('lobby-view').classList.add('hidden');
       document.getElementById('arena-view').classList.remove('hidden');
       document.getElementById('header-controls').classList.remove('hidden');
@@ -1225,10 +1231,10 @@
       state.keyColors = saved.keyColors || {};
       state.isFinished = Boolean(saved.isFinished);
 
+      initChannelSync(state.roomCode);
       renderStepper();
       renderBoard();
       renderKeyboard();
-      updateStatsStrip();
       broadcastMyProgress();
       renderPlayersGrid();
       showToast(`Reconnected to Room ${state.roomCode}!`);
@@ -1276,10 +1282,10 @@
     }
 
     /**********************************************************************
-     * 4. REAL-TIME HTTPS SSE (NTFY.SH) + BROADCAST CHANNEL SYNC
+     * 4. REAL-TIME PEERJS P2P + BROADCAST CHANNEL SYNC (NO RATE LIMITS)
      **********************************************************************/
-    function getTopicName(roomCode) {
-      return `wordle_arena_v1_${roomCode}`;
+    function getHostPeerId(roomCode) {
+      return `ca-wordle-${roomCode}`;
     }
 
     function setHttpsStatus(status, label) {
@@ -1294,10 +1300,12 @@
         clearTimeout(state.reconnectTimer);
         state.reconnectTimer = null;
       }
-      if (state.sse) {
-        try { state.sse.close(); } catch (e) {}
-        state.sse = null;
+      if (state.peer) {
+        try { state.peer.destroy(); } catch (e) {}
+        state.peer = null;
       }
+      state.peerConns = {};
+      state.hostConn = null;
       if (state.bc) {
         try { state.bc.close(); } catch (e) {}
         state.bc = null;
@@ -1306,115 +1314,185 @@
 
     function initChannelSync(roomCode) {
       stopNetworkSync();
-      state.lastMsgId = 'all';
       state.seenEventIds.clear();
-      state.consecutiveErrors = 0;
+      state.retryCount = 0;
 
       // 1. Local same-browser BroadcastChannel for instant multi-tab sync
       if ('BroadcastChannel' in window) {
         state.bc = new BroadcastChannel(`wordle_arena_bc_${roomCode}`);
         state.bc.onmessage = (ev) => {
-          if (ev.data) processIncomingEvent(ev.data);
+          if (ev.data) processIncomingEvent(ev.data, null);
         };
       }
 
-      // 2. Single persistent HTTPS Server-Sent Events stream (avoids polling rate limits!)
-      openSseStream(roomCode);
+      if (state.mode === 'solo' || !roomCode) return;
+
+      // 2. PeerJS P2P WebRTC DataChannels (zero daily rate limits!)
+      openPeerSync(roomCode);
     }
 
-    function openSseStream(roomCode) {
-      if (state.mode === 'solo' || !roomCode) return;
-      if (state.sse) {
-        try { state.sse.close(); } catch (e) {}
-        state.sse = null;
+    function openPeerSync(roomCode) {
+      if (typeof Peer !== 'function') {
+        setHttpsStatus('err', 'Offline / Retry');
+        return;
       }
+      if (state.peer) {
+        try { state.peer.destroy(); } catch (e) {}
+        state.peer = null;
+      }
+      state.peerConns = {};
+      state.hostConn = null;
 
       setHttpsStatus('warn', 'Connecting...');
-      const topic = getTopicName(roomCode);
-      const since = state.lastMsgId || 'all';
-      const url = `${NTFY_BASE}/${topic}/sse?since=${encodeURIComponent(since)}`;
+      const opts = { config: { iceServers: PEER_ICE_SERVERS } };
+      const peer = state.mode === 'host'
+        ? new Peer(getHostPeerId(roomCode), opts)
+        : new Peer(opts);
+      state.peer = peer;
 
-      try {
-        const es = new EventSource(url);
-        state.sse = es;
-
-        es.onopen = () => {
-          state.consecutiveErrors = 0;
+      peer.on('open', () => {
+        state.retryCount = 0;
+        if (state.mode === 'host') {
           setHttpsStatus('ok', 'Live Sync: Ready');
-        };
+        } else {
+          connectGuestToHost(roomCode);
+        }
+      });
 
-        es.onmessage = (ev) => {
-          state.consecutiveErrors = 0;
-          setHttpsStatus('ok', 'Live Sync: Ready');
-          if (!ev.data) return;
-          try {
-            const envelope = JSON.parse(ev.data);
-            if (envelope.id) state.lastMsgId = envelope.id;
-            if (envelope.event === 'message' && envelope.message) {
-              const payload = JSON.parse(envelope.message);
-              processIncomingEvent(payload);
-            }
-          } catch (parseErr) {}
-        };
+      if (state.mode === 'host') {
+        peer.on('connection', (conn) => {
+          state.peerConns[conn.peer] = conn;
+          conn.on('open', () => {
+            setHttpsStatus('ok', 'Live Sync: Ready');
+            // Send room init + every existing player's state directly to the newly connected guest
+            try {
+              conn.send({
+                type: 'ROOM_INIT',
+                eventId: `${state.myId}_init_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                senderId: state.myId,
+                roomCode: state.roomCode,
+                hostId: state.myId,
+                language: state.language,
+                secretWords: state.secretWords,
+                roundId: state.roundId,
+                ts: Date.now()
+              });
+              Object.values(state.players).forEach((pl) => {
+                conn.send({
+                  type: 'PLAYER_STATE',
+                  eventId: `${state.myId}_ps_${pl.id}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                  senderId: state.myId,
+                  player: pl
+                });
+              });
+            } catch (e) {}
+          });
 
-        es.onerror = () => {
-          state.consecutiveErrors += 1;
-          if (state.consecutiveErrors >= 3) {
-            setHttpsStatus('err', 'Offline / Retry');
-          } else {
-            setHttpsStatus('warn', 'Reconnecting...');
-          }
-          if (es.readyState === EventSource.CLOSED) {
-            const delay = Math.min(12000, 2000 * state.consecutiveErrors);
-            clearTimeout(state.reconnectTimer);
-            state.reconnectTimer = setTimeout(() => {
-              if (state.mode !== 'solo' && state.roomCode === roomCode) {
-                openSseStream(roomCode);
-              }
-            }, delay);
-          }
-        };
-      } catch (err) {
-        handleSyncError();
+          conn.on('data', (data) => {
+            processIncomingEvent(data, conn);
+          });
+
+          const cleanup = () => { delete state.peerConns[conn.peer]; };
+          conn.on('close', cleanup);
+          conn.on('error', cleanup);
+        });
       }
+
+      peer.on('disconnected', () => {
+        setHttpsStatus('warn', 'Reconnecting...');
+        setTimeout(() => {
+          if (state.peer === peer && !peer.destroyed) {
+            try { peer.reconnect(); } catch (e) {}
+          }
+        }, 1500);
+      });
+
+      peer.on('error', (err) => {
+        const type = err && err.type ? err.type : '';
+        if (type === 'unavailable-id' && state.mode === 'host' && state.retryCount < 4) {
+          state.retryCount += 1;
+          setHttpsStatus('warn', 'Reclaiming Room...');
+          clearTimeout(state.reconnectTimer);
+          state.reconnectTimer = setTimeout(() => openPeerSync(roomCode), 1200);
+          return;
+        }
+        if (type === 'peer-unavailable' && state.mode === 'guest') {
+          setHttpsStatus('warn', 'Searching Room...');
+          clearTimeout(state.reconnectTimer);
+          state.reconnectTimer = setTimeout(() => {
+            if (state.mode === 'guest' && state.roomCode === roomCode) {
+              connectGuestToHost(roomCode);
+            }
+          }, 1500);
+          return;
+        }
+        setHttpsStatus('err', 'Offline / Retry');
+      });
     }
 
-    async function publishEvent(payloadObj) {
-      const enriched = {
-        ...payloadObj,
-        eventId: `${state.myId}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        senderId: state.myId
+    function connectGuestToHost(roomCode) {
+      if (!state.peer || state.peer.destroyed || state.mode !== 'guest') return;
+      if (state.hostConn && state.hostConn.open) return;
+
+      setHttpsStatus('warn', 'Joining Room...');
+      const conn = state.peer.connect(getHostPeerId(roomCode), { reliable: true });
+      state.hostConn = conn;
+
+      conn.on('open', () => {
+        setHttpsStatus('ok', 'Live Sync: Ready');
+        try {
+          conn.send({
+            type: 'PLAYER_PING',
+            eventId: `${state.myId}_ping_${Date.now()}`,
+            senderId: state.myId,
+            name: state.myName,
+            ts: Date.now()
+          });
+        } catch (e) {}
+        if (state.secretWords.length === TOTAL_WORDS) {
+          broadcastMyProgress();
+        }
+      });
+
+      conn.on('data', (data) => {
+        processIncomingEvent(data, conn);
+      });
+
+      const onDrop = () => {
+        if (state.mode !== 'guest' || state.roomCode !== roomCode) return;
+        state.hostConn = null;
+        setHttpsStatus('warn', 'Reconnecting...');
+        clearTimeout(state.reconnectTimer);
+        state.reconnectTimer = setTimeout(() => connectGuestToHost(roomCode), 2000);
       };
+      conn.on('close', onDrop);
+      conn.on('error', onDrop);
+    }
+
+    function publishEvent(payloadObj, excludeConn = null) {
+      const enriched = payloadObj.eventId
+        ? payloadObj
+        : {
+            ...payloadObj,
+            eventId: `${state.myId}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            senderId: state.myId
+          };
       state.seenEventIds.add(enriched.eventId);
 
-      // Instant local BroadcastChannel dispatch
       if (state.bc) {
         try { state.bc.postMessage(enriched); } catch (e) {}
       }
 
       if (state.mode === 'solo' || !state.roomCode) return;
 
-      const url = `${NTFY_BASE}/${getTopicName(state.roomCode)}`;
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          body: JSON.stringify(enriched)
+      if (state.mode === 'host') {
+        Object.values(state.peerConns).forEach((conn) => {
+          if (conn && conn.open && conn !== excludeConn) {
+            try { conn.send(enriched); } catch (e) {}
+          }
         });
-        if (res.ok) {
-          state.consecutiveErrors = 0;
-          setHttpsStatus('ok', 'Live Sync: Ready');
-        } else {
-          handleSyncError();
-        }
-      } catch (err) {
-        handleSyncError();
-      }
-    }
-
-    function handleSyncError() {
-      state.consecutiveErrors += 1;
-      if (state.consecutiveErrors >= 2) {
-        setHttpsStatus('err', 'Offline / Retry');
+      } else if (state.hostConn && state.hostConn.open) {
+        try { state.hostConn.send(enriched); } catch (e) {}
       }
     }
 
@@ -1425,22 +1503,24 @@
       }
       setHttpsStatus('warn', 'Reconnecting...');
       showToast('Reconnecting Live Sync for Room ' + state.roomCode + '...');
-      openSseStream(state.roomCode);
-      if (state.mode === 'host') {
-        publishEvent({
-          type: 'ROOM_INIT',
-          roomCode: state.roomCode,
-          hostId: state.myId,
-          language: state.language,
-          secretWords: state.secretWords,
-          roundId: state.roundId,
-          ts: Date.now()
-        });
-      }
-      broadcastMyProgress();
+      openPeerSync(state.roomCode);
+      setTimeout(() => {
+        if (state.mode === 'host') {
+          publishEvent({
+            type: 'ROOM_INIT',
+            roomCode: state.roomCode,
+            hostId: state.myId,
+            language: state.language,
+            secretWords: state.secretWords,
+            roundId: state.roundId,
+            ts: Date.now()
+          });
+        }
+        broadcastMyProgress();
+      }, 800);
     }
 
-    function processIncomingEvent(data) {
+    function processIncomingEvent(data, fromConn) {
       if (!data || !data.type) return;
       if (data.eventId && state.seenEventIds.has(data.eventId)) return;
       if (data.eventId) state.seenEventIds.add(data.eventId);
@@ -1461,9 +1541,6 @@
       }
 
       if (data.type === 'PLAYER_PING' && data.senderId !== state.myId) {
-        const now = Date.now();
-        if (now - state.lastPingReplyAt < 2000) return;
-        state.lastPingReplyAt = now;
         if (state.mode === 'host') {
           publishEvent({
             type: 'ROOM_INIT',
@@ -1472,10 +1549,12 @@
             language: state.language,
             secretWords: state.secretWords,
             roundId: state.roundId,
-            ts: now
+            ts: Date.now()
+          });
+          Object.values(state.players).forEach((pl) => {
+            publishEvent({ type: 'PLAYER_STATE', player: pl });
           });
         }
-        broadcastMyProgress();
         return;
       }
 
@@ -1487,12 +1566,13 @@
         }
         state.players[p.id] = p;
 
+        // Host relays guest updates to all other connected guests
+        if (state.mode === 'host' && fromConn) {
+          publishEvent(data, fromConn);
+        }
+
         if (isNewPlayer && p.id !== state.myId) {
           showToast(`${p.name} joined the room!`);
-          if (Date.now() - state.lastPingReplyAt > 2000) {
-            state.lastPingReplyAt = Date.now();
-            broadcastMyProgress();
-          }
         }
 
         renderPlayersGrid();
