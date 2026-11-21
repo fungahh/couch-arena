@@ -1,10 +1,11 @@
 /**
- * Couch Arcade — Shared 4-Player Room & Real-Time P2P Engine
- * Uses PeerJS (WebRTC DataChannels via 0.peerjs.com) + BroadcastChannel.
+ * Couch Arcade — Shared 4-Player Room & Real-Time Hybrid Sync Engine
+ * Dual-transport: PeerJS WebRTC P2P (sub-30ms) + WSS MQTT Relay (100% NAT/5G/iOS proof) + BroadcastChannel.
  * - First-letter + 3-digit game room codes (e.g. A482, W719) + legacy 6-char support
- * - Direct sub-50ms P2P sync for both turn-based and 30Hz action games
+ * - Guaranteed QR / TV Mode joins with HOST_HELLO handshake & JOIN_REQ retry loop
+ * - Automatic WebRTC watchdog & transparent WSS fallback when NAT/5G blocks P2P
  * - TV Screen Spectator Mode, Phone Controllers, Host Join Approval Queue,
- *   P2P Account Lookup, and Live Achievement Unlock forwarding
+ *   Cross-Device Account Lookup, and Live Achievement Unlock forwarding
  */
 (function (global) {
   'use strict';
@@ -13,6 +14,8 @@
   const STUN_SERVERS = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:global.stun.twilio.com:3478' },
   ];
 
   const PLAYER_COLORS = [
@@ -130,13 +133,24 @@
       this.pendingRequests = {}; // playerId -> { id, name, avatar, accountHandle, trophyCount, isController, ts, conn }
       this.pendingLookups = {}; // reqId -> { resolve, timer }
       this.bc = null;
+      this.relay = null;
       this.peer = null;
       this.conns = {}; // peerId -> DataConnection
       this.hostConn = null;
       this.peerToPlayerId = {};
       this.playerToPeerId = {};
+      this.lastSeenByPlayer = {};
       this.reconnectTimer = null;
+      this.connWatchdog = null;
+      this.joinRetryTimer = null;
+      this.hbTimer = null;
       this.retryCount = 0;
+      this.msgSeq = 0;
+      this.seenMids = new Set();
+      this.lastRelayRtSent = 0;
+      this.admitted = this.isHost;
+      this.waitingApproval = false;
+      this.roomFull = false;
       this.kicked = false;
       this.declined = false;
       this.destroyed = false;
@@ -146,15 +160,49 @@
           if (this.peer && this.peer.disconnected && !this.peer.destroyed) {
             try { this.peer.reconnect(); } catch (e) {}
           }
-          if (!this.isHost && !this.declined && (!this.hostConn || !this.hostConn.open)) {
-            this.connectToHostPeer();
+          if (!this.isHost && !this.declined && !this.kicked) {
+            if (!this.hostConn || !this.hostConn.open) {
+              this.connectToHostPeer();
+            }
+            if (!this.admitted) this._sendJoinReq();
           }
+        }
+      };
+
+      this._onPageHide = () => {
+        if (!this.isHost && !this.destroyed) {
+          this.sendSignal({ type: 'PLAYER_LEAVE' });
         }
       };
     }
 
     get hostPeerId() {
       return `ca-${this.gameId}-${this.roomCode}`;
+    }
+
+    hasOpenP2p() {
+      if (this.isHost) {
+        return Object.values(this.conns).some((c) => c && c.open);
+      }
+      return Boolean(this.hostConn && this.hostConn.open);
+    }
+
+    _updateStatus() {
+      if (this.destroyed) return;
+      const p2pOpen = this.hasOpenP2p();
+      const relayOpen = Boolean(this.relay && this.relay.connected);
+      const peerOpen = Boolean(this.peer && !this.peer.destroyed && this.peer.open);
+
+      if (this.isHost) {
+        if (p2pOpen) this.onStatusChange('ok', 'P2P Live');
+        else if (peerOpen || relayOpen) this.onStatusChange('ok', 'Room Online');
+        else this.onStatusChange('warn', 'Connecting...');
+      } else {
+        if (p2pOpen) this.onStatusChange('ok', 'P2P Live');
+        else if (relayOpen && (this.admitted || this.waitingApproval)) this.onStatusChange('ok', 'Live (Relay)');
+        else if (relayOpen) this.onStatusChange('warn', 'Joining Room...');
+        else this.onStatusChange('warn', 'Connecting...');
+      }
     }
 
     getInviteUrl(opts = {}) {
@@ -270,10 +318,51 @@
       this.updateProfile({ name });
     }
 
+    _sendJoinReq(viaConn) {
+      if (this.destroyed || this.isHost || this.declined || this.kicked || this.roomFull) return;
+      const payload = {
+        type: 'JOIN_REQ',
+        senderId: this.myId,
+        name: this.myName,
+        avatar: this.myAvatar,
+        accountHandle: this.myAccountHandle,
+        trophyCount: this.myTrophyCount,
+        isController: this.controllerMode,
+        requireApproval: this.requireApproval,
+        _mid: `${this.myId}_j_${++this.msgSeq}`,
+        ts: Date.now(),
+      };
+      if (viaConn && viaConn.open) {
+        try { viaConn.send(payload); } catch (e) {}
+      }
+      if (this.hostConn && this.hostConn.open && this.hostConn !== viaConn) {
+        try { this.hostConn.send(payload); } catch (e) {}
+      }
+      if (this.bc) {
+        try { this.bc.postMessage(payload); } catch (e) {}
+      }
+      if (this.relay && this.relay.connected) {
+        this.relay.send(payload);
+      }
+    }
+
+    _startJoinRetry() {
+      if (this.isHost || this.joinRetryTimer) return;
+      this.joinRetryTimer = setInterval(() => {
+        if (this.destroyed || this.admitted || this.waitingApproval || this.declined || this.kicked || this.roomFull) {
+          clearInterval(this.joinRetryTimer);
+          this.joinRetryTimer = null;
+          return;
+        }
+        this._sendJoinReq();
+      }, 1200);
+    }
+
     async connect() {
       if (!this.roomCode) {
         this.roomCode = generateRoomCode(this.codePrefix);
         this.isHost = true;
+        this.admitted = true;
       }
 
       if (this.updateUrl) {
@@ -314,12 +403,48 @@
 
       this.onStatusChange('warn', 'Connecting...');
       document.addEventListener('visibilitychange', this._onVisibility);
+      window.addEventListener('pagehide', this._onPageHide);
 
+      // 1. Start NAT-proof WSS MQTT Relay immediately (connects in ~300ms on any Wi-Fi/5G/iOS Safari!)
+      if (global.CouchWsRelay && global.CouchWsRelay.WsRelayChannel) {
+        this.relay = new global.CouchWsRelay.WsRelayChannel(`room/${this.gameId}/${this.roomCode}`, {
+          onOpen: () => {
+            this._updateStatus();
+            if (this.isHost) {
+              this.sendSignal({ type: 'HOST_HELLO', tvMode: this.tvMode, players: this.players });
+            } else if (!this.admitted && !this.waitingApproval) {
+              this._sendJoinReq();
+              this._startJoinRetry();
+            }
+          },
+          onMessage: (data) => {
+            this.handlePacket(data, null);
+          },
+          onClose: () => {
+            this._updateStatus();
+          },
+        });
+        this.relay.connect();
+      }
+
+      // Heartbeat for relay-connected guests so Host detects clean timeouts without dropping active players
+      this.hbTimer = setInterval(() => {
+        if (this.destroyed) return;
+        if (!this.isHost && this.admitted && !this.hasOpenP2p() && this.relay && this.relay.connected) {
+          this.relay.send({ type: 'HEARTBEAT', senderId: this.myId, ts: Date.now() });
+        }
+      }, 6000);
+
+      if (!this.isHost) {
+        this._startJoinRetry();
+      }
+
+      // 2. Simultaneously start PeerJS WebRTC P2P for ultra-low-latency direct sync
       try {
         await ensurePeerJs();
         this.openPeer();
       } catch (e) {
-        this.onStatusChange('warn', 'Local Only');
+        this._updateStatus();
       }
     }
 
@@ -338,9 +463,8 @@
 
       peer.on('open', () => {
         this.retryCount = 0;
-        if (this.isHost) {
-          this.onStatusChange('ok', 'Room Online');
-        } else {
+        this._updateStatus();
+        if (!this.isHost) {
           this.connectToHostPeer();
         }
       });
@@ -353,7 +477,7 @@
 
       peer.on('disconnected', () => {
         if (this.destroyed) return;
-        this.onStatusChange('warn', 'Reconnecting...');
+        this._updateStatus();
         setTimeout(() => {
           if (!this.destroyed && peer && !peer.destroyed) {
             try { peer.reconnect(); } catch (e) {}
@@ -364,20 +488,30 @@
       peer.on('error', (err) => {
         if (this.destroyed) return;
         const type = err && err.type ? err.type : '';
-        if (type === 'unavailable-id' && this.isHost && this.retryCount < 4) {
+        if (type === 'unavailable-id' && this.isHost && this.retryCount < 6) {
           this.retryCount += 1;
-          this.onStatusChange('warn', 'Reclaiming Room...');
           clearTimeout(this.reconnectTimer);
           this.reconnectTimer = setTimeout(() => this.openPeer(), 1200);
           return;
         }
         if (type === 'peer-unavailable' && !this.isHost) {
-          this.onStatusChange('warn', 'Searching Room...');
+          this._updateStatus();
           clearTimeout(this.reconnectTimer);
-          this.reconnectTimer = setTimeout(() => this.connectToHostPeer(), 1600);
+          this.reconnectTimer = setTimeout(() => this.connectToHostPeer(), 1800);
           return;
         }
-        this.onStatusChange('warn', 'Reconnecting...');
+        this._updateStatus();
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = setTimeout(() => {
+          if (this.destroyed) return;
+          if (this.peer && !this.peer.destroyed && this.peer.disconnected) {
+            try { this.peer.reconnect(); } catch (e) {}
+          } else if (!this.peer || this.peer.destroyed) {
+            this.openPeer();
+          } else if (!this.isHost && !this.hasOpenP2p()) {
+            this.connectToHostPeer();
+          }
+        }, 3000);
       });
     }
 
@@ -385,7 +519,17 @@
       this.conns[conn.peer] = conn;
 
       conn.on('open', () => {
-        this.onStatusChange('ok', 'P2P Live');
+        this._updateStatus();
+        // Proactively greet guest so even if an early JOIN_REQ raced, guest immediately re-handshakes!
+        try {
+          conn.send({
+            type: 'HOST_HELLO',
+            senderId: this.myId,
+            tvMode: this.tvMode,
+            players: this.players,
+            _mid: `${this.myId}_hh_${++this.msgSeq}`,
+          });
+        } catch (e) {}
       });
 
       conn.on('data', (data) => {
@@ -396,18 +540,22 @@
         delete this.conns[conn.peer];
         const pid = this.peerToPlayerId[conn.peer];
         delete this.peerToPlayerId[conn.peer];
-        if (pid && this.pendingRequests[pid]) {
-          delete this.pendingRequests[pid];
-          this.onJoinRequestsChange(this.getPendingRequests());
+        if (pid && this.playerToPeerId[pid] === conn.peer) {
+          delete this.playerToPeerId[pid];
         }
-        if (pid && this.players[pid] && !this.players[pid].isLocal) {
-          delete this.players[pid];
-          this.emitRoster();
-          this.broadcastRoster();
+        // Only drop player immediately if WSS relay is NOT connected; otherwise wait for PLAYER_LEAVE
+        if (pid && !this.relay?.connected) {
+          if (this.pendingRequests[pid]) {
+            delete this.pendingRequests[pid];
+            this.onJoinRequestsChange(this.getPendingRequests());
+          }
+          if (this.players[pid] && !this.players[pid].isLocal) {
+            delete this.players[pid];
+            this.emitRoster();
+            this.broadcastRoster();
+          }
         }
-        if (Object.keys(this.conns).length === 0 && !this.destroyed) {
-          this.onStatusChange('ok', 'Room Online');
-        }
+        this._updateStatus();
       };
 
       conn.on('close', onDrop);
@@ -415,26 +563,41 @@
     }
 
     connectToHostPeer() {
-      if (this.destroyed || this.isHost || this.declined || !this.peer || this.peer.destroyed) return;
+      if (this.destroyed || this.isHost || this.declined || this.kicked || !this.peer || this.peer.destroyed) return;
       if (this.hostConn && this.hostConn.open) return;
 
-      this.onStatusChange('warn', 'Joining Room...');
-      const conn = this.peer.connect(this.hostPeerId, { reliable: true });
+      clearTimeout(this.connWatchdog);
+      if (this.hostConn) {
+        try { this.hostConn.close(); } catch (e) {}
+        this.hostConn = null;
+      }
+
+      this._updateStatus();
+      let conn;
+      try {
+        conn = this.peer.connect(this.hostPeerId, { reliable: true });
+      } catch (e) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = setTimeout(() => this.connectToHostPeer(), 2500);
+        return;
+      }
       this.hostConn = conn;
       this.conns[this.hostPeerId] = conn;
 
+      // Watchdog: if WebRTC ICE stalls silently (common on 5G/Safari), close stalled attempt and retry later
+      this.connWatchdog = setTimeout(() => {
+        if (this.destroyed || this.hostConn !== conn || conn.open) return;
+        try { conn.close(); } catch (e) {}
+        if (this.hostConn === conn) this.hostConn = null;
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = setTimeout(() => this.connectToHostPeer(), 3500);
+      }, 5000);
+
       conn.on('open', () => {
-        this.onStatusChange('ok', 'P2P Live');
-        conn.send({
-          type: 'JOIN_REQ',
-          senderId: this.myId,
-          name: this.myName,
-          avatar: this.myAvatar,
-          accountHandle: this.myAccountHandle,
-          trophyCount: this.myTrophyCount,
-          isController: this.controllerMode,
-          requireApproval: this.requireApproval,
-        });
+        clearTimeout(this.connWatchdog);
+        this._updateStatus();
+        this._sendJoinReq(conn);
+        this._startJoinRetry();
       });
 
       conn.on('data', (data) => {
@@ -442,11 +605,12 @@
       });
 
       const onDrop = () => {
+        clearTimeout(this.connWatchdog);
+        if (this.hostConn === conn) this.hostConn = null;
         if (this.destroyed || this.declined || this.kicked) return;
-        this.hostConn = null;
-        this.onStatusChange('warn', 'Reconnecting...');
+        this._updateStatus();
         clearTimeout(this.reconnectTimer);
-        this.reconnectTimer = setTimeout(() => this.connectToHostPeer(), 2000);
+        this.reconnectTimer = setTimeout(() => this.connectToHostPeer(), 2500);
       };
 
       conn.on('close', onDrop);
@@ -458,6 +622,7 @@
         this.peerToPlayerId[fromConn.peer] = sender;
         this.playerToPeerId[sender] = fromConn.peer;
       }
+      this.lastSeenByPlayer[sender] = Date.now();
 
       if (!this.players[sender]) {
         const used = new Set(Object.values(this.players).map((p) => p.slot));
@@ -466,9 +631,7 @@
           if (!used.has(i)) { freeSlot = i; break; }
         }
         if (freeSlot === -1) {
-          if (fromConn && fromConn.open) {
-            try { fromConn.send({ type: 'ROOM_FULL', senderId: this.myId }); } catch (e) {}
-          }
+          this.sendToPlayer(sender, { type: 'ROOM_FULL' }, fromConn);
           return false;
         }
         this.players[sender] = {
@@ -494,6 +657,18 @@
       }
 
       this.broadcastRoster();
+      if (fromConn && fromConn.open) {
+        try {
+          fromConn.send({
+            type: 'ROSTER',
+            senderId: this.myId,
+            players: this.players,
+            hostId: this.myId,
+            tvMode: this.tvMode,
+            _mid: `${this.myId}_rd_${++this.msgSeq}`,
+          });
+        } catch (e) {}
+      }
       return true;
     }
 
@@ -506,7 +681,7 @@
 
       const ok = this._admitPlayer(playerId, req, req.conn || null);
       if (ok) {
-        this.sendToPlayer(playerId, { type: 'JOIN_ACCEPTED' });
+        this.sendToPlayer(playerId, { type: 'JOIN_ACCEPTED' }, req.conn || null);
       }
       return ok;
     }
@@ -518,20 +693,23 @@
       delete this.pendingRequests[playerId];
       this.onJoinRequestsChange(this.getPendingRequests());
 
+      this.sendToPlayer(playerId, { type: 'JOIN_DECLINED' }, req.conn || null);
       if (req.conn && req.conn.open) {
-        try { req.conn.send({ type: 'JOIN_DECLINED', senderId: this.myId, targetId: playerId }); } catch (e) {}
         setTimeout(() => {
           try { req.conn.close(); } catch (e) {}
         }, 120);
-      } else {
-        this.sendSignal({ type: 'JOIN_DECLINED', targetId: playerId });
       }
       return true;
     }
 
     lookupRemoteAccount(username, pin) {
       return new Promise((resolve) => {
-        if (this.isHost || !this.hostConn || !this.hostConn.open) {
+        if (this.isHost) {
+          resolve({ ok: false, notFound: true });
+          return;
+        }
+        const canSend = (this.hostConn && this.hostConn.open) || (this.relay && this.relay.connected);
+        if (!canSend) {
           resolve({ ok: false, notFound: true });
           return;
         }
@@ -539,21 +717,14 @@
         const timer = setTimeout(() => {
           delete this.pendingLookups[reqId];
           resolve({ ok: false, notFound: true });
-        }, 3500);
+        }, 4000);
         this.pendingLookups[reqId] = { resolve, timer };
-        try {
-          this.hostConn.send({
-            type: 'ACCOUNT_LOOKUP',
-            senderId: this.myId,
-            reqId,
-            username,
-            pin,
-          });
-        } catch (e) {
-          clearTimeout(timer);
-          delete this.pendingLookups[reqId];
-          resolve({ ok: false, notFound: true });
-        }
+        this.sendSignal({
+          type: 'ACCOUNT_LOOKUP',
+          reqId,
+          username,
+          pin,
+        });
       });
     }
 
@@ -607,10 +778,10 @@
       if (!p) return;
 
       if (!p.isLocal) {
+        this.sendToPlayer(playerId, { type: 'KICKED' });
         const remotePeer = this.playerToPeerId[playerId];
         const conn = remotePeer ? this.conns[remotePeer] : null;
         if (conn && conn.open) {
-          try { conn.send({ type: 'KICKED', senderId: this.myId }); } catch (e) {}
           setTimeout(() => {
             try { conn.close(); } catch (e) {}
           }, 120);
@@ -627,16 +798,25 @@
       this.broadcastRoster();
     }
 
-    sendToPlayer(playerId, payload) {
+    sendToPlayer(playerId, payload, directConn = null) {
       if (!this.isHost || !playerId) return;
-      const msg = { ...payload, targetId: playerId, senderId: this.myId, ts: Date.now() };
+      const msg = {
+        ...payload,
+        targetId: playerId,
+        senderId: this.myId,
+        _mid: `${this.myId}_t_${++this.msgSeq}`,
+        ts: Date.now(),
+      };
       if (this.bc) {
         try { this.bc.postMessage(msg); } catch (e) {}
       }
       const remotePeer = this.playerToPeerId[playerId];
-      const conn = remotePeer ? this.conns[remotePeer] : null;
+      const conn = directConn || (remotePeer ? this.conns[remotePeer] : null);
       if (conn && conn.open) {
         try { conn.send(msg); } catch (e) {}
+      }
+      if (this.relay && this.relay.connected) {
+        this.relay.send(msg);
       }
     }
 
@@ -649,19 +829,49 @@
       if (this.bc) {
         try { this.bc.postMessage(msg); } catch (e) {}
       }
+      let sentViaP2p = false;
       if (this.isHost) {
+        const remoteIds = Object.values(this.players).filter((p) => !p.isLocal).map((p) => p.id);
+        let allRemoteOnP2p = remoteIds.length > 0;
+        for (const rid of remoteIds) {
+          const rPeer = this.playerToPeerId[rid];
+          const c = rPeer ? this.conns[rPeer] : null;
+          if (!c || !c.open) allRemoteOnP2p = false;
+        }
         for (const conn of Object.values(this.conns)) {
           if (conn && conn.open) {
-            try { conn.send(msg); } catch (e) {}
+            try { conn.send(msg); sentViaP2p = true; } catch (e) {}
           }
         }
-      } else if (this.hostConn && this.hostConn.open) {
-        try { this.hostConn.send(msg); } catch (e) {}
+        // If any remote player is relay-only (NAT/5G), also mirror throttled realtime state over WSS!
+        if (!allRemoteOnP2p && remoteIds.length > 0 && this.relay && this.relay.connected) {
+          const now = Date.now();
+          if (now - this.lastRelayRtSent >= 75) {
+            this.lastRelayRtSent = now;
+            this.relay.send(msg);
+          }
+        }
+      } else {
+        if (this.hostConn && this.hostConn.open) {
+          try { this.hostConn.send(msg); sentViaP2p = true; } catch (e) {}
+        }
+        if (!sentViaP2p && this.relay && this.relay.connected) {
+          const now = Date.now();
+          if (now - this.lastRelayRtSent >= 55) {
+            this.lastRelayRtSent = now;
+            this.relay.send(msg);
+          }
+        }
       }
     }
 
     sendSignal(payload) {
-      const msg = { ...payload, senderId: this.myId, ts: Date.now() };
+      const msg = {
+        ...payload,
+        senderId: this.myId,
+        _mid: `${this.myId}_s_${++this.msgSeq}`,
+        ts: Date.now(),
+      };
       if (this.bc) {
         try { this.bc.postMessage(msg); } catch (e) {}
       }
@@ -674,6 +884,9 @@
       } else if (this.hostConn && this.hostConn.open) {
         try { this.hostConn.send(msg); } catch (e) {}
       }
+      if (this.relay) {
+        this.relay.send(msg);
+      }
     }
 
     handlePacket(data, fromConn) {
@@ -682,6 +895,47 @@
 
       if (data._rt) {
         this.onMessage(data);
+        return;
+      }
+
+      if (data._mid) {
+        if (this.seenMids.has(data._mid)) return;
+        this.seenMids.add(data._mid);
+        if (this.seenMids.size > 260) {
+          const first = this.seenMids.values().next().value;
+          this.seenMids.delete(first);
+        }
+      }
+
+      if (data.type === 'HEARTBEAT' && this.isHost) {
+        this.lastSeenByPlayer[data.senderId] = Date.now();
+        return;
+      }
+
+      if (data.type === 'PLAYER_LEAVE' && this.isHost) {
+        const pid = data.senderId;
+        if (this.pendingRequests[pid]) {
+          delete this.pendingRequests[pid];
+          this.onJoinRequestsChange(this.getPendingRequests());
+        }
+        if (this.players[pid] && !this.players[pid].isLocal) {
+          delete this.players[pid];
+          this.emitRoster();
+          this.broadcastRoster();
+        }
+        return;
+      }
+
+      if (data.type === 'HOST_HELLO' && !this.isHost) {
+        this.roomHasTv = Boolean(data.tvMode);
+        if (data.players && data.players[this.myId]) {
+          this.players = data.players;
+          this.admitted = true;
+          this.emitRoster();
+          this._updateStatus();
+        } else if (!this.admitted && !this.waitingApproval) {
+          this._sendJoinReq(fromConn);
+        }
         return;
       }
 
@@ -697,18 +951,17 @@
         if (global.CouchAccounts && global.CouchAccounts.verifyAccountCredentials) {
           res = global.CouchAccounts.verifyAccountCredentials(data.username, data.pin);
         }
-        const reply = {
-          type: 'ACCOUNT_LOOKUP_RES',
-          senderId: this.myId,
-          targetId: data.senderId,
-          reqId: data.reqId,
-          ok: Boolean(res.ok),
-          error: res.error || '',
-          account: res.ok ? res.account : null,
-        };
-        if (fromConn && fromConn.open) {
-          try { fromConn.send(reply); } catch (e) {}
-        }
+        this.sendToPlayer(
+          data.senderId,
+          {
+            type: 'ACCOUNT_LOOKUP_RES',
+            reqId: data.reqId,
+            ok: Boolean(res.ok),
+            error: res.error || '',
+            account: res.ok ? res.account : null,
+          },
+          fromConn
+        );
         return;
       }
 
@@ -736,13 +989,10 @@
           this.playerToPeerId[sender] = fromConn.peer;
         }
 
-        // If joining from Main Menu Open Rooms list and not already admitted -> queue for Host acceptance!
         if (data.requireApproval && !this.players[sender]) {
           const usedCount = Object.keys(this.players).length;
           if (usedCount >= this.maxPlayers) {
-            if (fromConn && fromConn.open) {
-              try { fromConn.send({ type: 'ROOM_FULL', senderId: this.myId }); } catch (e) {}
-            }
+            this.sendToPlayer(sender, { type: 'ROOM_FULL' }, fromConn);
             return;
           }
           this.pendingRequests[sender] = {
@@ -756,11 +1006,7 @@
             conn: fromConn,
           };
           this.onJoinRequestsChange(this.getPendingRequests());
-          if (fromConn && fromConn.open) {
-            try { fromConn.send({ type: 'JOIN_PENDING', senderId: this.myId, targetId: sender, tvMode: this.tvMode }); } catch (e) {}
-          } else {
-            this.sendSignal({ type: 'JOIN_PENDING', targetId: sender, tvMode: this.tvMode });
-          }
+          this.sendToPlayer(sender, { type: 'JOIN_PENDING', tvMode: this.tvMode }, fromConn);
           return;
         }
 
@@ -770,18 +1016,24 @@
 
       if (data.type === 'JOIN_PENDING' && !this.isHost) {
         this.roomHasTv = Boolean(data.tvMode);
+        this.waitingApproval = true;
+        this._updateStatus();
         this.onJoinPending();
         return;
       }
 
       if (data.type === 'JOIN_ACCEPTED' && !this.isHost) {
         this.requireApproval = false;
+        this.waitingApproval = false;
+        this.admitted = true;
+        this._updateStatus();
         this.onJoinAccepted();
         return;
       }
 
       if (data.type === 'JOIN_DECLINED' && !this.isHost) {
         this.declined = true;
+        this.waitingApproval = false;
         this.destroy();
         this.onJoinDeclined();
         return;
@@ -810,11 +1062,17 @@
         this.players = data.players;
         this.hostId = data.hostId;
         this.roomHasTv = Boolean(data.tvMode);
+        if (this.players[this.myId]) {
+          this.admitted = true;
+          this.waitingApproval = false;
+        }
+        this._updateStatus();
         this.emitRoster();
         return;
       }
 
       if (data.type === 'ROOM_FULL' && !this.isHost) {
+        this.roomFull = true;
         this.onRoomFull();
         return;
       }
@@ -825,13 +1083,20 @@
     destroy() {
       this.destroyed = true;
       document.removeEventListener('visibilitychange', this._onVisibility);
-      if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+      window.removeEventListener('pagehide', this._onPageHide);
+      clearTimeout(this.reconnectTimer);
+      clearTimeout(this.connWatchdog);
+      clearInterval(this.joinRetryTimer);
+      clearInterval(this.hbTimer);
       for (const entry of Object.values(this.pendingLookups)) {
         clearTimeout(entry.timer);
       }
       this.pendingLookups = {};
       if (this.bc) {
         try { this.bc.close(); } catch (e) {}
+      }
+      if (this.relay) {
+        try { this.relay.destroy(); } catch (e) {}
       }
       if (this.peer) {
         try { this.peer.destroy(); } catch (e) {}

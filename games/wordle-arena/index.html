@@ -1090,6 +1090,7 @@
   </div>
 
   <script src="../../shared/qr.js"></script>
+  <script src="../../shared/ws-relay.js"></script>
   <script src="../../shared/accounts.js"></script>
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script>
@@ -1536,6 +1537,10 @@
         try { state.bc.close(); } catch (e) {}
         state.bc = null;
       }
+      if (state.relay) {
+        try { state.relay.destroy(); } catch (e) {}
+        state.relay = null;
+      }
     }
 
     function initChannelSync(roomCode) {
@@ -1553,13 +1558,44 @@
 
       if (state.mode === 'solo' || !roomCode) return;
 
-      // 2. PeerJS P2P WebRTC DataChannels (zero daily rate limits!)
+      // 2. NAT-proof WSS MQTT Relay (works on 5G <-> Wi-Fi & iOS Safari even if WebRTC is blocked!)
+      if (window.CouchWsRelay && window.CouchWsRelay.WsRelayChannel) {
+        state.relay = new window.CouchWsRelay.WsRelayChannel(`wordle/${roomCode}`, {
+          onOpen: () => {
+            setHttpsStatus('ok', 'Live Sync: Ready');
+            if (state.mode === 'host' && state.secretWords.length === TOTAL_WORDS) {
+              publishEvent({
+                type: 'ROOM_INIT',
+                roomCode: state.roomCode,
+                hostId: state.myId,
+                tvMode: state.tvMode,
+                language: state.language,
+                secretWords: state.secretWords,
+                roundId: state.roundId,
+                ts: Date.now()
+              });
+            } else if (state.mode === 'guest') {
+              publishEvent({
+                type: 'PLAYER_PING',
+                name: state.myName,
+                ts: Date.now()
+              });
+            }
+          },
+          onMessage: (data) => {
+            if (data) processIncomingEvent(data, null);
+          },
+        });
+        state.relay.connect();
+      }
+
+      // 3. PeerJS P2P WebRTC DataChannels (zero daily rate limits!)
       openPeerSync(roomCode);
     }
 
     function openPeerSync(roomCode) {
       if (typeof Peer !== 'function') {
-        setHttpsStatus('err', 'Offline / Retry');
+        if (!state.relay || !state.relay.connected) setHttpsStatus('err', 'Offline / Retry');
         return;
       }
       if (state.peer) {
@@ -1569,7 +1605,7 @@
       state.peerConns = {};
       state.hostConn = null;
 
-      setHttpsStatus('warn', 'Connecting...');
+      if (!state.relay || !state.relay.connected) setHttpsStatus('warn', 'Connecting...');
       const opts = { config: { iceServers: PEER_ICE_SERVERS } };
       const peer = state.mode === 'host'
         ? new Peer(getHostPeerId(roomCode), opts)
@@ -1626,7 +1662,7 @@
       }
 
       peer.on('disconnected', () => {
-        setHttpsStatus('warn', 'Reconnecting...');
+        if (!state.relay || !state.relay.connected) setHttpsStatus('warn', 'Reconnecting...');
         setTimeout(() => {
           if (state.peer === peer && !peer.destroyed) {
             try { peer.reconnect(); } catch (e) {}
@@ -1638,13 +1674,13 @@
         const type = err && err.type ? err.type : '';
         if (type === 'unavailable-id' && state.mode === 'host' && state.retryCount < 4) {
           state.retryCount += 1;
-          setHttpsStatus('warn', 'Reclaiming Room...');
+          if (!state.relay || !state.relay.connected) setHttpsStatus('warn', 'Reclaiming Room...');
           clearTimeout(state.reconnectTimer);
           state.reconnectTimer = setTimeout(() => openPeerSync(roomCode), 1200);
           return;
         }
         if (type === 'peer-unavailable' && state.mode === 'guest') {
-          setHttpsStatus('warn', 'Searching Room...');
+          if (!state.relay || !state.relay.connected) setHttpsStatus('warn', 'Searching Room...');
           clearTimeout(state.reconnectTimer);
           state.reconnectTimer = setTimeout(() => {
             if (state.mode === 'guest' && state.roomCode === roomCode) {
@@ -1653,7 +1689,7 @@
           }, 1500);
           return;
         }
-        setHttpsStatus('err', 'Offline / Retry');
+        if (!state.relay || !state.relay.connected) setHttpsStatus('err', 'Offline / Retry');
       });
     }
 
@@ -1661,7 +1697,7 @@
       if (!state.peer || state.peer.destroyed || state.mode !== 'guest') return;
       if (state.hostConn && state.hostConn.open) return;
 
-      setHttpsStatus('warn', 'Joining Room...');
+      if (!state.relay || !state.relay.connected) setHttpsStatus('warn', 'Joining Room...');
       const conn = state.peer.connect(getHostPeerId(roomCode), { reliable: true });
       state.hostConn = conn;
 
@@ -1688,7 +1724,7 @@
       const onDrop = () => {
         if (state.mode !== 'guest' || state.roomCode !== roomCode) return;
         state.hostConn = null;
-        setHttpsStatus('warn', 'Reconnecting...');
+        if (!state.relay || !state.relay.connected) setHttpsStatus('warn', 'Reconnecting...');
         clearTimeout(state.reconnectTimer);
         state.reconnectTimer = setTimeout(() => connectGuestToHost(roomCode), 2000);
       };
@@ -1711,6 +1747,10 @@
       }
 
       if (state.mode === 'solo' || !state.roomCode) return;
+
+      if (state.relay) {
+        state.relay.send(enriched);
+      }
 
       if (state.mode === 'host') {
         Object.values(state.peerConns).forEach((conn) => {
