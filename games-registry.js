@@ -4,6 +4,132 @@
  */
 window.GAME_HUB_REGISTRY = [
   {
+    id: 'wonder-tetris',
+    codePrefix: 'T',
+    title: 'Wonder Tetris',
+    tagline: 'Animated Storybook Block Party',
+    description:
+      'Stack cheerful cartoon blocks with expressive eyes in a sunny fairy-tale kingdom! Spark rainbow combos, fling playful giggle-bubbles at rivals, and play 1–5P live or on TV with phone controllers!',
+    path: 'games/wonder-tetris/index.html',
+    launchParams: 'host=1',
+    players: '1–5P Room · + Cute Bots',
+    input: 'Keyboard, Touch & TV Phone',
+    accent: '#ec4899',
+    ctaBg: '#f59e0b',
+    badge: 'NEW!',
+    roomFlair: {
+      icon: '🧱',
+      themeClass: 'flair-tetris',
+      eyebrow: 'Storybook Kingdom · Animated Block Party',
+      bannerBg: 'linear-gradient(135deg, #38bdf8 0%, #f472b6 54%, #facc15 100%)',
+      bannerText: '#fffdf8',
+      accent: '#ec4899',
+      pillBg: '#fef08a',
+      pillText: '#9a3412',
+      launchLabel: 'Start Wonder Tetris!',
+      controlsTip: 'Move with Arrows/WASD · Rotate with Up/X/Z · Hard Drop with Space · Hold with C · On TV, everyone plays on their phone controller!',
+    },
+    statKey: 'wonder_tetris_best',
+    formatStat: (raw) => {
+      try {
+        const d = JSON.parse(raw);
+        if (!d || !d.games) return null;
+        if (d.wins > 0) {
+          return `👑 ${d.wins} Wins · Best ${Number(d.bestScore || 0).toLocaleString()} pts`;
+        }
+        return `★ Best: ${Number(d.bestScore || 0).toLocaleString()} pts · ${d.bestLines || 0} Lines`;
+      } catch {
+        return null;
+      }
+    },
+    artSvg: `
+      <svg viewBox="0 0 360 195" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <!-- Sunny Disney Storybook Sky -->
+        <rect width="360" height="195" fill="#7dd3fc"/>
+        <!-- Pastel Rainbow Arch -->
+        <path d="M30 175 A150 132 0 0 1 330 175" stroke="#fb7185" stroke-width="11" fill="none" opacity="0.55"/>
+        <path d="M40 175 A140 122 0 0 1 320 175" stroke="#facc15" stroke-width="11" fill="none" opacity="0.6"/>
+        <path d="M50 175 A130 112 0 0 1 310 175" stroke="#4ade80" stroke-width="11" fill="none" opacity="0.55"/>
+        <path d="M60 175 A120 102 0 0 1 300 175" stroke="#38bdf8" stroke-width="11" fill="none" opacity="0.55"/>
+        <!-- Smiling Golden Sun -->
+        <g transform="translate(236, 38)">
+          <circle r="21" fill="#facc15" stroke="#1e1b2e" stroke-width="2.8"/>
+          <circle cx="-6.5" cy="-3" r="2.2" fill="#1e1b2e"/>
+          <circle cx="6.5" cy="-3" r="2.2" fill="#1e1b2e"/>
+          <circle cx="-10.5" cy="3" r="3" fill="#fda4af" opacity="0.8"/>
+          <circle cx="10.5" cy="3" r="3" fill="#fda4af" opacity="0.8"/>
+          <path d="M-5.5 4 Q0 9.5 5.5 4" stroke="#1e1b2e" stroke-width="2.2" stroke-linecap="round"/>
+        </g>
+        <!-- Fluffy Cartoon Clouds -->
+        <g fill="#ffffff" stroke="#1e1b2e" stroke-width="2.5" stroke-linejoin="round">
+          <path d="M20 52 Q20 36 36 36 Q44 24 60 30 Q74 26 78 42 Q88 44 85 55 L22 55 Z"/>
+        </g>
+        <!-- Fairy-Tale Storybook Castle Silhouette on Left Hill -->
+        <path d="M-10 195 Q70 132 165 162 Q265 130 370 156 L370 195 Z" fill="#4ade80" stroke="#1e1b2e" stroke-width="2.8"/>
+        <g transform="translate(58, 128)">
+          <rect x="-22" y="-12" width="44" height="34" fill="#fffbeb" stroke="#1e1b2e" stroke-width="2.4"/>
+          <rect x="-24" y="-32" width="14" height="36" fill="#fffbeb" stroke="#1e1b2e" stroke-width="2.2"/>
+          <path d="M-27 -32 L-17 -50 L-7 -32 Z" fill="#38bdf8" stroke="#1e1b2e" stroke-width="2.2" stroke-linejoin="round"/>
+          <rect x="10" y="-32" width="14" height="36" fill="#fffbeb" stroke="#1e1b2e" stroke-width="2.2"/>
+          <path d="M7 -32 L17 -50 L27 -32 Z" fill="#38bdf8" stroke="#1e1b2e" stroke-width="2.2" stroke-linejoin="round"/>
+          <rect x="-8" y="-44" width="16" height="44" fill="#fffbeb" stroke="#1e1b2e" stroke-width="2.2"/>
+          <path d="M-12 -44 L0 -66 L12 -44 Z" fill="#ec4899" stroke="#1e1b2e" stroke-width="2.2" stroke-linejoin="round"/>
+          <path d="M-7 22 L-7 10 A7 7 0 0 1 7 10 L7 22 Z" fill="#fbbf24" stroke="#1e1b2e" stroke-width="2"/>
+        </g>
+        <!-- Sparkly 4-Point Disney Stars -->
+        <path d="M108 26 L111 35 L120 38 L111 41 L108 50 L105 41 L96 38 L105 35 Z" fill="#fef08a" stroke="#1e1b2e" stroke-width="1.6"/>
+        <path d="M256 26 L258 33 L265 35 L258 37 L256 44 L254 37 L247 35 L254 33 Z" fill="#fbcfe8" stroke="#1e1b2e" stroke-width="1.5"/>
+        <path d="M294 114 L297 122 L305 125 L297 128 L294 136 L291 128 L283 125 L291 122 Z" fill="#fef08a" stroke="#1e1b2e" stroke-width="1.6"/>
+        <!-- Cheerful Animated Storybook Tetromino Blocks with Cute Eyes! -->
+        <!-- Pink T-Piece Floating Happily -->
+        <g transform="translate(154, 46) rotate(-7)">
+          <rect x="28" y="0" width="28" height="28" rx="7" fill="#ec4899" stroke="#1e1b2e" stroke-width="2.8"/>
+          <rect x="33" y="4" width="18" height="6" rx="3" fill="#fbcfe8" opacity="0.8"/>
+          <rect x="0" y="28" width="28" height="28" rx="7" fill="#ec4899" stroke="#1e1b2e" stroke-width="2.8"/>
+          <rect x="28" y="28" width="28" height="28" rx="7" fill="#ec4899" stroke="#1e1b2e" stroke-width="2.8"/>
+          <rect x="56" y="28" width="28" height="28" rx="7" fill="#ec4899" stroke="#1e1b2e" stroke-width="2.8"/>
+          <!-- Cute Expressive Face on Center Block -->
+          <circle cx="37" cy="40" r="4" fill="#ffffff" stroke="#1e1b2e" stroke-width="1.8"/>
+          <circle cx="47" cy="40" r="4" fill="#ffffff" stroke="#1e1b2e" stroke-width="1.8"/>
+          <circle cx="38" cy="40" r="2" fill="#1e1b2e"/>
+          <circle cx="48" cy="40" r="2" fill="#1e1b2e"/>
+          <path d="M38 47 Q42 52 46 47" stroke="#1e1b2e" stroke-width="2" stroke-linecap="round"/>
+        </g>
+        <!-- Bottom Joyful Stacked Candy Blocks -->
+        <g transform="translate(116, 122)">
+          <!-- Mint S-Block -->
+          <rect x="0" y="28" width="28" height="28" rx="7" fill="#4ade80" stroke="#1e1b2e" stroke-width="2.8"/>
+          <rect x="28" y="28" width="28" height="28" rx="7" fill="#4ade80" stroke="#1e1b2e" stroke-width="2.8"/>
+          <rect x="28" y="0" width="28" height="28" rx="7" fill="#4ade80" stroke="#1e1b2e" stroke-width="2.8"/>
+          <rect x="56" y="0" width="28" height="28" rx="7" fill="#4ade80" stroke="#1e1b2e" stroke-width="2.8"/>
+          <circle cx="37" cy="12" r="3.6" fill="#ffffff" stroke="#1e1b2e" stroke-width="1.6"/>
+          <circle cx="47" cy="12" r="3.6" fill="#ffffff" stroke="#1e1b2e" stroke-width="1.6"/>
+          <circle cx="37.8" cy="12" r="1.8" fill="#1e1b2e"/>
+          <circle cx="47.8" cy="12" r="1.8" fill="#1e1b2e"/>
+          <path d="M39 18 Q42 22 45 18" stroke="#1e1b2e" stroke-width="1.8" stroke-linecap="round"/>
+          <!-- Sunny O-Block -->
+          <rect x="56" y="28" width="28" height="28" rx="7" fill="#facc15" stroke="#1e1b2e" stroke-width="2.8"/>
+          <rect x="84" y="28" width="28" height="28" rx="7" fill="#facc15" stroke="#1e1b2e" stroke-width="2.8"/>
+          <rect x="84" y="0" width="28" height="28" rx="7" fill="#facc15" stroke="#1e1b2e" stroke-width="2.8"/>
+          <circle cx="93" cy="12" r="3.6" fill="#ffffff" stroke="#1e1b2e" stroke-width="1.6"/>
+          <circle cx="103" cy="12" r="3.6" fill="#ffffff" stroke="#1e1b2e" stroke-width="1.6"/>
+          <circle cx="92.5" cy="12" r="1.8" fill="#1e1b2e"/>
+          <circle cx="102.5" cy="12" r="1.8" fill="#1e1b2e"/>
+          <path d="M95 18 Q98 22 101 18" stroke="#1e1b2e" stroke-width="1.8" stroke-linecap="round"/>
+          <!-- Sky Ribbon I-Block -->
+          <rect x="112" y="28" width="28" height="28" rx="7" fill="#38bdf8" stroke="#1e1b2e" stroke-width="2.8"/>
+          <rect x="140" y="28" width="28" height="28" rx="7" fill="#38bdf8" stroke="#1e1b2e" stroke-width="2.8"/>
+          <rect x="112" y="0" width="28" height="28" rx="7" fill="#fb923c" stroke="#1e1b2e" stroke-width="2.8"/>
+          <circle cx="121" cy="40" r="3.6" fill="#ffffff" stroke="#1e1b2e" stroke-width="1.6"/>
+          <circle cx="131" cy="40" r="3.6" fill="#ffffff" stroke="#1e1b2e" stroke-width="1.6"/>
+          <circle cx="121.5" cy="40" r="1.8" fill="#1e1b2e"/>
+          <circle cx="131.5" cy="40" r="1.8" fill="#1e1b2e"/>
+          <path d="M123 46 Q126 50 129 46" stroke="#1e1b2e" stroke-width="1.8" stroke-linecap="round"/>
+        </g>
+      </svg>
+    `,
+  },
+  {
     id: 'suncoast-kart',
     codePrefix: 'S',
     title: 'Suncoast Kart',
@@ -16,7 +142,7 @@ window.GAME_HUB_REGISTRY = [
     input: 'Keyboard & Touch',
     accent: '#0284c7',
     ctaBg: '#ef4444',
-    badge: 'NEW!',
+    badge: '3D RACE',
     roomFlair: {
       icon: '🏎️',
       themeClass: 'flair-kart',

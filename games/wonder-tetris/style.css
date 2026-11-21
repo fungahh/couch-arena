@@ -1,0 +1,824 @@
+/* ==========================================================================
+   WONDER TETRIS — Joyful Disney Storybook Multiplayer Arcade Theme
+   Matches Couch Arcade's warm cream, sunlit sky & thick cartoon ink language
+   ========================================================================== */
+
+:root {
+  --ink: #1e1b2e;
+  --ink-soft: #4c4566;
+  --cream: #fff9ee;
+  --card: #ffffff;
+  --gold: #facc15;
+  --gold-deep: #d97706;
+  --sky: #38bdf8;
+  --sky-deep: #0284c7;
+  --berry: #ec4899;
+  --mint: #22c55e;
+  --coral: #f43f5e;
+  --orange: #fb923c;
+  --shadow-sm: 0 3px 0 #1e1b2e;
+  --shadow-md: 0 5px 0 #1e1b2e;
+  --shadow-lg: 0 8px 0 #1e1b2e, 0 18px 34px rgba(30, 27, 46, 0.18);
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Nunito', system-ui, -apple-system, sans-serif;
+  color: var(--ink);
+  background: #7dd3fc;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* Pre-paint Autostart Boot Splash (Zero flash of internal lobby!) */
+#boot-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 18% 15%, rgba(254, 240, 138, 0.85), transparent 42%),
+    radial-gradient(circle at 84% 18%, rgba(186, 230, 253, 0.85), transparent 45%),
+    #fff8ec;
+  padding: 24px;
+}
+
+html.autostart-boot #boot-splash {
+  display: flex;
+}
+
+.boot-splash-card {
+  background: #ffffff;
+  border: 3.5px solid var(--ink);
+  border-radius: 26px;
+  box-shadow: var(--shadow-lg);
+  padding: 28px 36px;
+  text-align: center;
+  max-width: 390px;
+  animation: popBounce 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.boot-splash-icon {
+  font-size: 3.2rem;
+  margin-bottom: 8px;
+  animation: floatJoy 1.8s ease-in-out infinite;
+}
+
+.boot-splash-card h2 {
+  font-family: 'Fredoka', system-ui, sans-serif;
+  font-size: 1.6rem;
+  margin-bottom: 6px;
+}
+
+.boot-splash-card p {
+  font-weight: 700;
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+}
+
+/* Living Storybook Background Canvas */
+#bg-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* Main App Shell */
+.app-shell {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Top Storybook HUD Header */
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px clamp(10px, 2.5vw, 24px);
+  background: rgba(255, 250, 238, 0.88);
+  backdrop-filter: blur(8px);
+  border-bottom: 3px solid var(--ink);
+  box-shadow: 0 3px 0 rgba(30, 27, 46, 0.08);
+  flex-shrink: 0;
+  z-index: 12;
+}
+
+.top-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.brand-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: var(--gold);
+  border: 2.5px solid var(--ink);
+  box-shadow: 0 3px 0 var(--ink);
+  display: grid;
+  place-items: center;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.brand-title {
+  font-family: 'Fredoka', system-ui, sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
+.brand-sub {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--sky-deep);
+  white-space: nowrap;
+}
+
+.top-center {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.pill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 2.4px solid var(--ink);
+  box-shadow: 0 2.5px 0 var(--ink);
+  font-family: 'Fredoka', system-ui, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pill-chip.room-pill {
+  background: #fef08a;
+  letter-spacing: 0.06em;
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #f59e0b;
+  border: 1.5px solid var(--ink);
+}
+
+.pill-chip.ok .status-dot {
+  background: var(--mint);
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: nowrap;
+}
+
+/* Chunky Cartoon Buttons */
+.btn-toy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border-radius: 13px;
+  background: #ffffff;
+  color: var(--ink);
+  border: 2.5px solid var(--ink);
+  box-shadow: var(--shadow-sm);
+  font-family: 'Fredoka', system-ui, sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-toy:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 0 var(--ink);
+}
+
+.btn-toy:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--ink);
+}
+
+.btn-toy:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-toy.primary {
+  background: linear-gradient(180deg, #fde047 0%, #facc15 100%);
+  color: var(--ink);
+}
+
+.btn-toy.berry {
+  background: linear-gradient(180deg, #f472b6 0%, #ec4899 100%);
+  color: #ffffff;
+}
+
+.btn-toy.sky {
+  background: linear-gradient(180deg, #38bdf8 0%, #0ea5e9 100%);
+  color: #ffffff;
+}
+
+.btn-toy.mint {
+  background: linear-gradient(180deg, #4ade80 0%, #22c55e 100%);
+  color: #ffffff;
+}
+
+.btn-toy.coral {
+  background: linear-gradient(180deg, #fb7185 0%, #f43f5e 100%);
+  color: #ffffff;
+}
+
+.btn-toy.lg {
+  padding: 12px 24px;
+  font-size: 1.05rem;
+  border-radius: 17px;
+  border-width: 3px;
+  box-shadow: var(--shadow-md);
+}
+
+.btn-toy.icon-only {
+  padding: 6px 10px;
+  font-size: 1rem;
+}
+
+/* =========================================================================
+   MAIN GAMEPLAY STAGE (STANDARD + TV MODE)
+   ========================================================================= */
+.stage-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px clamp(8px, 2vw, 22px);
+  position: relative;
+}
+
+#game-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Target Switcher Floating Pill (Multiplayer) */
+.target-bar {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 2.5px solid var(--ink);
+  border-radius: 999px;
+  box-shadow: var(--shadow-sm);
+  font-family: 'Fredoka', system-ui, sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  z-index: 8;
+}
+
+.target-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 2px solid var(--ink);
+  background: #fef9c3;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.target-chip.active {
+  background: #f43f5e;
+  color: #ffffff;
+}
+
+/* Countdown Banner Overlay */
+.countdown-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.countdown-bubble {
+  font-family: 'Fredoka', system-ui, sans-serif;
+  font-size: clamp(3.4rem, 11vw, 6.4rem);
+  font-weight: 700;
+  color: #fde047;
+  -webkit-text-stroke: 4px var(--ink);
+  text-shadow: 0 8px 0 var(--ink);
+  animation: countdownPop 0.7s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* =========================================================================
+   MOBILE STANDALONE TOUCH CONTROLS BAR
+   ========================================================================= */
+.mobile-controls {
+  display: none;
+  flex-shrink: 0;
+  padding: 8px 10px max(10px, env(safe-area-inset-bottom));
+  background: rgba(255, 250, 238, 0.92);
+  border-top: 3px solid var(--ink);
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 12;
+}
+
+body.show-touch-bar .mobile-controls {
+  display: flex;
+}
+
+.touch-cluster {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.t-btn {
+  min-width: 50px;
+  height: 50px;
+  border-radius: 16px;
+  border: 2.8px solid var(--ink);
+  background: #ffffff;
+  box-shadow: 0 4px 0 var(--ink);
+  font-family: 'Fredoka', system-ui, sans-serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--ink);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.t-btn:active, .t-btn.pressed {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 var(--ink);
+  background: #fef08a;
+}
+
+.t-btn.drop {
+  background: linear-gradient(180deg, #fde047, #f59e0b);
+  min-width: 62px;
+  font-size: 0.92rem;
+}
+
+.t-btn.rot {
+  background: linear-gradient(180deg, #f472b6, #ec4899);
+  color: #ffffff;
+}
+
+.t-btn.hold {
+  background: #bae6fd;
+  font-size: 0.82rem;
+  min-width: 48px;
+}
+
+/* =========================================================================
+   DEDICATED PHONE CONTROLLER VIEW (FOR TV MODE)
+   ========================================================================= */
+.controller-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 12px 14px max(14px, env(safe-area-inset-bottom));
+  gap: 10px;
+  max-width: 540px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.ctrl-hud-card {
+  background: rgba(255, 255, 255, 0.95);
+  border: 3px solid var(--ink);
+  border-radius: 22px;
+  box-shadow: var(--shadow-md);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ctrl-player-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ctrl-avatar {
+  width: 46px;
+  height: 46px;
+  border-radius: 15px;
+  border: 2.5px solid var(--ink);
+  background: #fef08a;
+  display: grid;
+  place-items: center;
+  font-size: 1.6rem;
+}
+
+.ctrl-name {
+  font-family: 'Fredoka', system-ui, sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.ctrl-sub {
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: var(--ink-soft);
+}
+
+.ctrl-mini-boxes {
+  display: flex;
+  gap: 8px;
+}
+
+.ctrl-mini-box {
+  background: var(--cream);
+  border: 2.4px solid var(--ink);
+  border-radius: 14px;
+  padding: 4px 6px;
+  text-align: center;
+  width: 68px;
+}
+
+.ctrl-mini-label {
+  font-family: 'Fredoka', system-ui, sans-serif;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  letter-spacing: 0.05em;
+}
+
+.ctrl-pad-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+}
+
+.ctrl-row-main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.ctrl-dpad {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 10px;
+}
+
+.ctrl-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 10px;
+}
+
+.pad-big-btn {
+  min-height: 82px;
+  border-radius: 22px;
+  border: 3.2px solid var(--ink);
+  background: #ffffff;
+  box-shadow: 0 6px 0 var(--ink);
+  font-family: 'Fredoka', system-ui, sans-serif;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.pad-big-btn small {
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
+
+.pad-big-btn:active, .pad-big-btn.pressed {
+  transform: translateY(4px);
+  box-shadow: 0 2px 0 var(--ink);
+}
+
+.pad-big-btn.span-2 {
+  grid-column: span 2;
+}
+
+.pad-big-btn.btn-rot-cw {
+  background: linear-gradient(180deg, #f472b6, #ec4899);
+  color: #ffffff;
+}
+
+.pad-big-btn.btn-rot-ccw {
+  background: linear-gradient(180deg, #bae6fd, #38bdf8);
+  color: var(--ink);
+}
+
+.pad-big-btn.btn-hard-drop {
+  background: linear-gradient(180deg, #fde047, #f59e0b);
+  color: var(--ink);
+  min-height: 92px;
+  font-size: 1.5rem;
+}
+
+.pad-big-btn.btn-hold {
+  background: linear-gradient(180deg, #bbf7d0, #4ade80);
+  color: var(--ink);
+}
+
+.ctrl-captain-bar {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* =========================================================================
+   STORYBOOK MODAL OVERLAYS (TITLE / PAUSE / VICTORY / KICKED)
+   ========================================================================= */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(30, 27, 46, 0.36);
+  backdrop-filter: blur(6px);
+}
+
+.story-card {
+  width: min(560px, 100%);
+  max-height: 90dvh;
+  overflow-y: auto;
+  background: #fffdf8;
+  border: 3.5px solid var(--ink);
+  border-radius: 28px;
+  box-shadow: var(--shadow-lg);
+  padding: clamp(18px, 3vw, 28px);
+  text-align: center;
+  animation: popBounce 0.36s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.story-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #fef08a;
+  border: 2px solid var(--ink);
+  font-family: 'Fredoka', system-ui, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.story-title {
+  font-family: 'Fredoka', system-ui, sans-serif;
+  font-size: clamp(1.7rem, 4.5vw, 2.35rem);
+  font-weight: 700;
+  line-height: 1.1;
+  margin-bottom: 8px;
+}
+
+.story-sub {
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  margin-bottom: 16px;
+}
+
+.option-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+  text-align: left;
+}
+
+.option-box {
+  background: #ffffff;
+  border: 2.5px solid var(--ink);
+  border-radius: 16px;
+  padding: 10px 12px;
+  box-shadow: 0 3px 0 rgba(30, 27, 46, 0.12);
+}
+
+.option-label {
+  font-family: 'Fredoka', system-ui, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+  display: block;
+}
+
+.seg-group {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.seg-btn {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 2px solid var(--ink);
+  background: #fff9ee;
+  font-family: 'Fredoka', system-ui, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.seg-btn.active {
+  background: #38bdf8;
+  color: #ffffff;
+}
+
+.roster-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.roster-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 2.4px solid var(--ink);
+  font-family: 'Fredoka', system-ui, sans-serif;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.controls-legend {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #e0f2fe;
+  border: 2px dashed rgba(30, 27, 46, 0.35);
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--ink-soft);
+}
+
+.controls-legend kbd {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: #ffffff;
+  border: 1.8px solid var(--ink);
+  font-family: 'Fredoka', sans-serif;
+  font-size: 0.74rem;
+  color: var(--ink);
+}
+
+/* Victory Podium List */
+.podium-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 14px 0 18px;
+  text-align: left;
+}
+
+.podium-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: #ffffff;
+  border: 2.5px solid var(--ink);
+  box-shadow: 0 3px 0 var(--ink);
+}
+
+.podium-row.winner {
+  background: linear-gradient(90deg, #fef9c3 0%, #fde68a 100%);
+}
+
+.podium-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'Fredoka', system-ui, sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.podium-right {
+  font-family: 'Fredoka', system-ui, sans-serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--sky-deep);
+  text-align: right;
+}
+
+@keyframes popBounce {
+  0% { transform: scale(0.86); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes floatJoy {
+  0%, 100% { transform: translateY(0) rotate(-4deg); }
+  50% { transform: translateY(-7px) rotate(4deg); }
+}
+
+@keyframes countdownPop {
+  0% { transform: scale(0.4) rotate(-10deg); opacity: 0; }
+  65% { transform: scale(1.16) rotate(3deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+
+@media (max-width: 720px) {
+  .brand-sub { display: none; }
+  .pill-chip.net-pill { display: none; }
+  .btn-toy span.hide-sm { display: none; }
+  .top-bar { padding: 6px 10px; }
+  .target-bar { bottom: 6px; padding: 4px 10px; font-size: 0.74rem; }
+}
+
+@media (max-width: 500px) {
+  .brand-title { display: none; }
+  .top-bar { gap: 6px; }
+  .top-actions { gap: 5px; }
+}

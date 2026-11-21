@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Wonder Tetris — Animated Storybook Block Party</title>
+  <meta
+    name="description"
+    content="Play Wonder Tetris, a joyful Disney-style animated multiplayer Tetris party game for 1–5 players with expressive character blocks, rainbow combos, friendly AI rivals, and TV phone controllers!"
+  />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Nunito:wght@600;700;800&display=swap"
+    rel="stylesheet"
+  />
+  <script>
+    if (new URLSearchParams(window.location.search).get('autostart') === '1') {
+      document.documentElement.classList.add('autostart-boot');
+    }
+  </script>
+  <link rel="stylesheet" href="./style.css" />
+  <script src="../../shared/ws-relay.js"></script>
+  <script src="../../shared/accounts.js"></script>
+  <script src="../../shared/room-sync.js"></script>
+</head>
+<body>
+  <!-- Pre-paint Launch Splash when entering from Unified Pre-Game Room -->
+  <div id="boot-splash" aria-live="polite">
+    <div class="boot-splash-card">
+      <div class="boot-splash-icon">🏰✨</div>
+      <h2>Waking Up the Blocks...</h2>
+      <p>Preparing Wonder Tetris in the Storybook Kingdom!</p>
+    </div>
+  </div>
+
+  <!-- Living Animated Disney Storybook Kingdom Backdrop -->
+  <canvas id="bg-canvas" aria-hidden="true"></canvas>
+
+  <div class="app-shell">
+    <!-- Top Storybook Bar -->
+    <header class="top-bar">
+      <div class="top-brand">
+        <div class="brand-badge" aria-hidden="true">🧱</div>
+        <div>
+          <h1 class="brand-title">Wonder Tetris</h1>
+          <div class="brand-sub" id="top-mode-sub">Storybook Block Party</div>
+        </div>
+      </div>
+
+      <div class="top-center">
+        <div class="pill-chip room-pill" id="room-code-chip" title="Room Code">
+          <span>🎟️</span>
+          <span id="hud-room-code">T---</span>
+        </div>
+        <div class="pill-chip net-pill" id="hud-net-pill">
+          <span class="status-dot"></span>
+          <span id="hud-net-text">Connecting...</span>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <button type="button" id="btn-music" class="btn-toy icon-only" title="Toggle Happy Music">🎵</button>
+        <button type="button" id="btn-mute" class="btn-toy icon-only" title="Mute All Sound">🔊</button>
+        <button type="button" id="btn-pause" class="btn-toy icon-only hidden" title="Pause">⏸️</button>
+        <button type="button" id="btn-back-room" class="btn-toy sky" title="Return to Pre-Game Room">
+          <span>🚪</span><span class="hide-sm">Room</span>
+        </button>
+        <a href="../../index.html" id="btn-back-hub" class="btn-toy" title="Return to Main Menu">
+          <span>🏠</span><span class="hide-sm">Menu</span>
+        </a>
+      </div>
+    </header>
+
+    <!-- Primary Gameplay Canvas Stage (Desktop, Mobile Online, & TV 1-5P Cinema Mode) -->
+    <main id="stage-wrap" class="stage-wrap">
+      <canvas id="game-canvas" aria-label="Wonder Tetris Playfield"></canvas>
+
+      <!-- Multiplayer Attack Target Selector -->
+      <div id="target-bar" class="target-bar hidden" aria-label="Attack Target Mode">
+        <span>✨ Send Bubbles To:</span>
+        <button type="button" class="target-chip active" data-target="random">🎲 Random</button>
+        <button type="button" class="target-chip" data-target="leader">👑 Leader</button>
+        <button type="button" class="target-chip" data-target="highest">🫧 Tallest</button>
+      </div>
+    </main>
+
+    <!-- Mobile Standalone Touch Controls -->
+    <div id="mobile-controls" class="mobile-controls" aria-label="Touch Controls">
+      <div class="touch-cluster">
+        <button type="button" class="t-btn" id="m-left" aria-label="Move Left">◀</button>
+        <button type="button" class="t-btn" id="m-down" aria-label="Soft Drop">▼</button>
+        <button type="button" class="t-btn" id="m-right" aria-label="Move Right">▶</button>
+      </div>
+      <div class="touch-cluster">
+        <button type="button" class="t-btn hold" id="m-hold" aria-label="Hold Piece">HOLD</button>
+        <button type="button" class="t-btn rot" id="m-rot" aria-label="Rotate">⟳</button>
+        <button type="button" class="t-btn drop" id="m-drop" aria-label="Hard Drop">⬇ DROP</button>
+      </div>
+    </div>
+
+    <!-- Dedicated Phone Controller View (Shown when ?controller=1 in TV Mode!) -->
+    <section id="controller-shell" class="controller-shell hidden" aria-label="Phone TV Controller">
+      <div class="ctrl-hud-card">
+        <div class="ctrl-player-info">
+          <div class="ctrl-avatar" id="ctrl-avatar">🌟</div>
+          <div>
+            <div class="ctrl-name" id="ctrl-name">Player 1</div>
+            <div class="ctrl-sub" id="ctrl-stats">Score 0 · Lv 1 · Watch the TV!</div>
+          </div>
+        </div>
+        <div class="ctrl-mini-boxes">
+          <div class="ctrl-mini-box">
+            <div class="ctrl-mini-label">HOLD</div>
+            <canvas id="ctrl-hold-canvas" width="54" height="44"></canvas>
+          </div>
+          <div class="ctrl-mini-box">
+            <div class="ctrl-mini-label">NEXT</div>
+            <canvas id="ctrl-next-canvas" width="54" height="44"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="ctrl-pad-area">
+        <div class="ctrl-row-main">
+          <div class="ctrl-dpad">
+            <button type="button" class="pad-big-btn" id="c-left" aria-label="Left">◀<small>LEFT</small></button>
+            <button type="button" class="pad-big-btn" id="c-right" aria-label="Right">▶<small>RIGHT</small></button>
+            <button type="button" class="pad-big-btn span-2" id="c-down" aria-label="Soft Drop">▼<small>SOFT DROP</small></button>
+          </div>
+          <div class="ctrl-actions">
+            <button type="button" class="pad-big-btn btn-rot-ccw" id="c-rot-ccw" aria-label="Rotate Left">⟲<small>SPIN L</small></button>
+            <button type="button" class="pad-big-btn btn-rot-cw" id="c-rot-cw" aria-label="Rotate Right">⟳<small>SPIN R</small></button>
+            <button type="button" class="pad-big-btn btn-hold" id="c-hold" aria-label="Hold">⇄<small>HOLD</small></button>
+            <button type="button" class="pad-big-btn btn-hard-drop" id="c-drop" aria-label="Hard Drop">⬇<small>SLAM!</small></button>
+          </div>
+        </div>
+
+        <div id="ctrl-captain-bar" class="ctrl-captain-bar hidden">
+          <button type="button" id="btn-ctrl-start" class="btn-toy primary lg">🚀 Start Match on TV!</button>
+          <button type="button" id="btn-ctrl-pause" class="btn-toy sky">⏸️ Pause TV</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- 3-2-1-STACK! Animated Countdown -->
+  <div id="countdown-overlay" class="countdown-overlay hidden" aria-live="assertive">
+    <div id="countdown-bubble" class="countdown-bubble">3</div>
+  </div>
+
+  <!-- Title / Match Setup Modal -->
+  <div id="title-modal" class="modal-backdrop">
+    <div class="story-card">
+      <div class="story-kicker">✨ DISNEY-STYLE STORYBOOK BLOCK PARTY ✨</div>
+      <h2 class="story-title">Wonder Tetris!</h2>
+      <p class="story-sub" id="title-sub">
+        Stack smiling cartoon blocks, spark rainbow combos, and send playful giggle-bubbles to your rivals!
+      </p>
+
+      <div id="title-roster-pills" class="roster-pills"></div>
+
+      <div id="host-options" class="option-grid">
+        <div class="option-box">
+          <span class="option-label">🤖 Friendly Cartoon Bots</span>
+          <div class="seg-group" id="opt-bots">
+            <button type="button" class="seg-btn" data-val="0">None</button>
+            <button type="button" class="seg-btn active" data-val="1">+1 Bot</button>
+            <button type="button" class="seg-btn" data-val="2">+2 Bots</button>
+            <button type="button" class="seg-btn" data-val="3">+3 Bots</button>
+          </div>
+        </div>
+        <div class="option-box">
+          <span class="option-label">🌈 Drop Speed</span>
+          <div class="seg-group" id="opt-speed">
+            <button type="button" class="seg-btn" data-val="chill">Chill</button>
+            <button type="button" class="seg-btn active" data-val="normal">Happy</button>
+            <button type="button" class="seg-btn" data-val="turbo">Turbo!</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" id="btn-start-match" class="btn-toy primary lg">✨ Start Block Party!</button>
+        <button type="button" id="btn-copy-invite" class="btn-toy sky">📋 Copy Invite Link</button>
+      </div>
+
+      <div class="controls-legend">
+        Move: <kbd>←</kbd> <kbd>→</kbd> / <kbd>A</kbd><kbd>D</kbd> ·
+        Rotate: <kbd>↑</kbd> / <kbd>X</kbd> / <kbd>Z</kbd> ·
+        Hard Drop: <kbd>Space</kbd> ·
+        Hold: <kbd>C</kbd> / <kbd>Shift</kbd> ·
+        Soft Drop: <kbd>↓</kbd>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pause Modal -->
+  <div id="pause-modal" class="modal-backdrop hidden">
+    <div class="story-card">
+      <div class="story-kicker">☕ STORYBOOK INTERMISSION</div>
+      <h2 class="story-title">Paused!</h2>
+      <p class="story-sub">All the little cartoon blocks are taking a quick breather.</p>
+      <div class="modal-actions">
+        <button type="button" id="btn-resume" class="btn-toy primary lg">▶ Resume Stacking!</button>
+        <button type="button" id="btn-pause-restart" class="btn-toy berry">🔄 Restart Match</button>
+        <button type="button" id="btn-pause-room" class="btn-toy sky">🚪 Back to Room</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Victory / Podium Modal -->
+  <div id="victory-modal" class="modal-backdrop hidden">
+    <div class="story-card">
+      <div class="story-kicker" id="victory-kicker">👑 ROYAL BLOCK CELEBRATION 👑</div>
+      <h2 class="story-title" id="victory-title">Magical Victory!</h2>
+      <p class="story-sub" id="victory-sub">Everyone stacked their hearts out!</p>
+      <div id="podium-list" class="podium-list"></div>
+      <div class="modal-actions">
+        <button type="button" id="btn-rematch" class="btn-toy primary lg">🎉 Play Again!</button>
+        <button type="button" id="btn-victory-room" class="btn-toy sky">🚪 Back to Room</button>
+        <a href="../../index.html" class="btn-toy">🏠 Main Menu</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Kicked Modal -->
+  <div id="kicked-modal" class="modal-backdrop hidden">
+    <div class="story-card">
+      <div class="story-kicker">👋 ROOM UPDATE</div>
+      <h2 class="story-title">Removed from Room</h2>
+      <p class="story-sub">The Host removed you from this Wonder Tetris room.</p>
+      <div class="modal-actions">
+        <a href="../../index.html" class="btn-toy primary lg">🏠 Return to Main Menu</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="./audio.js"></script>
+  <script src="./engine.js"></script>
+  <script src="./renderer.js"></script>
+  <script src="./game.js"></script>
+</body>
+</html>

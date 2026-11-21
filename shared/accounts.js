@@ -148,6 +148,48 @@
       desc: 'Finish an online Suncoast Kart race with 2 or more human racers.',
     },
 
+    // Wonder Tetris
+    {
+      id: 'wt_first_game',
+      game: 'wonder-tetris',
+      gameTitle: 'Wonder Tetris',
+      icon: '🧱',
+      title: 'Storybook Stacker',
+      desc: 'Complete your first animated match of Wonder Tetris.',
+    },
+    {
+      id: 'wt_tetris_clear',
+      game: 'wonder-tetris',
+      gameTitle: 'Wonder Tetris',
+      icon: '✨',
+      title: 'Fantasia Four!',
+      desc: 'Clear 4 lines at once with a sparkling magical Tetris.',
+    },
+    {
+      id: 'wt_combo_queen',
+      game: 'wonder-tetris',
+      gameTitle: 'Wonder Tetris',
+      icon: '🌈',
+      title: 'Rainbow Cascade',
+      desc: 'Chain a 3x or higher consecutive line-clear combo streak.',
+    },
+    {
+      id: 'wt_level_five',
+      game: 'wonder-tetris',
+      gameTitle: 'Wonder Tetris',
+      icon: '☁️',
+      title: 'Cloud Nine Climber',
+      desc: 'Reach Level 5 in a single Wonder Tetris game.',
+    },
+    {
+      id: 'wt_crown_winner',
+      game: 'wonder-tetris',
+      gameTitle: 'Wonder Tetris',
+      icon: '👑',
+      title: 'Kingdom Champion',
+      desc: 'Win a multiplayer (or vs. Bot) Wonder Tetris battle!',
+    },
+
     // Couch Arcade Party
     {
       id: 'hub_tv_party',
@@ -845,6 +887,7 @@
           </div>
           <div class="ca-ach-filter">
             <button type="button" class="ca-filter-pill ${achFilter === 'all' ? 'active' : ''}" data-filter="all">All (${earned}/${totalAch})</button>
+            <button type="button" class="ca-filter-pill ${achFilter === 'wonder-tetris' ? 'active' : ''}" data-filter="wonder-tetris">🧱 Wonder Tetris</button>
             <button type="button" class="ca-filter-pill ${achFilter === 'suncoast-kart' ? 'active' : ''}" data-filter="suncoast-kart">🏎️ Suncoast Kart</button>
             <button type="button" class="ca-filter-pill ${achFilter === 'astro-purge' ? 'active' : ''}" data-filter="astro-purge">🛸 Astro Purge</button>
             <button type="button" class="ca-filter-pill ${achFilter === 'wordle-arena' ? 'active' : ''}" data-filter="wordle-arena">🔤 Wordle Arena</button>
