@@ -2076,25 +2076,26 @@
       }
 
       if (p.upgrades.orbital_blades > 0) {
+        const orbRadius = 290;
         const orbCount = p.upgrades.orbital_blades + 1;
-        p.orbitAngle += (2.6 + p.upgrades.orbital_blades * 0.35) * dt;
+        p.orbitAngle += (2.1 + p.upgrades.orbital_blades * 0.28) * dt;
         for (let k = 0; k < orbCount; k++) {
           const oa = p.orbitAngle + (k / orbCount) * Math.PI * 2;
-          const ox = p.x + Math.cos(oa) * 58;
-          const oy = p.y + Math.sin(oa) * 58;
+          const ox = p.x + Math.cos(oa) * orbRadius;
+          const oy = p.y + Math.sin(oa) * orbRadius;
           for (let i = state.enemies.length - 1; i >= 0; i--) {
             const e = state.enemies[i];
-            if (dist(ox, oy, e.x, e.y) < e.radius + 12) {
-              if (!e._orbCd || state.time - e._orbCd > 0.22) {
+            if (dist(ox, oy, e.x, e.y) < e.radius + 17) {
+              if (!e._orbCd || state.time - e._orbCd > 0.2) {
                 e._orbCd = state.time;
-                damageEnemy(e, 16 + p.upgrades.orbital_blades * 6, '#5eead4', p);
+                damageEnemy(e, 16 + p.upgrades.orbital_blades * 6, '#fde047', p);
               }
             }
           }
           for (let i = state.enemyBullets.length - 1; i >= 0; i--) {
             const b = state.enemyBullets[i];
-            if (dist(ox, oy, b.x, b.y) < b.radius + 12) {
-              spawnParticles(b.x, b.y, '#5eead4', 4, 80, 2.5);
+            if (dist(ox, oy, b.x, b.y) < b.radius + 17) {
+              spawnParticles(b.x, b.y, '#fde047', 4, 90, 3, 'star');
               state.enemyBullets.splice(i, 1);
             }
           }
@@ -2915,27 +2916,46 @@
       ctx.stroke();
     }
 
-    // Visual Upgrade: Orbital Star-Saw Satellites
+    // Visual Upgrade: Orbital Star-Saw Satellites (Wide 5x Orbit!)
     if (up.orbital_blades > 0) {
+      const orbRadius = 290;
       const orbCount = up.orbital_blades + 1;
+
+      // Subtle dashed cartoon orbit track
+      ctx.save();
+      ctx.strokeStyle = 'rgba(253, 224, 71, 0.16)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 12]);
+      ctx.beginPath();
+      ctx.arc(0, 0, orbRadius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+
       for (let k = 0; k < orbCount; k++) {
         const oa = p.orbitAngle + (k / orbCount) * Math.PI * 2;
-        const ox = Math.cos(oa) * 58;
-        const oy = Math.sin(oa) * 58;
+        const ox = Math.cos(oa) * orbRadius;
+        const oy = Math.sin(oa) * orbRadius;
         ctx.save();
         ctx.translate(ox, oy);
-        ctx.rotate(state.time * 8);
+        ctx.rotate(state.time * 9);
         ctx.fillStyle = '#fde047';
         ctx.strokeStyle = '#090d16';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2.6;
         ctx.beginPath();
-        for (let s = 0; s < 8; s++) {
-          const sa = (s / 8) * Math.PI * 2;
-          const sr = s % 2 === 0 ? 10 : 5;
+        for (let s = 0; s < 10; s++) {
+          const sa = (s / 10) * Math.PI * 2;
+          const sr = s % 2 === 0 ? 15 : 7.5;
           if (s === 0) ctx.moveTo(Math.cos(sa) * sr, Math.sin(sa) * sr);
           else ctx.lineTo(Math.cos(sa) * sr, Math.sin(sa) * sr);
         }
         ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        // Cute spinning center hub
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
         ctx.restore();
