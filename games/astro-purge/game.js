@@ -575,10 +575,12 @@
     });
   }
   const clouds = [
-    { x: 0.18, y: 0.22, r: 160, color: 'rgba(56, 189, 248, 0.05)' },
-    { x: 0.82, y: 0.30, r: 190, color: 'rgba(251, 191, 36, 0.045)' },
-    { x: 0.50, y: 0.78, r: 210, color: 'rgba(45, 212, 191, 0.045)' },
+    { x: 0.18, y: 0.22, r: 160, color: 'rgba(56, 189, 248, 0.06)' },
+    { x: 0.82, y: 0.30, r: 190, color: 'rgba(251, 191, 36, 0.05)' },
+    { x: 0.50, y: 0.78, r: 210, color: 'rgba(45, 212, 191, 0.05)' },
   ];
+  const shootingStars = [];
+  let nextShootingStar = 2.5;
 
   // ---- Game State ----
   const state = {
@@ -638,6 +640,10 @@
       vx: 0,
       vy: 0,
       angle: -Math.PI / 2,
+      thrustAngle: Math.PI / 2,
+      thrustPower: 0,
+      puffTimer: 0,
+      muzzleFlash: 0,
       radius: 19,
       hp: 100,
       maxHp: 100,
@@ -917,6 +923,11 @@
         Math.round(p.dashCooldown * 10) / 10,
         Math.round(p.damage),
         p.upgrades,
+        Math.round((p.thrustAngle || 0) * 100) / 100,
+        Math.round((p.thrustPower || 0) * 100) / 100,
+        p.dashTimer > 0 ? 1 : 0,
+        Math.round(p.vx || 0),
+        Math.round(p.vy || 0),
       ]),
       e: state.enemies.slice(0, 44).map((e) => [
         e.type,
@@ -950,8 +961,12 @@
     state.xpNeeded = s.xn;
     state.bossActive = Boolean(s.ba);
 
+    const prevMap = {};
+    state.players.forEach((pl) => { prevMap[pl.id] = pl; });
+
     state.players = s.p.map((arr) => {
       const pal = PLAYER_COLORS[arr[1] % PLAYER_COLORS.length];
+      const prev = prevMap[arr[0]];
       return {
         id: arr[0],
         slot: arr[1],
@@ -970,8 +985,14 @@
         dashCooldown: arr[12],
         damage: arr[13] || 0,
         upgrades: arr[14] || defaultUpgrades(),
+        thrustAngle: arr[15] || 0,
+        thrustPower: arr[16] || 0,
+        dashTimer: arr[17] ? 0.15 : 0,
+        vx: arr[18] || 0,
+        vy: arr[19] || 0,
+        puffTimer: prev ? prev.puffTimer || 0 : 0,
+        muzzleFlash: 0,
         invuln: 0,
-        dashTimer: 0,
         droneAngle: arr[11],
       };
     });
@@ -1060,20 +1081,29 @@
     return { dmg, isCrit };
   }
 
-  function spawnParticles(x, y, color, count = 10, speed = 160, size = 3.5) {
+  function spawnParticles(x, y, color, count = 10, speed = 160, size = 3.5, kind = 'dot') {
     for (let i = 0; i < count; i++) {
       const a = Math.random() * Math.PI * 2;
       const sp = rand(speed * 0.25, speed);
+      const maxL = kind === 'puff' ? rand(0.32, 0.6) : rand(0.25, 0.56);
       state.particles.push({
         x, y,
         vx: Math.cos(a) * sp,
         vy: Math.sin(a) * sp,
-        life: rand(0.25, 0.58),
-        maxLife: 0.58,
+        life: maxL,
+        maxLife: maxL,
         color,
-        size: rand(size * 0.65, size * 1.45),
+        size: rand(size * 0.7, size * 1.45),
+        kind,
       });
     }
+  }
+
+  function spawnCartoonBurst(x, y, color, big = false) {
+    // Classic rubber-hose cartoon explosion puffs + golden 4-point stars
+    spawnParticles(x, y, '#fef9c3', big ? 12 : 5, big ? 170 : 105, big ? 11 : 7, 'puff');
+    spawnParticles(x, y, color, big ? 18 : 8, big ? 260 : 165, big ? 7 : 4.5, 'puff');
+    spawnParticles(x, y, '#fde047', big ? 14 : 5, big ? 290 : 195, big ? 5.5 : 3.5, 'star');
   }
 
   function spawnFloatText(x, y, text, color = '#f8fafc') {
@@ -1561,6 +1591,7 @@
         life: 1.05,
       });
     }
+    p.muzzleFlash = 0.08;
     SFX.shoot();
   }
 
@@ -1679,6 +1710,7 @@
     const dealt = Math.min(e.hp, dmg);
     e.hp -= dmg;
     e.hitFlash = 0.09;
+    e.hitBounce = 0.2;
 
     if (sourcePlayer) {
       sourcePlayer.damage += dealt;
@@ -1693,18 +1725,20 @@
       e.phase = 2;
       e.speed *= 1.28;
       state.shake = 12;
-      spawnParticles(e.x, e.y, '#fb7185', 30, 260, 4.5);
+      spawnCartoonBurst(e.x, e.y, '#fb7185', true);
       spawnFloatText(e.x, e.y - 72, 'PHASE 2 — ENRAGED!', '#fde047');
       SFX.bossWarn();
     }
 
     if (isCrit || e.isBoss) {
-      spawnFloatText(e.x + rand(-10, 10), e.y - e.radius * 0.6, isCrit ? `${dmg}!` : `${dmg}`, isCrit ? '#fde047' : color);
+      spawnFloatText(e.x + rand(-10, 10), e.y - e.radius * 0.6, isCrit ? `POW! ${dmg}!` : `${dmg}`, isCrit ? '#fde047' : color);
     }
     if (e.isBoss) updateBossBar(e);
     if (e.hp <= 0) killEnemy(e);
     else SFX.hit();
   }
+
+  const COMIC_WORDS = ['POP!', 'ZAP!', 'BAM!', 'POW!', 'BOING!', 'SPLAT!'];
 
   function killEnemy(e) {
     const idx = state.enemies.indexOf(e);
@@ -1712,7 +1746,11 @@
 
     state.kills += 1;
     state.score += e.score;
-    spawnParticles(e.x, e.y, e.color, e.isBoss ? 65 : 16, e.isBoss ? 340 : 190, e.isBoss ? 6 : 3.5);
+    spawnCartoonBurst(e.x, e.y, e.color, Boolean(e.isBoss));
+    if (!e.isBoss && Math.random() < 0.24) {
+      const word = COMIC_WORDS[Math.floor(Math.random() * COMIC_WORDS.length)];
+      spawnFloatText(e.x, e.y - e.radius * 0.5, word, '#fef08a');
+    }
 
     if (e.type === 'asteroid_lg') {
       spawnEnemy('asteroid_md', { x: e.x + rand(-12, 12), y: e.y + rand(-12, 12) });
@@ -1849,7 +1887,6 @@
 
   // ---- Main Host Update Loop ----
   function updateHost(dt, pads) {
-    state.time += dt;
     if (state.shake > 0) state.shake = Math.max(0, state.shake - dt * 28);
 
     if (state.bossWarningTimer > 0) {
@@ -1883,6 +1920,7 @@
     // Update Players
     for (const p of state.players) {
       if (p.invuln > 0) p.invuln -= dt;
+      if (p.muzzleFlash > 0) p.muzzleFlash = Math.max(0, p.muzzleFlash - dt);
       if (p.dashCooldown > 0) p.dashCooldown = Math.max(0, p.dashCooldown - dt);
       if (p.dashTimer > 0) p.dashTimer = Math.max(0, p.dashTimer - dt);
 
@@ -1898,7 +1936,7 @@
             p.reviveProgress = 0;
             p.hp = Math.round(p.maxHp * 0.55);
             p.invuln = 2.0;
-            spawnParticles(p.x, p.y, p.glow, 22, 190, 4);
+            spawnCartoonBurst(p.x, p.y, p.glow, false);
             spawnFloatText(p.x, p.y - 26, 'REVIVED!', '#5eead4');
             SFX.levelUp();
           }
@@ -1941,13 +1979,25 @@
         const dm = Math.hypot(dx, dy) || 1;
         p.vx = (dx / dm) * 780;
         p.vy = (dy / dm) * 780;
+        p.thrustAngle = Math.atan2(-dy, -dx);
+        p.thrustPower = 1.4;
         p.dashTimer = 0.22;
         p.dashCooldown = dashCdMax;
-        spawnParticles(p.x, p.y, p.glow, 14, 170, 3.5);
+        spawnCartoonBurst(p.x, p.y, p.glow, false);
         SFX.dash();
       }
 
-      p.thrusting = Math.abs(moveX) > 0.08 || Math.abs(moveY) > 0.08;
+      const moveMag = Math.hypot(moveX, moveY);
+      p.thrusting = moveMag > 0.08;
+      if (p.thrusting) {
+        // Thruster exhaust points OPPOSITE the direction you are steering!
+        p.thrustAngle = Math.atan2(-moveY, -moveX);
+        p.thrustPower = clamp(moveMag, 0.35, 1);
+      } else if (p.dashTimer > 0) {
+        p.thrustPower = 1.35;
+      } else {
+        p.thrustPower = Math.max(0, (p.thrustPower || 0) - dt * 5);
+      }
 
       if (p.dashTimer <= 0) {
         p.vx += moveX * accel * dt;
@@ -2144,6 +2194,7 @@
     for (let i = state.enemies.length - 1; i >= 0; i--) {
       const e = state.enemies[i];
       if (e.hitFlash > 0) e.hitFlash -= dt;
+      if (e.hitBounce > 0) e.hitBounce = Math.max(0, e.hitBounce - dt);
       if (e.chillTimer > 0) e.chillTimer -= dt;
       e.rot += (e.rotSpeed || 0) * dt;
       const slow = e.chillTimer > 0 ? 1 - (e.chillPower || 0.25) : 1;
@@ -2267,15 +2318,84 @@
       pk.x = clamp(pk.x + pk.vx * dt, 14, W - 14);
       pk.y = clamp(pk.y + pk.vy * dt, 14, H - 14);
     }
+  }
 
-    // Effects
+  // Runs on BOTH Host and Guest every frame for silky 60fps Disney cartoon visuals!
+  function updateVisualEffects(dt) {
+    state.time += dt;
+
+    // Shooting stars streaking occasionally across the cartoon night sky
+    nextShootingStar -= dt;
+    if (nextShootingStar <= 0) {
+      nextShootingStar = rand(3.5, 8.0);
+      shootingStars.push({
+        x: rand(W * 0.15, W * 0.95),
+        y: rand(15, H * 0.35),
+        vx: -rand(380, 560),
+        vy: rand(160, 260),
+        life: 0.55,
+        maxLife: 0.55,
+      });
+    }
+    for (let i = shootingStars.length - 1; i >= 0; i--) {
+      const ss = shootingStars[i];
+      ss.life -= dt;
+      ss.x += ss.vx * dt;
+      ss.y += ss.vy * dt;
+      if (ss.life <= 0) shootingStars.splice(i, 1);
+    }
+
+    // Emit cute inked cartoon exhaust puffs & sparks behind any steering UFO!
+    if (state.mode === 'playing') {
+      for (const p of state.players) {
+        if (p.downed) continue;
+        const firingThruster = p.thrusting || p.dashTimer > 0 || (p.thrustPower || 0) > 0.18;
+        if (!firingThruster) continue;
+        p.puffTimer = (p.puffTimer || 0) - dt;
+        const rate = p.dashTimer > 0 ? 0.022 : 0.048;
+        if (p.puffTimer <= 0) {
+          p.puffTimer = rate;
+          const ea = p.thrustAngle !== undefined ? p.thrustAngle : Math.PI / 2;
+          const ex = p.x + Math.cos(ea) * 24;
+          const ey = p.y + Math.sin(ea) * 24;
+          const spread = rand(-0.35, 0.35);
+          const sp = p.dashTimer > 0 ? rand(130, 220) : rand(65, 130);
+          state.particles.push({
+            x: ex + rand(-3, 3),
+            y: ey + rand(-3, 3),
+            vx: Math.cos(ea + spread) * sp,
+            vy: Math.sin(ea + spread) * sp,
+            life: p.dashTimer > 0 ? 0.38 : 0.32,
+            maxLife: p.dashTimer > 0 ? 0.38 : 0.32,
+            color: Math.random() < 0.55 ? '#fef3c7' : p.glow,
+            size: p.dashTimer > 0 ? rand(6.5, 10) : rand(4.5, 7.5),
+            kind: 'puff',
+          });
+          if (Math.random() < (p.dashTimer > 0 ? 0.65 : 0.28)) {
+            state.particles.push({
+              x: ex,
+              y: ey,
+              vx: Math.cos(ea + rand(-0.5, 0.5)) * (sp * 1.3),
+              vy: Math.sin(ea + rand(-0.5, 0.5)) * (sp * 1.3),
+              life: 0.28,
+              maxLife: 0.28,
+              color: '#fde047',
+              size: rand(2.6, 4.2),
+              kind: 'star',
+            });
+          }
+        }
+      }
+    }
+
     for (let i = state.particles.length - 1; i >= 0; i--) {
       const pt = state.particles[i];
       pt.life -= dt;
       pt.x += pt.vx * dt;
       pt.y += pt.vy * dt;
-      pt.vx *= Math.pow(0.2, dt);
-      pt.vy *= Math.pow(0.2, dt);
+      pt.vx *= Math.pow(0.18, dt);
+      pt.vy *= Math.pow(0.18, dt);
+      if (pt.kind === 'puff') pt.size += dt * 7;
       if (pt.life <= 0) state.particles.splice(i, 1);
     }
     for (let i = state.beams.length - 1; i >= 0; i--) {
@@ -2399,6 +2519,35 @@
       ctx.fill();
     }
 
+    // Whimsical Old-School Cartoon Crescent Moon & Ringed Planet in deep sky
+    ctx.save();
+    const moonX = W * 0.12;
+    const moonY = H * 0.22 + Math.sin(state.time * 0.7) * 5;
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = '#fef08a';
+    ctx.beginPath();
+    ctx.arc(moonX, moonY, 34, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#0a1020';
+    ctx.beginPath();
+    ctx.arc(moonX + 12, moonY - 6, 29, 0, Math.PI * 2);
+    ctx.fill();
+
+    const plX = W * 0.86;
+    const plY = H * 0.74 + Math.cos(state.time * 0.6) * 6;
+    ctx.globalAlpha = 0.2;
+    ctx.fillStyle = '#f9a8d4';
+    ctx.beginPath();
+    ctx.arc(plX, plY, 26, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#fde68a';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.ellipse(plX, plY, 46, 11, -0.25, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
     if (state.bossActive) {
       const grad = ctx.createRadialGradient(W * 0.5, H * 0.5, 80, W * 0.5, H * 0.5, Math.max(W, H) * 0.7);
       grad.addColorStop(0, 'rgba(225, 29, 72, 0.04)');
@@ -2419,18 +2568,7 @@
       const sx = s.x * W;
       const sy = s.y * H;
       if (s.sparkle) {
-        const r = s.r * (0.85 + tw * 0.35);
-        ctx.beginPath();
-        ctx.moveTo(sx, sy - r * 2);
-        ctx.lineTo(sx + r * 0.45, sy - r * 0.45);
-        ctx.lineTo(sx + r * 2, sy);
-        ctx.lineTo(sx + r * 0.45, sy + r * 0.45);
-        ctx.lineTo(sx, sy + r * 2);
-        ctx.lineTo(sx - r * 0.45, sy + r * 0.45);
-        ctx.lineTo(sx - r * 2, sy);
-        ctx.lineTo(sx - r * 0.45, sy - r * 0.45);
-        ctx.closePath();
-        ctx.fill();
+        drawFourPointStar(sx, sy, s.r * (0.85 + tw * 0.35) * 1.9);
       } else {
         ctx.beginPath();
         ctx.arc(sx, sy, s.r, 0, Math.PI * 2);
@@ -2438,6 +2576,23 @@
       }
     }
     ctx.globalAlpha = 1;
+
+    // Shooting stars streaking across the cartoon sky
+    for (const ss of shootingStars) {
+      const a = clamp(ss.life / ss.maxLife, 0, 1);
+      ctx.save();
+      ctx.globalAlpha = a * 0.85;
+      ctx.strokeStyle = '#fef08a';
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(ss.x, ss.y);
+      ctx.lineTo(ss.x - ss.vx * 0.11, ss.y - ss.vy * 0.11);
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      drawFourPointStar(ss.x, ss.y, 6 * a);
+      ctx.restore();
+    }
 
     // Novas & Absorption Rings
     for (const n of state.novas) {
@@ -2608,13 +2763,29 @@
     // Cartoon UFO Players (with Visual Upgrades + Easy "YOU" Beacon!)
     for (const p of state.players) drawUfoPlayer(p);
 
-    // Cartoon Particles (with subtle dark ink edge on big puffs)
+    // Cartoon Particles (inked puff clouds, 4-point Disney stars, and sparks)
     for (const pt of state.particles) {
-      ctx.globalAlpha = clamp(pt.life / pt.maxLife, 0, 1);
-      ctx.fillStyle = pt.color;
-      ctx.beginPath();
-      ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
-      ctx.fill();
+      const a = clamp(pt.life / pt.maxLife, 0, 1);
+      ctx.save();
+      ctx.globalAlpha = a;
+      if (pt.kind === 'puff') {
+        ctx.fillStyle = pt.color;
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      } else if (pt.kind === 'star') {
+        ctx.fillStyle = pt.color;
+        drawFourPointStar(pt.x, pt.y, pt.size * 2.1);
+      } else {
+        ctx.fillStyle = pt.color;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
     }
     ctx.globalAlpha = 1;
 
@@ -2650,6 +2821,20 @@
       ctx.fill();
       ctx.restore();
     }
+  }
+
+  function drawFourPointStar(x, y, r) {
+    ctx.beginPath();
+    ctx.moveTo(x, y - r);
+    ctx.lineTo(x + r * 0.28, y - r * 0.28);
+    ctx.lineTo(x + r, y);
+    ctx.lineTo(x + r * 0.28, y + r * 0.28);
+    ctx.lineTo(x, y + r);
+    ctx.lineTo(x - r * 0.28, y + r * 0.28);
+    ctx.lineTo(x - r, y);
+    ctx.lineTo(x - r * 0.28, y - r * 0.28);
+    ctx.closePath();
+    ctx.fill();
   }
 
   function drawJaggedLine(x1, y1, x2, y2, color, width) {
@@ -2779,36 +2964,94 @@
       ctx.globalAlpha = 0.45;
     }
 
-    // Cartoon squash-and-stretch wobble!
-    const bob = Math.sin(state.time * 8 + p.slot) * 0.05;
-    const tilt = clamp((p.vx || 0) * 0.00055, -0.22, 0.22);
+    // Visible Directional Cartoon Thruster Jet when steering or dashing!
+    const thrustAmt = p.dashTimer > 0 ? 1.45 : (p.thrusting ? Math.max(0.55, p.thrustPower || 0.8) : (p.thrustPower || 0));
+    if (thrustAmt > 0.12) {
+      const ea = p.thrustAngle !== undefined ? p.thrustAngle : Math.PI / 2;
+      const flicker = 0.85 + Math.sin(state.time * 42 + p.slot * 3) * 0.22;
+      const flameLen = (20 + thrustAmt * 18 + (up.thrusters || 0) * 3) * flicker;
+      const flameW = (9 + thrustAmt * 4.5) * (0.9 + Math.cos(state.time * 36) * 0.12);
+
+      ctx.save();
+      ctx.rotate(ea);
+      // Cartoon thruster nozzle bell on the steering exhaust side
+      ctx.fillStyle = '#94a3b8';
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(15, -6);
+      ctx.lineTo(24, -8.5);
+      ctx.lineTo(24, 8.5);
+      ctx.lineTo(15, 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Outer Fiery Orange Teardrop Flame with thick cartoon ink outline
+      ctx.fillStyle = p.dashTimer > 0 ? '#38bdf8' : '#f97316';
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      ctx.moveTo(22, -flameW * 0.72);
+      ctx.quadraticCurveTo(22 + flameLen * 0.55, -flameW, 22 + flameLen, 0);
+      ctx.quadraticCurveTo(22 + flameLen * 0.55, flameW, 22, flameW * 0.72);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Middle Golden Cartoon Flame
+      ctx.fillStyle = p.dashTimer > 0 ? '#bae6fd' : '#facc15';
+      ctx.beginPath();
+      ctx.moveTo(22, -flameW * 0.45);
+      ctx.quadraticCurveTo(22 + flameLen * 0.4, -flameW * 0.6, 22 + flameLen * 0.72, 0);
+      ctx.quadraticCurveTo(22 + flameLen * 0.4, flameW * 0.6, 22, flameW * 0.45);
+      ctx.closePath();
+      ctx.fill();
+
+      // Bright White-Hot Core
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.ellipse(25, 0, Math.max(4, flameLen * 0.22), Math.max(2.5, flameW * 0.25), 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Muzzle flash 4-point cartoon star when shooting
+    if (p.muzzleFlash > 0) {
+      ctx.save();
+      ctx.fillStyle = '#fef08a';
+      drawFourPointStar(Math.cos(p.angle) * 24, Math.sin(p.angle) * 24, 11);
+      ctx.restore();
+    }
+
+    // Cartoon rubber-hose squash-and-stretch wobble + steering lean!
+    const bob = Math.sin(state.time * 9 + p.slot) * 0.065;
+    const speedStretch = clamp(Math.hypot(p.vx || 0, p.vy || 0) * 0.00022, 0, 0.08);
+    const tilt = clamp((p.vx || 0) * 0.0007, -0.28, 0.28);
     ctx.rotate(tilt);
-    ctx.scale(1 + bob, 1 - bob);
+    ctx.scale(1 + bob + speedStretch, 1 - bob - speedStretch * 0.5);
 
     // Visual Upgrade: Oversized Twin Cartoon Booster Bells (thrusters)
     if (up.thrusters > 0) {
-      ctx.fillStyle = '#94a3b8';
+      ctx.fillStyle = '#cbd5e1';
       ctx.strokeStyle = '#090d16';
-      ctx.lineWidth = 2.2;
-      [-12, 12].forEach((bx) => {
+      ctx.lineWidth = 2.4;
+      [-13, 13].forEach((bx) => {
         ctx.beginPath();
-        ctx.roundRect(bx - 4, 8, 8, 9, 3);
+        ctx.roundRect(bx - 4.5, 8, 9, 10, 3);
         ctx.fill();
         ctx.stroke();
-        if (p.thrusting || p.dashTimer > 0) {
+        if (thrustAmt > 0.15) {
           ctx.fillStyle = '#fde047';
+          ctx.strokeStyle = '#090d16';
+          ctx.lineWidth = 1.6;
           ctx.beginPath();
-          ctx.arc(bx, 19 + rand(0, 4), p.dashTimer > 0 ? 6 : 4, 0, Math.PI * 2);
+          ctx.arc(bx, 20 + rand(0, 4), p.dashTimer > 0 ? 6.5 : 4.5, 0, Math.PI * 2);
           ctx.fill();
-          ctx.fillStyle = '#94a3b8';
+          ctx.stroke();
+          ctx.fillStyle = '#cbd5e1';
         }
       });
-    } else if (p.thrusting || p.dashTimer > 0) {
-      // Cute bouncy thruster glow puff under saucer
-      ctx.fillStyle = p.glow;
-      ctx.beginPath();
-      ctx.ellipse(0, 14, p.dashTimer > 0 ? 14 : 9, p.dashTimer > 0 ? 7 : 4.5, 0, 0, Math.PI * 2);
-      ctx.fill();
     }
 
     // Visual Upgrade: Frost Crystal Fins (cryo_rounds)
@@ -2848,25 +3091,29 @@
     // Main Cartoon UFO Saucer Rim
     ctx.fillStyle = p.color;
     ctx.strokeStyle = '#090d16';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3.2;
     ctx.beginPath();
     ctx.ellipse(0, 3, 23, 10.5, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
 
     // Rim Glossy Highlight Strip
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.38)';
     ctx.beginPath();
     ctx.ellipse(-4, 0, 14, 3.5, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Little Blinking Saucer Lights along rim
-    const lightColors = ['#fef08a', '#ffffff', '#fef08a'];
-    [-12, 0, 12].forEach((lx, i) => {
-      ctx.fillStyle = Math.floor(state.time * 6 + i) % 2 === 0 ? lightColors[i] : '#0f172a';
+    // Animated Chasing Saucer Marquee Lights along rim
+    const chase = Math.floor(state.time * 8 + p.slot);
+    [-14, -7, 0, 7, 14].forEach((lx, i) => {
+      const lit = (chase + i) % 3 === 0;
+      ctx.fillStyle = lit ? '#fef08a' : '#1e293b';
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 1.2;
       ctx.beginPath();
-      ctx.arc(lx, 5.5, 2.3, 0, Math.PI * 2);
+      ctx.arc(lx, 5.5 - Math.abs(lx) * 0.08, lit ? 2.6 : 2, 0, Math.PI * 2);
       ctx.fill();
+      ctx.stroke();
     });
 
     // Visual Upgrade: Riveted Steel Armor Plates (hull_plating)
@@ -2894,38 +3141,83 @@
     }
 
     // Big Glossy Cartoon Glass UFO Dome
-    ctx.fillStyle = 'rgba(186, 230, 253, 0.82)';
+    ctx.fillStyle = 'rgba(186, 230, 253, 0.84)';
     ctx.strokeStyle = '#090d16';
     ctx.lineWidth = 2.8;
     ctx.beginPath();
-    ctx.arc(0, 0, 13.5, Math.PI, 0);
+    ctx.arc(0, 0, 14, Math.PI, 0);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    // Cute Cartoon Alien Pilot Eyes inside the dome (looks toward aim!)
+    // Expressive Disney-style Alien Pilot inside dome (blinks, smiles, looks at enemies!)
+    const pilotBob = Math.sin(state.time * 10 + p.slot * 2) * 1.1;
+    const isBlinking = Math.sin(state.time * 1.9 + p.slot * 2.7) > 0.96;
     const lookX = Math.cos(p.angle) * 2.2;
     const lookY = Math.sin(p.angle) * 1.4;
-    ctx.fillStyle = '#ffffff';
+
+    // Cute green cartoon alien head
+    ctx.fillStyle = '#86efac';
     ctx.strokeStyle = '#090d16';
-    ctx.lineWidth = 1.4;
+    ctx.lineWidth = 1.6;
     ctx.beginPath();
-    ctx.ellipse(-4, -5, 3.3, 4, 0, 0, Math.PI * 2);
-    ctx.ellipse(4, -5, 3.3, 4, 0, 0, Math.PI * 2);
+    ctx.arc(0, -4.5 + pilotBob, 7.5, Math.PI * 0.85, Math.PI * 2.15);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = '#090d16';
-    ctx.beginPath();
-    ctx.arc(-4 + lookX * 0.6, -5 + lookY * 0.6, 1.7, 0, Math.PI * 2);
-    ctx.arc(4 + lookX * 0.6, -5 + lookY * 0.6, 1.7, 0, Math.PI * 2);
-    ctx.fill();
+
+    if (isBlinking) {
+      // Cute curved happy blink eyes
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.arc(-3.6, -5.5 + pilotBob, 2.6, Math.PI * 1.1, Math.PI * 1.9);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(3.6, -5.5 + pilotBob, 2.6, Math.PI * 1.1, Math.PI * 1.9);
+      ctx.stroke();
+    } else {
+      const eyeH = p.dashTimer > 0 ? 4.8 : 4.0;
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#090d16';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.ellipse(-3.6, -5.5 + pilotBob, 3.1, eyeH, 0, 0, Math.PI * 2);
+      ctx.ellipse(3.6, -5.5 + pilotBob, 3.1, eyeH, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      // Glossy pie-cut cartoon pupils
+      ctx.fillStyle = '#090d16';
+      ctx.beginPath();
+      ctx.arc(-3.6 + lookX * 0.55, -5.5 + pilotBob + lookY * 0.55, 1.7, 0, Math.PI * 2);
+      ctx.arc(3.6 + lookX * 0.55, -5.5 + pilotBob + lookY * 0.55, 1.7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(-4.1 + lookX * 0.55, -6.2 + pilotBob + lookY * 0.55, 0.65, 0, Math.PI * 2);
+      ctx.arc(3.1 + lookX * 0.55, -6.2 + pilotBob + lookY * 0.55, 0.65, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Little happy cartoon smile (turns into excited 'O' mouth during Dash!)
+    ctx.strokeStyle = '#090d16';
+    ctx.lineWidth = 1.5;
+    if (p.dashTimer > 0) {
+      ctx.fillStyle = '#090d16';
+      ctx.beginPath();
+      ctx.arc(0, -1.6 + pilotBob, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.arc(0, -3 + pilotBob, 2.5, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx.stroke();
+    }
 
     // Dome Specular Shine Arc
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-    ctx.lineWidth = 2.2;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.88)';
+    ctx.lineWidth = 2.4;
     ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.arc(-1, -1, 9.5, Math.PI * 1.15, Math.PI * 1.48);
+    ctx.arc(-1, -1, 10, Math.PI * 1.15, Math.PI * 1.48);
     ctx.stroke();
 
     // Visual Upgrade: Dome Laser Dish (plasma_rail)
@@ -2979,21 +3271,22 @@
     ctx.restore();
   }
 
-  // ---- Old-School Cartoon Space Viruses & Bosses (Grumpy Expressive Faces!) ----
+  // ---- Old-School Cartoon Space Viruses & Bosses (Wiggling & Chomping!) ----
   function drawEnemy(e) {
     ctx.save();
     ctx.translate(e.x, e.y);
 
     const flash = e.hitFlash > 0;
     const chilled = e.chillTimer > 0;
-    const squash = 1 + Math.sin(state.time * 7 + e.x * 0.03) * 0.07;
+    const bounce = e.hitBounce ? Math.sin((e.hitBounce / 0.2) * Math.PI) * 0.22 : 0;
+    const squash = 1 + Math.sin(state.time * 7.5 + e.x * 0.03) * 0.08 + bounce;
     ctx.scale(squash, 2 - squash);
 
     if (e.type.startsWith('asteroid')) {
       ctx.rotate(e.rot);
-      ctx.fillStyle = flash ? '#ffffff' : chilled ? '#334155' : '#2d3748';
+      ctx.fillStyle = flash ? '#ffffff' : chilled ? '#334155' : '#334155';
       ctx.strokeStyle = '#090d16';
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 3.2;
       ctx.beginPath();
       (e.shape || getCachedRockShape(e.radius)).forEach((pt, idx) => {
         if (idx === 0) ctx.moveTo(pt.x, pt.y);
@@ -3003,39 +3296,62 @@
       ctx.fill();
       ctx.stroke();
       if (!flash) {
+        // Cartoon rock crater
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
+        ctx.beginPath();
+        ctx.arc(-e.radius * 0.28, e.radius * 0.22, e.radius * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        // Pulsing toxic slime vein & bubble
+        const bub = 1 + Math.sin(state.time * 7 + e.y * 0.05) * 0.25;
         ctx.strokeStyle = chilled ? '#7dd3fc' : e.veinColor;
-        ctx.lineWidth = 2.4;
+        ctx.lineWidth = 2.6;
         ctx.lineCap = 'round';
         ctx.beginPath();
         ctx.moveTo(-e.radius * 0.4, -e.radius * 0.2);
         ctx.lineTo(0, 0);
         ctx.lineTo(e.radius * 0.35, e.radius * 0.28);
         ctx.stroke();
+        ctx.fillStyle = chilled ? '#7dd3fc' : '#bef264';
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.arc(e.radius * 0.24, -e.radius * 0.22, Math.max(2.5, e.radius * 0.14) * bub, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
       }
     } else if (e.isBoss) {
       const enraged = e.phase >= 2;
-      // Wobbling spikes with dark ink outline
+      const chomp = 0.5 + Math.sin(state.time * (enraged ? 11 : 6.5)) * 0.5;
+
+      // Wiggling rubber-hose curved tentacles/spikes
       for (let k = 0; k < 12; k++) {
         const a = (k / 12) * Math.PI * 2 + e.rot;
+        const wiggle = Math.sin(state.time * (enraged ? 10 : 6) + k * 1.4) * 0.22;
+        const tipX = Math.cos(a + wiggle) * (e.radius + 20);
+        const tipY = Math.sin(a + wiggle) * (e.radius + 20);
+        const midX = Math.cos(a - wiggle * 0.6) * (e.radius + 8);
+        const midY = Math.sin(a - wiggle * 0.6) * (e.radius + 8);
+
         ctx.strokeStyle = '#090d16';
-        ctx.lineWidth = 8;
+        ctx.lineWidth = 9;
+        ctx.lineCap = 'round';
         ctx.beginPath();
         ctx.moveTo(Math.cos(a) * e.radius * 0.85, Math.sin(a) * e.radius * 0.85);
-        ctx.lineTo(Math.cos(a) * (e.radius + 18), Math.sin(a) * (e.radius + 18));
+        ctx.quadraticCurveTo(midX, midY, tipX, tipY);
         ctx.stroke();
         ctx.strokeStyle = flash ? '#fff' : e.color;
-        ctx.lineWidth = 4;
+        ctx.lineWidth = 4.5;
         ctx.stroke();
         ctx.fillStyle = flash ? '#fff' : enraged ? '#fde047' : '#fda4af';
         ctx.strokeStyle = '#090d16';
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 2.2;
         ctx.beginPath();
-        ctx.arc(Math.cos(a) * (e.radius + 20), Math.sin(a) * (e.radius + 20), 6.5, 0, Math.PI * 2);
+        ctx.arc(tipX, tipY, 7, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
       }
 
-      // Giant Cartoon Boss Body
+      // Giant Cartoon Boss Body + Gloss Highlight
       ctx.fillStyle = flash ? '#ffffff' : e.color;
       ctx.strokeStyle = '#090d16';
       ctx.lineWidth = 4.5;
@@ -3044,8 +3360,13 @@
       ctx.fill();
       ctx.stroke();
 
-      // Big Grumpy Cartoon Boss Eyes & Jagged Grin!
       if (!flash) {
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+        ctx.beginPath();
+        ctx.ellipse(-18, -28, 22, 10, -0.45, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Big Animated Boss Eyes
         ctx.fillStyle = enraged ? '#fef08a' : '#ffffff';
         ctx.strokeStyle = '#090d16';
         ctx.lineWidth = 3;
@@ -3054,52 +3375,61 @@
         ctx.ellipse(20, -10, 12, 15, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
-        // Pupils
+        const eyeJitter = Math.sin(state.time * 9) * 2.5;
         ctx.fillStyle = enraged ? '#dc2626' : '#090d16';
         ctx.beginPath();
-        ctx.arc(-18, -8, 5.5, 0, Math.PI * 2);
-        ctx.arc(18, -8, 5.5, 0, Math.PI * 2);
+        ctx.arc(-18 + eyeJitter, -8, 5.5, 0, Math.PI * 2);
+        ctx.arc(18 + eyeJitter, -8, 5.5, 0, Math.PI * 2);
         ctx.fill();
         // Furrowed Angry Eyebrows
         ctx.strokeStyle = '#090d16';
         ctx.lineWidth = 5;
         ctx.lineCap = 'round';
         ctx.beginPath();
-        ctx.moveTo(-34, -26); ctx.lineTo(-8, -18);
-        ctx.moveTo(34, -26); ctx.lineTo(8, -18);
+        ctx.moveTo(-34, -26 - chomp * 3); ctx.lineTo(-8, -17);
+        ctx.moveTo(34, -26 - chomp * 3); ctx.lineTo(8, -17);
         ctx.stroke();
-        // Jagged Cartoon Mouth
+        // Animated Chomping Jagged Boss Mouth!
+        const jawOpen = 10 + chomp * 14;
         ctx.fillStyle = '#090d16';
         ctx.beginPath();
-        ctx.moveTo(-26, 18);
-        ctx.lineTo(-14, 28);
-        ctx.lineTo(0, 20);
-        ctx.lineTo(14, 28);
-        ctx.lineTo(26, 18);
-        ctx.lineTo(16, 36);
-        ctx.lineTo(-16, 36);
+        ctx.moveTo(-28, 16);
+        ctx.lineTo(-14, 22);
+        ctx.lineTo(0, 17);
+        ctx.lineTo(14, 22);
+        ctx.lineTo(28, 16);
+        ctx.lineTo(18, 24 + jawOpen);
+        ctx.lineTo(-18, 24 + jawOpen);
         ctx.closePath();
         ctx.fill();
+        // Cartoon white teeth
+        ctx.fillStyle = '#ffffff';
+        [-16, 0, 16].forEach((tx) => {
+          ctx.beginPath();
+          ctx.moveTo(tx - 5, 19);
+          ctx.lineTo(tx, 27);
+          ctx.lineTo(tx + 5, 19);
+          ctx.closePath();
+          ctx.fill();
+        });
       }
     } else {
-      // Spiky Cartoon Space Virus (Corona / Mitosis / Shooter / Microbe / Capsid)
+      // Spiky Cartoon Space Virus with Wiggling Tentacles!
       const spikes = e.type === 'microbe' ? 6 : e.type === 'capsid' ? 6 : 8;
-      ctx.strokeStyle = '#090d16';
-      ctx.lineWidth = 5;
       for (let k = 0; k < spikes; k++) {
         const a = (k / spikes) * Math.PI * 2 + e.rot;
+        const wig = Math.sin(state.time * 9 + k * 1.7 + e.x * 0.04) * 0.25;
+        const tx = Math.cos(a + wig) * (e.radius + 7.5);
+        const ty = Math.sin(a + wig) * (e.radius + 7.5);
+        ctx.strokeStyle = '#090d16';
+        ctx.lineWidth = 5.5;
+        ctx.lineCap = 'round';
         ctx.beginPath();
         ctx.moveTo(Math.cos(a) * (e.radius - 2), Math.sin(a) * (e.radius - 2));
-        ctx.lineTo(Math.cos(a) * (e.radius + 7), Math.sin(a) * (e.radius + 7));
+        ctx.lineTo(tx, ty);
         ctx.stroke();
-      }
-      ctx.strokeStyle = flash ? '#fff' : chilled ? '#7dd3fc' : e.color;
-      ctx.lineWidth = 2.5;
-      for (let k = 0; k < spikes; k++) {
-        const a = (k / spikes) * Math.PI * 2 + e.rot;
-        ctx.beginPath();
-        ctx.moveTo(Math.cos(a) * (e.radius - 2), Math.sin(a) * (e.radius - 2));
-        ctx.lineTo(Math.cos(a) * (e.radius + 7), Math.sin(a) * (e.radius + 7));
+        ctx.strokeStyle = flash ? '#fff' : chilled ? '#7dd3fc' : e.color;
+        ctx.lineWidth = 2.6;
         ctx.stroke();
       }
 
@@ -3121,30 +3451,48 @@
       ctx.fill();
       ctx.stroke();
 
-      // Cute/Grumpy Cartoon Eyes on Viruses (makes enemies instantly distinct from friendly UFOs!)
+      // Animated Grumpy Cartoon Face (Blinking Eyes + Chomping Mini Mouth!)
       if (!flash && e.radius >= 13) {
-        const er = Math.max(2.6, e.radius * 0.22);
+        const er = Math.max(2.8, e.radius * 0.23);
         const ex = e.radius * 0.34;
-        ctx.fillStyle = '#fef08a';
+        const blink = Math.sin(state.time * 2.4 + e.x * 0.05) > 0.96;
+        if (blink) {
+          ctx.strokeStyle = '#090d16';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(-ex - er, -2); ctx.lineTo(-ex + er, -2);
+          ctx.moveTo(ex - er, -2); ctx.lineTo(ex + er, -2);
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = '#fef08a';
+          ctx.strokeStyle = '#090d16';
+          ctx.lineWidth = 1.7;
+          ctx.beginPath();
+          ctx.arc(-ex, -2, er, 0, Math.PI * 2);
+          ctx.arc(ex, -2, er, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = '#090d16';
+          ctx.beginPath();
+          ctx.arc(-ex, -2, er * 0.45, 0, Math.PI * 2);
+          ctx.arc(ex, -2, er * 0.45, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // Grumpy brows
         ctx.strokeStyle = '#090d16';
-        ctx.lineWidth = 1.6;
-        ctx.beginPath();
-        ctx.arc(-ex, -2, er, 0, Math.PI * 2);
-        ctx.arc(ex, -2, er, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = '#090d16';
-        ctx.beginPath();
-        ctx.arc(-ex, -2, er * 0.45, 0, Math.PI * 2);
-        ctx.arc(ex, -2, er * 0.45, 0, Math.PI * 2);
-        ctx.fill();
-        // Little grumpy brow line
+        ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(-ex - er, -2 - er);
-        ctx.lineTo(-ex + er, -2 - er * 0.3);
+        ctx.lineTo(-ex + er, -2 - er * 0.25);
         ctx.moveTo(ex + er, -2 - er);
-        ctx.lineTo(ex - er, -2 - er * 0.3);
+        ctx.lineTo(ex - er, -2 - er * 0.25);
         ctx.stroke();
+        // Little animated grumble mouth
+        const mOpen = 1.5 + Math.abs(Math.sin(state.time * 7 + e.y * 0.04)) * 2.5;
+        ctx.fillStyle = '#090d16';
+        ctx.beginPath();
+        ctx.ellipse(0, e.radius * 0.36, e.radius * 0.28, mOpen, 0, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
 
@@ -3313,6 +3661,7 @@
 
     const pads = getConnectedPads();
     pollMenuGamepads(pads, ts);
+    updateVisualEffects(dt);
 
     for (const s of stars) {
       s.y += (s.speed * (state.mode === 'playing' ? 1 : 0.4) * dt) / H;
