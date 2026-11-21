@@ -17,14 +17,19 @@
   let DPR = Math.min(window.devicePixelRatio || 1, 2);
 
   function resize() {
-    W = window.innerWidth;
-    H = window.innerHeight;
+    const vv = window.visualViewport;
+    W = Math.floor(vv ? vv.width : window.innerWidth);
+    H = Math.floor(vv ? vv.height : window.innerHeight);
     DPR = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.floor(W * DPR);
     canvas.height = Math.floor(H * DPR);
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   }
   window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', () => setTimeout(resize, 180));
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', resize);
+  }
   resize();
 
   // ---- DOM Elements ----
@@ -42,6 +47,36 @@
   const btnPause = document.getElementById('btn-pause');
   const btnAutofire = document.getElementById('btn-autofire');
   const btnMute = document.getElementById('btn-mute');
+  const btnFullscreen = document.getElementById('btn-fullscreen');
+
+  // Start Damage Meter collapsed on narrow portrait phones so screen stays uncluttered (tap to expand!)
+  if (window.innerWidth <= 760 && damageMeterEl) {
+    damageMeterEl.classList.add('collapsed');
+  }
+  if (damageMeterEl) {
+    damageMeterEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      damageMeterEl.classList.toggle('collapsed');
+    });
+  }
+  if (btnFullscreen) {
+    btnFullscreen.addEventListener('click', () => {
+      const docEl = document.documentElement;
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+        document.body.classList.remove('clean-hud');
+      } else if (docEl.requestFullscreen) {
+        docEl.requestFullscreen().catch(() => {
+          document.body.classList.toggle('clean-hud');
+        });
+      } else {
+        // iOS Safari: scroll top to shrink bar & toggle clean HUD opacity
+        window.scrollTo(0, 1);
+        document.body.classList.toggle('clean-hud');
+      }
+      setTimeout(resize, 150);
+    });
+  }
 
   const bossBarWrap = document.getElementById('boss-bar-wrap');
   const bossNameEl = document.getElementById('boss-name');
@@ -144,6 +179,7 @@
     rail() { this.tone(1120, 150, 0.2, 'sawtooth', 0.085); this.noise(0.12, 0.05, 1800); },
     missile() { this.tone(320, 680, 0.11, 'sine', 0.055); this.noise(0.08, 0.035, 1400); },
     zap() { this.tone(940, 420, 0.085, 'square', 0.055); },
+    slice() { this.tone(1180, 520, 0.09, 'triangle', 0.07); this.noise(0.05, 0.04, 2400); },
     nova() { this.tone(260, 52, 0.34, 'sine', 0.13); this.noise(0.24, 0.08, 700); },
     hit() { this.tone(210, 80, 0.045, 'square', 0.04); },
     pop() { this.tone(240, 58, 0.14, 'sawtooth', 0.075); this.noise(0.11, 0.065, 950); },
@@ -2088,6 +2124,16 @@
             if (dist(ox, oy, e.x, e.y) < e.radius + 17) {
               if (!e._orbCd || state.time - e._orbCd > 0.2) {
                 e._orbCd = state.time;
+                const hitX = (ox + e.x) * 0.5;
+                const hitY = (oy + e.y) * 0.5;
+                // Animated cartoon star-slash hit burst!
+                state.novas.push({
+                  x: hitX, y: hitY, r: 5, maxR: 36,
+                  color: '#fde047', life: 0.2, maxLife: 0.2,
+                });
+                spawnParticles(hitX, hitY, '#fde047', 7, 210, 4.2, 'star');
+                spawnParticles(hitX, hitY, '#ffffff', 4, 140, 5.5, 'puff');
+                SFX.slice();
                 damageEnemy(e, 16 + p.upgrades.orbital_blades * 6, '#fde047', p);
               }
             }
@@ -2192,6 +2238,47 @@
 
     // Update Enemies
     const livingPlayers = state.players.filter((p) => !p.downed);
+    // Solid Teammate <-> Teammate Collision (cannot fly through each other!)
+    for (let a = 0; a < livingPlayers.length; a++) {
+      for (let b = a + 1; b < livingPlayers.length; b++) {
+        const p1 = livingPlayers[a];
+        const p2 = livingPlayers[b];
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const d = Math.hypot(dx, dy) || 0.001;
+        const minDist = p1.radius + p2.radius + 4;
+        if (d < minDist) {
+          const nx = dx / d;
+          const ny = dy / d;
+          const overlap = (minDist - d) * 0.52;
+          p1.x = clamp(p1.x - nx * overlap, 24, W - 24);
+          p1.y = clamp(p1.y - ny * overlap, 24, H - 24);
+          p2.x = clamp(p2.x + nx * overlap, 24, W - 24);
+          p2.y = clamp(p2.y + ny * overlap, 24, H - 24);
+          // Playful cartoon bumper bounce
+          const relVn = (p2.vx - p1.vx) * nx + (p2.vy - p1.vy) * ny;
+          if (relVn < 0) {
+            const imp = -relVn * 0.65 + 45;
+            p1.vx -= nx * imp;
+            p1.vy -= ny * imp;
+            p2.vx += nx * imp;
+            p2.vy += ny * imp;
+          }
+        }
+      }
+    }
+
+    function getCollisionDamage(enemy, player) {
+      let pct = 0.15;
+      if (enemy.isBoss) pct = 0.50;
+      else if (enemy.type === 'capsid') pct = 0.30;
+      else if (enemy.type === 'asteroid_lg') pct = 0.26;
+      else if (enemy.type === 'asteroid_md' || enemy.type === 'mitosis' || enemy.type === 'shooter') pct = 0.18;
+      else if (enemy.type === 'corona') pct = 0.15;
+      else if (enemy.type === 'asteroid_sm' || enemy.type === 'microbe') pct = 0.10;
+      return Math.max(8, Math.round(player.maxHp * pct));
+    }
+
     for (let i = state.enemies.length - 1; i >= 0; i--) {
       const e = state.enemies[i];
       if (e.hitFlash > 0) e.hitFlash -= dt;
@@ -2240,13 +2327,39 @@
         e.y += e.vy * slow * dt;
       }
 
+      // Solid Player <-> Enemy Collision (never pass through enemies, asteroids, or bosses!)
       for (const p of livingPlayers) {
-        if (dist(e.x, e.y, p.x, p.y) < e.radius + p.radius - 3) {
-          hurtPlayer(p, e.damage);
-          if (!e.isBoss) {
-            const push = Math.atan2(e.y - p.y, e.x - p.x);
-            e.vx = Math.cos(push) * 180;
-            e.vy = Math.sin(push) * 180;
+        const dx = p.x - e.x;
+        const dy = p.y - e.y;
+        const d = Math.hypot(dx, dy) || 0.001;
+        const minDist = e.radius + p.radius;
+        if (d < minDist) {
+          const nx = dx / d;
+          const ny = dy / d;
+          const overlap = minDist - d + 1.5;
+
+          if (e.isBoss) {
+            // Boss is immovable: push UFO cleanly out + strong bounce
+            p.x = clamp(p.x + nx * overlap, 24, W - 24);
+            p.y = clamp(p.y + ny * overlap, 24, H - 24);
+            p.vx = nx * 380;
+            p.vy = ny * 380;
+          } else {
+            // Push both apart so neither overlaps
+            p.x = clamp(p.x + nx * overlap * 0.72, 24, W - 24);
+            p.y = clamp(p.y + ny * overlap * 0.72, 24, H - 24);
+            e.x -= nx * overlap * 0.28;
+            e.y -= ny * overlap * 0.28;
+            p.vx = nx * 270;
+            p.vy = ny * 270;
+            e.vx = -nx * 190;
+            e.vy = -ny * 190;
+          }
+
+          if (p.invuln <= 0 && p.dashTimer <= 0) {
+            const colDmg = getCollisionDamage(e, p);
+            hurtPlayer(p, colDmg);
+            spawnFloatText(p.x, p.y - 34, `-${colDmg} HP!`, '#fb7185');
           }
         }
       }
@@ -3278,8 +3391,39 @@
 
     ctx.restore();
 
-    // Clear "YOU" or Player Name Tag underneath
+    // Floating Color-Coded Cartoon HP Bar directly above each UFO!
+    const hpRatio = clamp((p.hp || 0) / Math.max(1, p.maxHp || 100), 0, 1);
+    const barW = 46;
+    const barH = 7;
+    const barX = p.x - barW * 0.5;
+    const barY = p.y - 34;
+    let barColor = '#22c55e'; // Healthy green (>60%)
+    if (hpRatio <= 0.3) {
+      barColor = Math.floor(state.time * 10) % 2 === 0 ? '#ef4444' : '#fb7185'; // Critical pulsing red
+    } else if (hpRatio <= 0.6) {
+      barColor = '#facc15'; // Mid yellow/amber
+    }
+
     ctx.save();
+    ctx.fillStyle = 'rgba(9, 13, 22, 0.85)';
+    ctx.strokeStyle = '#090d16';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.roundRect(barX - 1, barY - 1, barW + 2, barH + 2, 4);
+    ctx.fill();
+    ctx.stroke();
+
+    if (hpRatio > 0) {
+      ctx.fillStyle = barColor;
+      ctx.beginPath();
+      ctx.roundRect(barX, barY, Math.max(4, barW * hpRatio), barH, 3);
+      ctx.fill();
+      // Cartoon glossy strip on top of HP bar
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.fillRect(barX + 1, barY + 1, Math.max(2, barW * hpRatio - 2), 2);
+    }
+
+    // Clear "YOU" or Player Name Tag underneath
     ctx.font = '700 11px "Fredoka", "Inter", sans-serif';
     ctx.textAlign = 'center';
     const tagText = isMe ? `▲ YOU (${p.name})` : p.name;

@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <title>Astro Purge — Cartoon 4P UFO Co-op</title>
   <meta name="description" content="Pilot cartoon UFOs together in 4-player game rooms, earn personal visual ship upgrades, and battle giant space virus bosses every 10 levels." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -18,12 +21,13 @@
   <div id="hud" class="hidden">
     <div>
       <div class="hud-top">
-        <div class="hud-group">
+        <div class="hud-group left">
           <a href="../../index.html" class="hud-pill hud-btn" id="btn-back-hub">← Hub</a>
           <button type="button" class="hud-pill hud-btn" id="btn-hud-invite" title="Copy Room Invite Link">Room: ------ · Copy Link</button>
           <button type="button" class="hud-pill hud-btn" id="btn-pause" title="Pause (P / Esc / Start)">Pause</button>
-          <button type="button" class="hud-pill hud-btn" id="btn-autofire" title="Toggle Auto-Fire (T)">Auto-Fire: ON</button>
+          <button type="button" class="hud-pill hud-btn mobile-hide" id="btn-autofire" title="Toggle Auto-Fire (T)">Auto-Fire: ON</button>
           <button type="button" class="hud-pill hud-btn" id="btn-mute" title="Toggle Sound (M)">SFX: ON</button>
+          <button type="button" class="hud-pill hud-btn" id="btn-fullscreen" title="Toggle Fullscreen / Clean HUD">⛶</button>
         </div>
 
         <div class="hud-center">
@@ -38,11 +42,11 @@
         </div>
 
         <div class="hud-group right">
-          <div class="hud-group-row">
+          <div class="hud-group-row mobile-hide">
             <div class="hud-pill" id="hud-controllers">Controllers: 0</div>
             <div class="hud-pill" id="hud-kills">Purged: 0</div>
           </div>
-          <div id="damage-meter" aria-label="Team Damage Meter"></div>
+          <div id="damage-meter" aria-label="Team Damage Meter" title="Tap to expand or minimize"></div>
         </div>
       </div>
 

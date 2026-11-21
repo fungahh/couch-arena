@@ -28,6 +28,7 @@ html,
 body {
   width: 100%;
   height: 100%;
+  height: 100dvh;
   overflow: hidden;
   background: var(--bg-space);
   color: var(--text);
@@ -35,6 +36,7 @@ body {
   user-select: none;
   -webkit-user-select: none;
   touch-action: manipulation;
+  overscroll-behavior: none;
 }
 
 .hidden {
@@ -47,6 +49,7 @@ body {
   inset: 0;
   width: 100%;
   height: 100%;
+  height: 100dvh;
   display: block;
   background: var(--bg-space);
   touch-action: none;
@@ -56,19 +59,19 @@ body {
 /* Mobile Touch Dash Button */
 #touch-dash-btn {
   position: fixed;
-  right: 22px;
-  bottom: 92px;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(76px, calc(env(safe-area-inset-bottom) + 64px));
   z-index: 18;
-  width: 68px;
-  height: 68px;
+  width: 64px;
+  height: 64px;
   border-radius: 50%;
   border: 2px solid rgba(94, 234, 212, 0.55);
   background: rgba(14, 21, 34, 0.78);
   color: #ccfbf1;
-  font-family: "Space Grotesk", system-ui, sans-serif;
-  font-size: 0.78rem;
+  font-family: "Fredoka", "Space Grotesk", system-ui, sans-serif;
+  font-size: 0.76rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   display: none;
   align-items: center;
   justify-content: center;
@@ -95,25 +98,27 @@ body {
 #hud {
   position: fixed;
   inset: 0;
+  width: 100%;
+  height: 100dvh;
   pointer-events: none;
   z-index: 10;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 14px 18px;
+  padding: max(10px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
 }
 
 .hud-top {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: start;
-  gap: 12px;
+  gap: 10px;
 }
 
 .hud-group {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 7px;
   flex-wrap: wrap;
 }
 
@@ -131,16 +136,32 @@ body {
   justify-content: flex-end;
 }
 
-/* Live Team Damage Meter */
+/* Live Team Damage Meter (Tap to Collapse/Expand!) */
 #damage-meter {
-  background: rgba(14, 21, 34, 0.88);
+  pointer-events: auto;
+  cursor: pointer;
+  background: rgba(14, 21, 34, 0.86);
   border: 2px solid rgba(248, 250, 252, 0.22);
   border-radius: 12px;
-  padding: 8px 11px;
-  min-width: 195px;
-  max-width: 240px;
+  padding: 7px 10px;
+  min-width: 175px;
+  max-width: 230px;
   backdrop-filter: blur(8px);
-  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.35);
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.35);
+}
+
+#damage-meter.collapsed {
+  min-width: 0;
+  padding: 5px 10px;
+}
+
+#damage-meter.collapsed .dmg-row {
+  display: none;
+}
+
+#damage-meter.collapsed .dmg-title {
+  margin-bottom: 0;
+  gap: 8px;
 }
 
 .dmg-title {
@@ -477,22 +498,27 @@ body {
 .overlay {
   position: fixed;
   inset: 0;
+  width: 100%;
+  height: 100dvh;
   z-index: 30;
-  background: rgba(7, 11, 18, 0.8);
+  background: rgba(7, 11, 18, 0.82);
   backdrop-filter: blur(10px);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: 20px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
 }
 
 .modal-panel {
   width: 100%;
   max-width: 680px;
+  margin: auto;
   background: var(--panel-solid);
   border: 1px solid var(--border);
   border-radius: 20px;
-  padding: clamp(22px, 3.5vw, 36px);
+  padding: clamp(16px, 3vw, 32px);
   box-shadow: 0 28px 65px rgba(0, 0, 0, 0.65);
   text-align: center;
 }
@@ -919,24 +945,220 @@ body {
   color: var(--muted);
 }
 
+/* Compact Clean-HUD mode (toggled via fullscreen button on iOS) */
+body.clean-hud .hud-bottom,
+body.clean-hud #damage-meter {
+  opacity: 0.25;
+  transform: scale(0.92);
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+body.clean-hud .hud-bottom:active,
+body.clean-hud #damage-meter:active {
+  opacity: 1;
+}
+
+/* Portrait Phones (uncluttered vertical layout!) */
 @media (max-width: 760px) {
+  .mobile-hide {
+    display: none !important;
+  }
+
   .upgrade-grid,
   .mode-grid,
   .controls-box,
   .summary-grid {
     grid-template-columns: 1fr;
+    gap: 10px;
   }
+
   .roster-grid {
     grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
   }
+
   .hud-top {
-    grid-template-columns: 1fr;
-    justify-items: center;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "left right"
+      "center center";
+    gap: 6px;
+    align-items: center;
   }
-  .hud-group.right {
-    justify-content: center;
+
+  .hud-group.left { grid-area: left; gap: 5px; }
+  .hud-group.right { grid-area: right; align-items: flex-end; }
+  .hud-center {
+    grid-area: center;
+    min-width: 100%;
+    gap: 3px;
   }
+
+  .hud-pill {
+    padding: 4px 8px;
+    font-size: 0.72rem;
+    border-radius: 8px;
+  }
+
+  .level-badge { font-size: 0.88rem; }
+  .score-text { font-size: 0.78rem; }
+  .xp-track { height: 7px; }
+  .next-boss-hint { font-size: 0.65rem; }
+
+  #boss-bar-wrap {
+    width: 100%;
+    padding: 6px 10px;
+    margin-top: 4px;
+  }
+
+  .hud-bottom {
+    gap: 6px;
+    padding-right: 76px; /* keep clear of DASH button */
+  }
+
+  .ship-hud {
+    min-width: 112px;
+    padding: 5px 8px;
+    border-radius: 9px;
+  }
+
+  .ship-hud-top { font-size: 0.68rem; margin-bottom: 3px; }
+  .hp-track { height: 5px; margin-bottom: 2px; }
+  .dash-row { font-size: 0.62rem; }
+
   .weapons-tray {
     max-width: 100%;
+    justify-content: flex-start;
   }
+
+  .weapon-chip {
+    padding: 3px 6px;
+    font-size: 0.66rem;
+  }
+
+  #touch-dash-btn {
+    width: 60px;
+    height: 60px;
+    bottom: max(18px, env(safe-area-inset-bottom));
+    right: max(14px, env(safe-area-inset-right));
+  }
+
+  .upgrade-card {
+    padding: 13px 14px;
+    gap: 6px;
+  }
+
+  .upg-icon { width: 32px; height: 32px; font-size: 1rem; }
+  .upg-name { font-size: 0.98rem; }
+  .upg-desc { font-size: 0.8rem; }
 }
+
+/* Horizontal / Landscape Phones (iPhone Landscape Full-Screen!) */
+@media (max-height: 540px) {
+  .mobile-hide {
+    display: none !important;
+  }
+
+  #hud {
+    padding: max(6px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(6px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  }
+
+  .hud-top {
+    grid-template-columns: 1fr auto 1fr;
+    grid-template-areas: none;
+    gap: 8px;
+    align-items: start;
+  }
+
+  .hud-group.left { grid-area: auto; gap: 5px; }
+  .hud-center {
+    grid-area: auto;
+    min-width: min(260px, 36vw);
+    gap: 3px;
+  }
+  .hud-group.right { grid-area: auto; align-items: flex-end; }
+
+  .hud-pill {
+    padding: 4px 8px;
+    font-size: 0.72rem;
+    border-radius: 8px;
+  }
+
+  .level-badge { font-size: 0.85rem; }
+  .score-text { font-size: 0.75rem; }
+  .xp-track { height: 7px; }
+  .next-boss-hint { font-size: 0.64rem; }
+
+  #damage-meter {
+    min-width: 145px;
+    max-width: 185px;
+    padding: 5px 8px;
+  }
+  .dmg-title { font-size: 0.65rem; margin-bottom: 3px; }
+  .dmg-row-head { font-size: 0.65rem; }
+  .dmg-bar-track { height: 4px; }
+
+  #boss-bar-wrap {
+    width: min(440px, 68vw);
+    padding: 5px 10px;
+    margin-top: 3px;
+  }
+  .boss-header { font-size: 0.76rem; margin-bottom: 4px; }
+  .boss-hp-track { height: 8px; }
+
+  .hud-bottom {
+    padding-right: 78px;
+    gap: 6px;
+  }
+
+  .ship-hud {
+    min-width: 118px;
+    padding: 4px 8px;
+  }
+  .ship-hud-top { font-size: 0.68rem; margin-bottom: 3px; }
+  .hp-track { height: 5px; margin-bottom: 2px; }
+  .dash-row { display: none; }
+
+  .weapon-chip {
+    padding: 3px 6px;
+    font-size: 0.66rem;
+  }
+
+  #touch-dash-btn {
+    width: 60px;
+    height: 60px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    right: max(14px, env(safe-area-inset-right));
+  }
+
+  /* Compact modals in landscape so all 3 upgrade cards & lobby fit cleanly! */
+  .modal-panel {
+    padding: 14px 18px;
+    border-radius: 14px;
+  }
+  .eyebrow { font-size: 0.68rem; margin-bottom: 2px; }
+  .modal-title { font-size: 1.35rem; margin-bottom: 4px; }
+  .modal-sub { font-size: 0.8rem; margin-bottom: 10px; }
+  .room-bar { padding: 8px 10px; margin-bottom: 10px; }
+  .roster-grid { grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+  .slot-card { min-height: 60px; padding: 8px; }
+  .controls-box { padding: 8px 10px; margin-bottom: 10px; font-size: 0.74rem; grid-template-columns: 1fr 1fr; }
+  .btn { padding: 9px 18px; font-size: 0.88rem; }
+
+  .upgrade-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .upgrade-card {
+    padding: 10px 11px;
+    gap: 5px;
+    border-radius: 12px;
+  }
+  .upg-icon { width: 28px; height: 28px; font-size: 0.95rem; }
+  .upg-name { font-size: 0.88rem; }
+  .upg-desc { font-size: 0.74rem; line-height: 1.32; }
+  .upg-footer { font-size: 0.68rem; padding-top: 5px; }
+  .draft-hint { font-size: 0.72rem; margin-top: 6px !important; }
+}
+
