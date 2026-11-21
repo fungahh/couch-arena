@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Game Room — Couch Arcade</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="shared/room-lobby.css" />
+</head>
+<body>
+  <header class="room-header">
+    <div class="room-header-left">
+      <a href="index.html" class="cartoon-pill" id="btn-back-hub">← Main Menu</a>
+      <div class="cartoon-pill status-pill" id="room-net-pill">
+        <span class="dot"></span>
+        <span id="room-net-text">Connecting...</span>
+      </div>
+    </div>
+    <div class="room-header-right">
+      <button type="button" class="cartoon-pill account-pill" id="btn-room-account">
+        <span id="room-acc-ava">⭐</span>
+        <span id="room-acc-label">Sign In / Account</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="room-main">
+    <section class="room-stage-card">
+      <!-- Game-Specific Cartoon Flair Banner -->
+      <div class="room-flair-banner" id="room-flair-banner">
+        <div class="flair-left">
+          <div class="flair-eyebrow" id="flair-eyebrow">✦ Game Room</div>
+          <h1 class="flair-title" id="flair-title">Couch Arcade Room</h1>
+          <p class="flair-sub" id="flair-sub">Get your crew together, pick your options, and launch together!</p>
+        </div>
+        <div class="flair-art-badge" id="flair-art-badge" aria-hidden="true"></div>
+      </div>
+
+      <div class="room-body">
+        <!-- Room Code, Copy Link, Open Room Toggle, TV Mode Toggle -->
+        <div class="room-code-strip">
+          <div class="code-cluster">
+            <span class="code-label">Room Code</span>
+            <span class="room-code-big" id="room-code-big">----</span>
+            <button type="button" class="toggle-btn" id="btn-copy-link">📋 Copy Invite</button>
+          </div>
+          <div class="code-actions">
+            <button type="button" class="toggle-btn active hidden" id="btn-open-toggle" title="Show this room in the Main Menu so friends can knock to join">
+              🌐 Listed in Main Menu: ON
+            </button>
+            <button type="button" class="toggle-btn hidden" id="btn-tv-toggle" title="Display the game on TV and scan with phones as controllers">
+              📺 TV Screen Mode
+            </button>
+            <button type="button" class="toggle-btn hidden" id="btn-tv-fs" title="TV Fullscreen">
+              ⛶ Fullscreen
+            </button>
+          </div>
+        </div>
+
+        <!-- Waiting / Declined / Kicked / Full Gate -->
+        <div id="gate-banner" class="gate-banner hidden">
+          <h2 id="gate-title">🚪 Knocking on the Room Door...</h2>
+          <p id="gate-desc">Waiting for the Host to accept your join request from the Main Menu!</p>
+          <a href="index.html" class="btn-cartoon btn-secondary" id="gate-back-btn">← Return to Main Menu</a>
+        </div>
+
+        <!-- Phone Account Quick Sign-In Bar (Shown for Phone Controllers / Guests) -->
+        <div id="phone-account-bar" class="phone-account-bar hidden">
+          <div class="phone-acc-left">
+            <div class="phone-acc-ava" id="phone-acc-ava">🎮</div>
+            <div>
+              <div style="font-family:'Fredoka',sans-serif; font-size:1.06rem; font-weight:700;" id="phone-acc-title">Playing as Guest</div>
+              <div style="font-size:0.82rem; font-weight:700; color:#5b5575;" id="phone-acc-sub">Sign in or create an account to save your achievements!</div>
+            </div>
+          </div>
+          <button type="button" class="toggle-btn tv-on" id="btn-phone-signin">🔑 Sign In / Create Account</button>
+        </div>
+
+        <!-- TV Mode QR Code Panel -->
+        <div id="tv-qr-card" class="tv-qr-card hidden">
+          <div id="tv-qr-svg" class="tv-qr-svg-wrap" aria-label="QR Code to connect phone controller"></div>
+          <div class="tv-qr-copy">
+            <h2>📺 TV Screen Mode · Scan with Phones!</h2>
+            <p>Point your phone camera at this QR code (or type code <strong id="tv-inline-code">----</strong> in the Main Menu) to join as a controller and sign into your account!</p>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+              <span class="cartoon-pill" style="background:#fde047; cursor:default;">TV = Pure Display · 4 Open Phone Slots</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Host Approval Queue ("Knock! Knock!") -->
+        <div id="approval-box" class="approval-box hidden">
+          <div class="approval-title">🚪 Knock! Knock! Players Requesting to Join from Main Menu</div>
+          <div id="approval-list"></div>
+        </div>
+
+        <!-- Per-Game Room Options (Wordle Language Picker / Astro Local P2 / Player Name) -->
+        <div class="game-options-bar" id="game-options-bar">
+          <div class="option-group" id="name-option-group">
+            <span class="option-label">Your Name:</span>
+            <input type="text" id="room-name-input" class="name-edit-input" maxlength="18" placeholder="Pilot name..." />
+          </div>
+
+          <div class="option-group hidden" id="wordle-lang-group">
+            <span class="option-label">🔤 Word Bank:</span>
+            <button type="button" class="toggle-btn active" id="btn-lang-en">English (A–Z)</button>
+            <button type="button" class="toggle-btn" id="btn-lang-sv">Svenska (ÅÄÖ)</button>
+          </div>
+
+          <div class="option-group hidden" id="astro-local-group">
+            <button type="button" class="toggle-btn" id="btn-add-local">+ Add Local Player (Same Screen)</button>
+          </div>
+        </div>
+
+        <!-- 4-Player Roster -->
+        <div id="roster-section">
+          <div class="roster-header">
+            <h3 id="roster-heading">Room Roster (0 / 4)</h3>
+            <span style="font-size:0.84rem; font-weight:800; color:#5b5575;" id="roster-hint">Up to 4 players per room</span>
+          </div>
+          <div class="roster-grid" id="roster-grid" style="margin-top: 12px;"></div>
+        </div>
+
+        <!-- Launch & Footer -->
+        <div class="room-actions-footer" id="room-actions-footer">
+          <button type="button" class="btn-cartoon btn-launch" id="btn-launch-game">🚀 Launch Game!</button>
+          <a href="index.html" class="btn-cartoon btn-secondary">← Leave Room</a>
+        </div>
+
+        <p class="room-tip-note" id="room-tip-note"></p>
+      </div>
+    </section>
+  </main>
+
+  <script src="shared/qr.js"></script>
+  <script src="shared/accounts.js"></script>
+  <script src="shared/room-sync.js"></script>
+  <script src="games-registry.js"></script>
+  <script src="shared/lounge.js"></script>
+  <script src="shared/room-lobby.js"></script>
+</body>
+</html>

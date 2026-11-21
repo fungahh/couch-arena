@@ -10,11 +10,16 @@
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="hub.css" />
   <script>
-    // Preserve backward compatibility for direct Wordle Arena room invite links (?room=XXXXXX)
+    // Route ?room= links: new 4-char game codes (A123 / W456) -> unified room.html; legacy 6-char -> Wordle Arena
     (function () {
       const params = new URLSearchParams(window.location.search);
       if (params.has('room')) {
-        window.location.replace('games/wordle-arena/index.html' + window.location.search);
+        const code = (params.get('room') || '').trim().toUpperCase();
+        if (/^[A-Z]\d{3}$/.test(code)) {
+          window.location.replace('room.html' + window.location.search);
+        } else {
+          window.location.replace('games/wordle-arena/index.html' + window.location.search);
+        }
       }
     })();
   </script>
@@ -38,11 +43,15 @@
     </div>
 
     <div class="hub-status-bar">
-      <button type="button" id="btn-tv-mode" class="tv-mode-btn" title="Display the game on your TV and scan with phones as controllers!">
+      <button type="button" id="btn-hub-account" class="account-btn" title="Sign in, create an account, and view your per-game achievements">
+        <span id="hub-acc-ava" aria-hidden="true">⭐</span>
+        <span id="hub-acc-label">Sign In / Trophies</span>
+      </button>
+      <button type="button" id="btn-tv-mode" class="tv-mode-btn" title="Cast the Main Menu on your TV and scan with phones to connect players!">
         <span aria-hidden="true">📺</span>
         <span id="tv-mode-label">TV Mode: OFF</span>
       </button>
-      <label class="hub-name-wrap" title="Your display name in game rooms">
+      <label class="hub-name-wrap" id="hub-name-label" title="Your display name in game rooms">
         <span>Pilot</span>
         <input type="text" id="hub-player-name" class="hub-name-input" maxlength="18" placeholder="Your name..." />
       </label>
@@ -53,7 +62,92 @@
     </div>
   </header>
 
-  <main class="hub-main">
+  <!-- PHONE MAIN MENU CONTROLLER VIEW (Shown when a phone scans the TV Main Menu QR code!) -->
+  <section id="phone-hub-shell" class="phone-hub-shell hidden" aria-label="Phone TV Main Menu Controller">
+    <div class="phone-hub-card">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+        <span class="tv-hub-kicker" style="margin:0;">📱 Phone TV Remote · Party <strong id="phone-party-code">----</strong></span>
+        <span id="phone-hub-status" style="font-size:0.82rem; font-weight:800; color:#15803d;">Connecting...</span>
+      </div>
+
+      <!-- Step 1: Account Login / Sign Up / Guest before joining TV Main Menu -->
+      <div id="phone-auth-step">
+        <h2 style="margin:0 0 6px; font-family:'Fredoka',sans-serif; font-size:1.5rem;">Connect Your Phone to TV!</h2>
+        <p style="margin:0 0 14px; font-size:0.9rem; font-weight:700; color:#5b5575;">
+          Log into your Couch Arcade account (or create one) so your avatar shows up on the TV and every achievement saves to your profile!
+        </p>
+
+        <div id="phone-active-account-box" class="hidden" style="background:#fef9c3; border:2.5px solid #1e1b2e; border-radius:18px; padding:14px; margin-bottom:12px;">
+          <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+            <span id="phone-active-ava" style="font-size:1.8rem;">🛸</span>
+            <div>
+              <div id="phone-active-name" style="font-family:'Fredoka',sans-serif; font-size:1.15rem; font-weight:700;">Pilot</div>
+              <div id="phone-active-trophies" style="font-size:0.8rem; font-weight:800; color:#5b5575;">🏆 0 Achievements</div>
+            </div>
+          </div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button type="button" id="btn-phone-join-with-acc" class="join-code-btn" style="flex:1;">✅ Join TV Party!</button>
+            <button type="button" id="btn-phone-switch-acc" class="tv-mode-btn">Switch Account</button>
+          </div>
+        </div>
+
+        <div id="phone-no-account-box" style="display:flex; flex-direction:column; gap:10px;">
+          <button type="button" id="btn-phone-open-login" class="join-code-btn" style="padding:12px 16px; font-size:1rem;">🔑 Sign In / Create Account</button>
+          <div style="display:flex; gap:8px;">
+            <input type="text" id="phone-guest-name" class="join-code-input" style="letter-spacing:normal; text-transform:none;" maxlength="18" placeholder="Or enter guest name..." />
+            <button type="button" id="btn-phone-join-guest" class="tv-mode-btn" style="border-radius:14px;">Join as Guest</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: Connected to TV Main Menu -->
+      <div id="phone-connected-step" class="hidden">
+        <h2 style="margin:0 0 6px; font-family:'Fredoka',sans-serif; font-size:1.45rem;" id="phone-joined-heading">🎉 You're on the TV Main Menu!</h2>
+        <p style="margin:0 0 12px; font-size:0.88rem; font-weight:700; color:#5b5575;" id="phone-joined-sub">
+          Look up at the TV! When a game is picked, your phone will automatically enter the room as a controller.
+        </p>
+
+        <div id="phone-party-roster" class="tv-hub-players" style="margin-bottom:14px;"></div>
+
+        <div id="phone-captain-picker" class="hidden">
+          <div style="font-family:'Fredoka',sans-serif; font-size:0.95rem; font-weight:700; color:#d97706; margin-bottom:8px;">
+            ★ Couch Captain — Pick a Game for the TV!
+          </div>
+          <div id="phone-hub-games" class="phone-hub-games"></div>
+        </div>
+
+        <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+          <button type="button" id="btn-phone-edit-acc" class="tv-mode-btn">🏆 Account / Trophies</button>
+          <a href="index.html" class="tv-mode-btn" style="text-decoration:none;">Leave TV Party</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STANDARD & TV CAST MAIN MENU -->
+  <main class="hub-main" id="hub-main">
+    <!-- TV Main Menu Casting Banner (Visible when TV Mode is ON!) -->
+    <section id="tv-hub-banner" class="tv-hub-banner hidden" aria-label="TV Main Menu Casting QR">
+      <div id="tv-hub-qr" class="tv-hub-qr" aria-label="QR Code to connect phones to the Main Menu"></div>
+      <div class="tv-hub-info">
+        <div class="tv-hub-kicker">
+          <span>📺 TV MAIN MENU CASTING</span>
+          <span>·</span>
+          <span id="tv-hub-status">Starting...</span>
+        </div>
+        <h2>Scan with Phones to Join the Couch Party!</h2>
+        <p>
+          Players scan this QR code, log into their account (or create one!), and appear right here on the TV Main Menu. Pick any game below and everyone moves into the game room together!
+        </p>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <button type="button" id="btn-tv-copy-hub" class="tv-mode-btn">📋 Copy Phone Link</button>
+          <button type="button" id="btn-tv-hub-fs" class="tv-mode-btn">⛶ TV Fullscreen</button>
+          <span style="font-size:0.82rem; font-weight:800; color:#5b5575;">Party: <strong id="tv-hub-code">----</strong></span>
+        </div>
+        <div id="tv-hub-players" class="tv-hub-players"></div>
+      </div>
+    </section>
+
     <section class="hub-hero">
       <div class="hero-title-wrap">
         <div class="hero-kicker">
@@ -63,7 +157,7 @@
         </div>
         <h1>Pick a Cartoon Adventure</h1>
         <p>
-          Tap any game to open a cozy private room for up to 4 players — or toggle <strong>📺 TV Mode</strong> to put the game on your big screen and use everyone's phones as controllers!
+          Create a game room with a 4-character code (like <strong>A482</strong> or <strong>W719</strong>), join an open room below, or flip on <strong>📺 TV Mode</strong> to cast this menu and connect phones with a QR code!
         </p>
       </div>
       <div class="nav-hint">
@@ -71,27 +165,108 @@
       </div>
     </section>
 
+    <!-- Join by Code + Live Open Game Rooms Deck -->
+    <section class="lounge-deck" aria-label="Join by Code and Open Game Rooms">
+      <div class="lounge-card">
+        <h2>🎟️ Join by Room Code</h2>
+        <p class="lounge-sub">First letter of the game + 3 digits (e.g. <strong>A482</strong> for Astro Purge, <strong>W719</strong> for Wordle Arena).</p>
+        <form id="join-code-form" class="join-code-form">
+          <input type="text" id="hub-join-code" class="join-code-input" maxlength="6" placeholder="A482" autocomplete="off" />
+          <button type="submit" id="btn-join-code" class="join-code-btn">Join →</button>
+        </form>
+        <div id="join-code-err" class="join-code-err hidden"></div>
+      </div>
+
+      <div class="lounge-card">
+        <h2>
+          <span>🌐 Open Game Rooms</span>
+          <span id="open-rooms-count" class="open-room-code" style="font-size:0.78rem;">0</span>
+        </h2>
+        <p class="lounge-sub">Click a live room to knock on the door — the Host accepts your join request!</p>
+        <div id="open-rooms-list" class="open-rooms-list"></div>
+      </div>
+    </section>
+
     <section id="games-grid" class="games-grid" aria-label="Available Games"></section>
   </main>
 
   <footer class="hub-footer">
-    <span>Made for playing together · Add new games in <code>games-registry.js</code></span>
-    <span>✦ 4-Player Rooms · TV Mode &amp; Phone Controllers Ready</span>
+    <span>Made for playing together · Unified Pre-Game Rooms &amp; Per-Game Achievements</span>
+    <span>✦ Room Codes: Game Initial + 3 Digits · TV Casting &amp; Phone Login Ready</span>
   </footer>
 
+  <script src="shared/qr.js"></script>
+  <script src="shared/accounts.js"></script>
   <script src="shared/room-sync.js"></script>
   <script src="games-registry.js"></script>
+  <script src="shared/lounge.js"></script>
   <script>
     (function () {
+      const params = new URLSearchParams(window.location.search);
+      const hubPartyCodeParam = (params.get('hub') || '').trim().toUpperCase();
+      const isPhoneHubMode = Boolean(hubPartyCodeParam && params.get('phone') === '1');
+
       const grid = document.getElementById('games-grid');
       const statusChip = document.getElementById('gamepad-status');
       const statusText = document.getElementById('gamepad-status-text');
       const nameInput = document.getElementById('hub-player-name');
+      const nameLabel = document.getElementById('hub-name-label');
       const tvModeBtn = document.getElementById('btn-tv-mode');
       const tvModeLabel = document.getElementById('tv-mode-label');
+      const btnHubAccount = document.getElementById('btn-hub-account');
+      const hubAccAva = document.getElementById('hub-acc-ava');
+      const hubAccLabel = document.getElementById('hub-acc-label');
+      const hubMain = document.getElementById('hub-main');
+
+      const tvHubBanner = document.getElementById('tv-hub-banner');
+      const tvHubQr = document.getElementById('tv-hub-qr');
+      const tvHubStatus = document.getElementById('tv-hub-status');
+      const tvHubCode = document.getElementById('tv-hub-code');
+      const tvHubPlayers = document.getElementById('tv-hub-players');
+      const btnTvCopyHub = document.getElementById('btn-tv-copy-hub');
+      const btnTvHubFs = document.getElementById('btn-tv-hub-fs');
+
+      const joinCodeForm = document.getElementById('join-code-form');
+      const joinCodeInput = document.getElementById('hub-join-code');
+      const joinCodeErr = document.getElementById('join-code-err');
+      const openRoomsList = document.getElementById('open-rooms-list');
+      const openRoomsCount = document.getElementById('open-rooms-count');
+
       const games = window.GAME_HUB_REGISTRY || [];
 
-      let tvMode = sessionStorage.getItem('couch_arcade_tv_mode') === '1';
+      function escapeHtml(s) {
+        return String(s || '').replace(/[&<>"']/g, (m) => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+        }[m]));
+      }
+
+      // ---- Account Header Sync ----
+      function syncHeaderAccount() {
+        const acc = window.CouchAccounts ? window.CouchAccounts.getActiveAccount() : null;
+        if (acc) {
+          const trophies = window.CouchAccounts.getTrophyCount(acc);
+          hubAccAva.textContent = acc.avatar;
+          hubAccLabel.textContent = `${acc.username} · 🏆 ${trophies}`;
+          if (nameInput) nameInput.value = acc.username;
+        } else {
+          hubAccAva.textContent = '⭐';
+          hubAccLabel.textContent = 'Sign In / Trophies';
+          if (window.CouchRoom && nameInput && !nameInput.value) {
+            nameInput.value = window.CouchRoom.getSavedPlayerName();
+          }
+        }
+      }
+
+      if (btnHubAccount && window.CouchAccounts) {
+        btnHubAccount.addEventListener('click', () => {
+          window.CouchAccounts.openAccountModal({
+            title: '⭐ Couch Arcade Account & Trophies',
+            onAuth: () => syncHeaderAccount(),
+            onClose: () => syncHeaderAccount(),
+          });
+        });
+        window.CouchAccounts.onChange(() => syncHeaderAccount());
+      }
 
       if (window.CouchRoom && nameInput) {
         nameInput.value = window.CouchRoom.getSavedPlayerName();
@@ -99,29 +274,375 @@
           window.CouchRoom.savePlayerName(nameInput.value);
         });
       }
+      syncHeaderAccount();
 
-      function buildRoomLaunchUrl(game) {
-        const sep = game.path.includes('?') ? '&' : '?';
-        const tvParam = tvMode ? '&tv=1' : '';
-        if (game.launchParams) {
-          if (game.launchParams.includes('host=1') && window.CouchRoom) {
-            return `${game.path}${sep}room=${window.CouchRoom.generateRoomCode()}&${game.launchParams}${tvParam}`;
+      // =========================================================================
+      // MODE A: PHONE MAIN MENU CONTROLLER (?hub=H###&phone=1)
+      // =========================================================================
+      if (isPhoneHubMode) {
+        hubMain.classList.add('hidden');
+        tvModeBtn.classList.add('hidden');
+        if (nameLabel) nameLabel.classList.add('hidden');
+        const phoneShell = document.getElementById('phone-hub-shell');
+        phoneShell.classList.remove('hidden');
+
+        const phonePartyCode = document.getElementById('phone-party-code');
+        const phoneHubStatus = document.getElementById('phone-hub-status');
+        const phoneAuthStep = document.getElementById('phone-auth-step');
+        const phoneConnectedStep = document.getElementById('phone-connected-step');
+        const phoneActiveBox = document.getElementById('phone-active-account-box');
+        const phoneNoAccBox = document.getElementById('phone-no-account-box');
+        const phoneActiveAva = document.getElementById('phone-active-ava');
+        const phoneActiveName = document.getElementById('phone-active-name');
+        const phoneActiveTrophies = document.getElementById('phone-active-trophies');
+        const btnJoinWithAcc = document.getElementById('btn-phone-join-with-acc');
+        const btnSwitchAcc = document.getElementById('btn-phone-switch-acc');
+        const btnOpenLogin = document.getElementById('btn-phone-open-login');
+        const phoneGuestName = document.getElementById('phone-guest-name');
+        const btnJoinGuest = document.getElementById('btn-phone-join-guest');
+        const phonePartyRoster = document.getElementById('phone-party-roster');
+        const phoneCaptainPicker = document.getElementById('phone-captain-picker');
+        const phoneHubGames = document.getElementById('phone-hub-games');
+        const btnPhoneEditAcc = document.getElementById('btn-phone-edit-acc');
+
+        phonePartyCode.textContent = hubPartyCodeParam;
+        phoneGuestName.value = window.CouchRoom ? window.CouchRoom.getSavedPlayerName() : '';
+
+        let joinedParty = false;
+
+        const guest = new window.CouchLounge.HubPartyGuest({
+          partyCode: hubPartyCodeParam,
+          onStatusChange: (st, label) => {
+            phoneHubStatus.textContent = label;
+            phoneHubStatus.style.color = st === 'ok' ? '#15803d' : '#b45309';
+          },
+          onPlayersChange: (players) => {
+            const amIn = players.some((p) => p.id === guest.myId);
+            if (amIn) {
+              joinedParty = true;
+              phoneAuthStep.classList.add('hidden');
+              phoneConnectedStep.classList.remove('hidden');
+            }
+            phonePartyRoster.innerHTML = players.map((p, idx) => `
+              <div class="tv-player-chip">
+                <span>${escapeHtml(p.avatar || '🛸')}</span>
+                <span>${escapeHtml(p.name)}</span>
+                ${idx === 0 ? '<span style="color:#d97706; font-size:0.78rem;">★ CAPTAIN</span>' : ''}
+                ${p.accountHandle ? `<span style="color:#15803d; font-size:0.78rem;">🏆${p.trophyCount || 0}</span>` : ''}
+              </div>
+            `).join('');
+
+            const isCaptain = players.length > 0 && players[0].id === guest.myId;
+            phoneCaptainPicker.classList.toggle('hidden', !isCaptain);
+          },
+          onGotoRoom: ({ gameId, roomCode }) => {
+            const url = new URL('room.html', window.location.href);
+            url.searchParams.set('game', gameId);
+            url.searchParams.set('room', roomCode);
+            url.searchParams.set('controller', '1');
+            url.searchParams.set('party', '1');
+            window.location.href = url.toString();
+          },
+          onKicked: () => {
+            phoneAuthStep.classList.add('hidden');
+            phoneConnectedStep.classList.remove('hidden');
+            document.getElementById('phone-joined-heading').textContent = '👋 Removed from TV Party';
+            document.getElementById('phone-joined-sub').textContent = 'You were removed from the TV Main Menu.';
+            phoneCaptainPicker.classList.add('hidden');
+          },
+          onFull: () => {
+            phoneHubStatus.textContent = 'TV Party Full (4/4)';
+            phoneHubStatus.style.color = '#be123c';
+          },
+        });
+
+        guest.connect();
+
+        function syncPhoneAuthCard() {
+          const acc = window.CouchAccounts ? window.CouchAccounts.getActiveAccount() : null;
+          if (acc) {
+            const tr = window.CouchAccounts.getTrophyCount(acc);
+            phoneActiveBox.classList.remove('hidden');
+            phoneNoAccBox.classList.add('hidden');
+            phoneActiveAva.textContent = acc.avatar;
+            phoneActiveName.textContent = acc.username;
+            phoneActiveTrophies.textContent = `🏆 ${tr} Achievements`;
+            if (joinedParty) {
+              guest.sendJoin({ name: acc.username, avatar: acc.avatar, accountHandle: acc.handle, trophyCount: tr });
+            }
+          } else {
+            phoneActiveBox.classList.add('hidden');
+            phoneNoAccBox.classList.remove('hidden');
           }
-          return `${game.path}${sep}${game.launchParams}${tvParam}`;
         }
-        return `${game.path}${tvMode ? `${sep}tv=1` : ''}`;
+
+        function joinNowWithActiveAccount() {
+          const acc = window.CouchAccounts ? window.CouchAccounts.getActiveAccount() : null;
+          if (!acc) return;
+          guest.sendJoin({
+            name: acc.username,
+            avatar: acc.avatar,
+            accountHandle: acc.handle,
+            trophyCount: window.CouchAccounts.getTrophyCount(acc),
+          });
+          joinedParty = true;
+          phoneAuthStep.classList.add('hidden');
+          phoneConnectedStep.classList.remove('hidden');
+        }
+
+        function openPhoneAccountModal(tab) {
+          window.CouchAccounts.openAccountModal({
+            title: '📱 Sign In for TV Party',
+            tab,
+            showGuestButton: false,
+            closeOnAuth: true,
+            remoteLookupFn: (u, p) => guest.lookupRemoteAccount(u, p),
+            onAuth: () => {
+              syncHeaderAccount();
+              syncPhoneAuthCard();
+              joinNowWithActiveAccount();
+            },
+          });
+        }
+
+        btnJoinWithAcc.addEventListener('click', joinNowWithActiveAccount);
+        btnSwitchAcc.addEventListener('click', () => openPhoneAccountModal('login'));
+        btnOpenLogin.addEventListener('click', () => openPhoneAccountModal());
+        btnPhoneEditAcc.addEventListener('click', () => openPhoneAccountModal('profile'));
+
+        btnJoinGuest.addEventListener('click', () => {
+          const nm = (phoneGuestName.value || '').trim() || 'Couch Guest';
+          if (window.CouchRoom) window.CouchRoom.savePlayerName(nm);
+          guest.sendJoin({ name: nm, avatar: '🎮', accountHandle: '', trophyCount: 0 });
+          joinedParty = true;
+          phoneAuthStep.classList.add('hidden');
+          phoneConnectedStep.classList.remove('hidden');
+        });
+
+        // Captain game picker buttons
+        phoneHubGames.innerHTML = '';
+        games.forEach((g) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'phone-pick-game-btn';
+          btn.dataset.gameId = g.id;
+          const icon = (g.roomFlair && g.roomFlair.icon) || '🎮';
+          btn.innerHTML = `
+            <span>${icon} ${escapeHtml(g.title)}</span>
+            <span style="font-size:0.86rem; color:${g.accent};">Open Room →</span>
+          `;
+          btn.addEventListener('click', () => {
+            guest.pickGame(g.id);
+          });
+          phoneHubGames.appendChild(btn);
+        });
+
+        syncPhoneAuthCard();
+        return;
       }
 
+      // =========================================================================
+      // MODE B: STANDARD & TV CASTING MAIN MENU
+      // =========================================================================
+      let tvMode = sessionStorage.getItem('couch_arcade_tv_mode') === '1' || params.get('tv') === '1';
+      let hubPartyHost = null;
+
+      function buildRoomLaunchUrl(game, customCode) {
+        const code = customCode || window.CouchGames.generateRoomCode(game);
+        const url = new URL('room.html', window.location.href);
+        url.searchParams.set('game', game.id);
+        url.searchParams.set('room', code);
+        url.searchParams.set('host', '1');
+        if (tvMode) url.searchParams.set('tv', '1');
+        return url.toString();
+      }
+
+      function launchGameRoom(game) {
+        if (window.CouchRoom && nameInput) {
+          window.CouchRoom.savePlayerName(nameInput.value);
+        }
+        const code = window.CouchGames.generateRoomCode(game);
+        const targetUrl = buildRoomLaunchUrl(game, code);
+
+        if (tvMode && hubPartyHost && hubPartyHost.getOrderedPlayers().length > 0) {
+          hubPartyHost.dispatchPartyToRoom({ gameId: game.id, roomCode: code });
+          setTimeout(() => {
+            window.location.href = targetUrl;
+          }, 280);
+          return;
+        }
+        window.location.href = targetUrl;
+      }
+
+      function renderTvHubPlayers(players) {
+        tvHubPlayers.innerHTML = '';
+        for (let i = 0; i < 4; i++) {
+          const p = players[i];
+          const chip = document.createElement('div');
+          if (p) {
+            chip.className = 'tv-player-chip';
+            chip.innerHTML = `
+              <span>${escapeHtml(p.avatar || '🛸')}</span>
+              <span>${escapeHtml(p.name)}</span>
+              ${i === 0 ? '<span style="color:#d97706; font-size:0.78rem;">★ CAPTAIN</span>' : ''}
+              ${p.accountHandle ? `<span style="color:#15803d; font-size:0.76rem;">🏆${p.trophyCount || 0}</span>` : ''}
+              <button type="button" class="tv-chip-kick" data-kick="${escapeHtml(p.id)}" title="Remove player">✕</button>
+            `;
+            chip.querySelector('.tv-chip-kick').addEventListener('click', () => {
+              if (hubPartyHost) hubPartyHost.kickPlayer(p.id);
+            });
+          } else {
+            chip.className = 'tv-player-chip empty';
+            chip.textContent = `Slot ${i + 1} · Scan QR`;
+          }
+          tvHubPlayers.appendChild(chip);
+        }
+      }
+
+      function startTvHubParty() {
+        if (hubPartyHost) return;
+        hubPartyHost = new window.CouchLounge.HubPartyHost({
+          onStatusChange: (st, label) => {
+            tvHubStatus.textContent = label;
+          },
+          onPlayersChange: (players) => {
+            renderTvHubPlayers(players);
+          },
+          onCaptainPickGame: (gameId) => {
+            const g = window.CouchGames.getById(gameId);
+            if (g) launchGameRoom(g);
+          },
+        });
+        tvHubCode.textContent = hubPartyHost.partyCode;
+        renderTvHubPlayers([]);
+        const joinUrl = hubPartyHost.getJoinUrl();
+        if (window.CouchQR && window.CouchQR.renderSvg) {
+          tvHubQr.innerHTML = window.CouchQR.renderSvg(joinUrl, { fg: '#1e1b2e', bg: '#ffffff', quiet: 3 });
+        }
+        hubPartyHost.start();
+      }
+
+      function stopTvHubParty() {
+        if (hubPartyHost) {
+          hubPartyHost.destroy();
+          hubPartyHost = null;
+        }
+      }
+
+      btnTvCopyHub.addEventListener('click', async () => {
+        if (!hubPartyHost) return;
+        const url = hubPartyHost.getJoinUrl();
+        try {
+          await navigator.clipboard.writeText(url);
+          btnTvCopyHub.textContent = '✓ Phone Link Copied!';
+          setTimeout(() => (btnTvCopyHub.textContent = '📋 Copy Phone Link'), 1800);
+        } catch (e) {
+          window.prompt('Phone join link:', url);
+        }
+      });
+
+      btnTvHubFs.addEventListener('click', () => {
+        const docEl = document.documentElement;
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+        else if (docEl.requestFullscreen) docEl.requestFullscreen().catch(() => {});
+      });
+
+      // ---- Join by Code Form (First letter of game + 3 digits, e.g. A482 / W719) ----
+      joinCodeForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const code = (joinCodeInput.value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (!code) {
+          joinCodeErr.textContent = 'Enter a room code like A482 or W719!';
+          joinCodeErr.classList.remove('hidden');
+          return;
+        }
+        if (window.CouchRoom && nameInput) {
+          window.CouchRoom.savePlayerName(nameInput.value);
+        }
+        const matchedGame = window.CouchGames.getByCode(code);
+        if (window.CouchGames.isValidGameCode(code) && matchedGame) {
+          joinCodeErr.classList.add('hidden');
+          const url = new URL('room.html', window.location.href);
+          url.searchParams.set('game', matchedGame.id);
+          url.searchParams.set('room', code);
+          window.location.href = url.toString();
+          return;
+        }
+        // Fallback for legacy 6-character Wordle Arena codes
+        if (code.length === 6) {
+          joinCodeErr.classList.add('hidden');
+          window.location.href = `games/wordle-arena/index.html?room=${code}`;
+          return;
+        }
+        const prefixes = games.map((g) => `${window.CouchGames.getPrefix(g)}### (${g.title})`).join(' or ');
+        joinCodeErr.textContent = `Use format ${prefixes}!`;
+        joinCodeErr.classList.remove('hidden');
+      });
+
+      // ---- Live Open Game Rooms Directory ----
+      function renderOpenRooms(rooms) {
+        openRoomsCount.textContent = String(rooms.length);
+        openRoomsList.innerHTML = '';
+        if (!rooms.length) {
+          openRoomsList.innerHTML = `
+            <div class="open-rooms-empty" style="grid-column: 1 / -1;">
+              No open rooms right now — click a game below to open one for everyone to see!
+            </div>
+          `;
+          return;
+        }
+        rooms.forEach((r) => {
+          const item = document.createElement('div');
+          item.className = 'open-room-item';
+          item.dataset.roomCode = r.code;
+          item.innerHTML = `
+            <div class="open-room-top">
+              <span class="open-room-game"><span>${escapeHtml(r.gameIcon || '🎮')}</span><span>${escapeHtml(r.gameTitle || r.gameId)}</span></span>
+              <span class="open-room-code">${escapeHtml(r.code)}</span>
+            </div>
+            <div class="open-room-meta">
+              ${escapeHtml(r.hostAvatar || '🛸')} Host: <strong>${escapeHtml(r.hostName || 'Host')}</strong> · ${r.playerCount || 0}/${r.maxPlayers || 4} Players${r.tvMode ? ' · 📺 TV' : ''}
+            </div>
+            <button type="button" class="open-room-join-btn">🚪 Request to Join</button>
+          `;
+          item.querySelector('.open-room-join-btn').addEventListener('click', () => {
+            if (window.CouchRoom && nameInput) {
+              window.CouchRoom.savePlayerName(nameInput.value);
+            }
+            const url = new URL('room.html', window.location.href);
+            url.searchParams.set('game', r.gameId);
+            url.searchParams.set('room', r.code);
+            url.searchParams.set('joinreq', '1');
+            window.location.href = url.toString();
+          });
+          openRoomsList.appendChild(item);
+        });
+      }
+
+      if (window.CouchLounge) {
+        const loungeWatcher = new window.CouchLounge.LoungeClient({
+          onRoomsChange: (rooms) => renderOpenRooms(rooms),
+        });
+        loungeWatcher.start();
+      } else {
+        renderOpenRooms([]);
+      }
+
+      // ---- Game Cards ----
       let focusIndex = 0;
       const cards = [];
 
       function syncTvModeUI() {
         if (tvModeBtn) tvModeBtn.classList.toggle('active', tvMode);
         if (tvModeLabel) tvModeLabel.textContent = tvMode ? 'TV Mode: ON' : 'TV Mode: OFF';
+        tvHubBanner.classList.toggle('hidden', !tvMode);
+        if (tvMode) startTvHubParty();
+        else stopTvHubParty();
+
         cards.forEach((c, i) => {
           const ctaSpan = c.querySelector('.game-cta-text');
           if (ctaSpan) {
-            ctaSpan.textContent = tvMode ? '📺 Open on TV Screen!' : 'Create Room & Play!';
+            ctaSpan.textContent = tvMode ? '📺 Open Room on TV!' : 'Open Game Room!';
           }
           if (games[i]) c.href = buildRoomLaunchUrl(games[i]);
         });
@@ -151,6 +672,7 @@
           }
         }
 
+        const prefix = window.CouchGames.getPrefix(game);
         card.innerHTML = `
           <div class="game-art">
             ${game.artSvg}
@@ -164,11 +686,12 @@
             <p class="game-desc">${game.description}</p>
             <div class="game-meta">
               <span class="meta-tag">${game.players}</span>
+              <span class="meta-tag">Code: ${prefix}###</span>
               <span class="meta-tag">${game.input}</span>
             </div>
             ${statHtml}
             <div class="game-cta" style="background: ${game.ctaBg || game.accent}">
-              <span class="game-cta-text">Create Room &amp; Play!</span>
+              <span class="game-cta-text">Open Game Room!</span>
               <span aria-hidden="true">→</span>
             </div>
           </div>
@@ -176,10 +699,7 @@
 
         card.addEventListener('click', (e) => {
           e.preventDefault();
-          if (window.CouchRoom && nameInput) {
-            window.CouchRoom.savePlayerName(nameInput.value);
-          }
-          window.location.href = buildRoomLaunchUrl(game);
+          launchGameRoom(game);
         });
         card.addEventListener('mouseenter', () => setFocused(idx));
         card.addEventListener('focus', () => setFocused(idx));
@@ -195,7 +715,7 @@
       nextSlot.innerHTML = `
         <div class="coming-soon-icon" aria-hidden="true">★</div>
         <h3>Next Game Coming Soon!</h3>
-        <p>Drop your next creation in <code>games/</code> and register it in <code>games-registry.js</code> to grow your arcade.</p>
+        <p>Drop your next creation in <code>games/</code> and register it in <code>games-registry.js</code> to get an instant Pre-Game Room &amp; TV Mode!</p>
       `;
       grid.appendChild(nextSlot);
 
@@ -213,6 +733,7 @@
       window.addEventListener('keydown', (e) => {
         if (!cards.length) return;
         if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+        if (document.getElementById('ca-account-modal')) return;
         if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'd' || e.key === 'D') {
           e.preventDefault();
           setFocused(focusIndex + 1);
@@ -222,11 +743,11 @@
           setFocused(focusIndex - 1);
           cards[focusIndex].focus();
         } else if (e.key === 'Enter' || e.key === ' ') {
-          if (document.activeElement && document.activeElement.classList.contains('game-card')) {
+          if (document.activeElement && (document.activeElement.classList.contains('game-card') || document.activeElement.tagName === 'BUTTON')) {
             return;
           }
           e.preventDefault();
-          window.location.href = buildRoomLaunchUrl(games[focusIndex]);
+          launchGameRoom(games[focusIndex]);
         }
       });
 
@@ -249,27 +770,22 @@
 
       function pollGamepads(ts) {
         const pads = updateGamepadStatus();
-        if (pads.length > 0 && cards.length > 0) {
-          const pad = pads[0];
-          const axisX = pad.axes[0] || 0;
-          const dpadRight = pad.buttons[15] && pad.buttons[15].pressed;
-          const dpadLeft = pad.buttons[14] && pad.buttons[14].pressed;
-          const confirm = (pad.buttons[0] && pad.buttons[0].pressed) || (pad.buttons[9] && pad.buttons[9].pressed);
+        if (pads.length > 0 && cards.length > 0 && !document.getElementById('ca-account-modal')) {
+          const gp = pads[0];
+          const ax = gp.axes && gp.axes.length > 0 ? gp.axes[0] : 0;
+          const left = ax < -0.5 || (gp.buttons[14] && gp.buttons[14].pressed);
+          const right = ax > 0.5 || (gp.buttons[15] && gp.buttons[15].pressed);
+          const confirm = (gp.buttons[0] && gp.buttons[0].pressed) || (gp.buttons[9] && gp.buttons[9].pressed);
 
-          if (ts - lastMoveTime > 220) {
-            if (axisX > 0.55 || dpadRight) {
-              setFocused(focusIndex + 1);
-              lastMoveTime = ts;
-            } else if (axisX < -0.55 || dpadLeft) {
-              setFocused(focusIndex - 1);
-              lastMoveTime = ts;
-            }
+          if ((left || right) && ts - lastMoveTime > 240) {
+            setFocused(focusIndex + (right ? 1 : -1));
+            cards[focusIndex].focus();
+            lastMoveTime = ts;
           }
-
           if (confirm && !prevConfirm) {
-            window.location.href = buildRoomLaunchUrl(games[focusIndex]);
+            launchGameRoom(games[focusIndex]);
           }
-          prevConfirm = confirm;
+          prevConfirm = Boolean(confirm);
         }
         requestAnimationFrame(pollGamepads);
       }

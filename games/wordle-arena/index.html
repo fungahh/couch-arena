@@ -1090,6 +1090,7 @@
   </div>
 
   <script src="../../shared/qr.js"></script>
+  <script src="../../shared/accounts.js"></script>
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <script>
     /**********************************************************************
@@ -1363,7 +1364,8 @@
     const MAX_ROOM_PLAYERS = 4;
 
     window.addEventListener('DOMContentLoaded', () => {
-      const savedName = localStorage.getItem('couch_arcade_name') || localStorage.getItem('wa_nickname');
+      const acc = window.CouchAccounts && window.CouchAccounts.getActiveAccount ? window.CouchAccounts.getActiveAccount() : null;
+      const savedName = (acc && acc.username) || localStorage.getItem('couch_arcade_name') || localStorage.getItem('wa_nickname');
       if (savedName) {
         document.getElementById('nickname-input').value = savedName;
       }
@@ -1372,6 +1374,8 @@
       const roomParam = params.get('room');
       const langParam = params.get('lang');
       const autoCreate = params.get('autocreate');
+      const autoStart = params.get('autostart') === '1';
+      const hostParam = params.get('host') === '1';
       const tvParam = params.get('tv') === '1';
       const controllerParam = params.get('controller') === '1';
 
@@ -1385,16 +1389,18 @@
 
       // Restore active session on reload if it matches the room in URL (or URL has no room)
       const saved = loadSession();
-      if (saved && autoCreate !== '1' && !tvParam && (!cleanParamCode || saved.roomCode === cleanParamCode)) {
+      if (saved && autoCreate !== '1' && !autoStart && !tvParam && (!cleanParamCode || saved.roomCode === cleanParamCode)) {
         if (controllerParam) saved.controllerMode = true;
         restoreSession(saved);
+      } else if (autoStart && hostParam) {
+        createMultiplayerRoom(tvParam, cleanParamCode || undefined);
       } else if (tvParam) {
-        createMultiplayerRoom(true);
+        createMultiplayerRoom(true, cleanParamCode || undefined);
       } else if (cleanParamCode) {
         document.getElementById('join-code-input').value = cleanParamCode;
-        if (controllerParam) {
-          state.controllerMode = true;
-          joinMultiplayerRoom(true);
+        if (controllerParam || autoStart) {
+          state.controllerMode = controllerParam;
+          joinMultiplayerRoom(controllerParam);
         } else {
           showToast(`Invite loaded for Room ${cleanParamCode}! Click Join Room to enter.`);
         }
@@ -1471,7 +1477,8 @@
     }
 
     function getNickname() {
-      const raw = document.getElementById('nickname-input').value.trim();
+      const acc = window.CouchAccounts && window.CouchAccounts.getActiveAccount ? window.CouchAccounts.getActiveAccount() : null;
+      const raw = (acc && acc.username) || document.getElementById('nickname-input').value.trim();
       const name = raw || ('Player ' + Math.floor(100 + Math.random() * 900));
       localStorage.setItem('wa_nickname', name);
       localStorage.setItem('couch_arcade_name', name);
@@ -1479,12 +1486,7 @@
     }
 
     function generateRoomCode() {
-      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-      let code = '';
-      for (let i = 0; i < 6; i++) {
-        code += chars[Math.floor(Math.random() * chars.length)];
-      }
-      return code;
+      return 'W' + String(Math.floor(100 + Math.random() * 900));
     }
 
     function pickFiveWords(lang) {
@@ -1849,7 +1851,7 @@
     /**********************************************************************
      * 5. LAUNCH MODES (CREATE ROOM / TV MODE / JOIN ROOM / SOLO PRACTICE)
      **********************************************************************/
-    async function createMultiplayerRoom(asTv = false) {
+    async function createMultiplayerRoom(asTv = false, customRoomCode = '') {
       const btn = document.getElementById(asTv ? 'tv-host-btn' : 'host-btn');
       const prevLabel = btn ? btn.textContent : '';
       if (btn) {
@@ -1864,7 +1866,7 @@
         state.controllerMode = false;
         state.roomHasTv = Boolean(asTv);
         state.myName = getNickname();
-        state.roomCode = generateRoomCode();
+        state.roomCode = customRoomCode ? customRoomCode.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6) : generateRoomCode();
         state.secretWords = pickFiveWords(state.language);
         state.roundId = 1;
         state.players = {};
@@ -1903,7 +1905,7 @@
     async function joinMultiplayerRoom(asController = false) {
       const code = document.getElementById('join-code-input').value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
       if (code.length < 4) {
-        showToast('Please enter a valid 6-character Room Code.');
+        showToast('Please enter a valid Room Code (e.g. W482).');
         return;
       }
 
@@ -1982,6 +1984,13 @@
       document.getElementById('room-code-display').textContent = state.roomCode;
       document.getElementById('invite-pill').classList.toggle('hidden', state.mode === 'solo');
       applyTvAndControllerClasses();
+
+      if (!state.tvMode && window.CouchAccounts) {
+        window.CouchAccounts.recordGamePlayed('wordle-arena');
+        if (state.controllerMode || state.roomHasTv) {
+          window.CouchAccounts.unlockAchievement('hub_tv_party');
+        }
+      }
 
       resetPlayerMarathon();
     }
@@ -2178,6 +2187,18 @@
           guessesCount: state.currentGuesses.length,
           solved: true
         });
+        if (window.CouchAccounts) {
+          window.CouchAccounts.unlockAchievement('wa_first_word');
+          if (state.currentGuesses.length <= 2) {
+            window.CouchAccounts.unlockAchievement('wa_genius_2');
+          }
+          if (state.language === 'sv') {
+            window.CouchAccounts.unlockAchievement('wa_swedish_star');
+          }
+          if (state.solvedCount >= TOTAL_WORDS) {
+            window.CouchAccounts.unlockAchievement('wa_marathon_5');
+          }
+        }
         broadcastMyProgress();
         renderAll();
 
@@ -2212,6 +2233,19 @@
       state.isFinished = true;
       broadcastMyProgress();
       renderAll();
+
+      if (window.CouchAccounts) {
+        if (wonAll && state.solvedCount === TOTAL_WORDS) {
+          window.CouchAccounts.unlockAchievement('wa_marathon_5');
+        }
+        const ranked = Object.values(state.players).sort((a, b) => {
+          if (b.solvedCount !== a.solvedCount) return b.solvedCount - a.solvedCount;
+          return a.triesUsed - b.triesUsed;
+        });
+        if (ranked.length >= 2 && ranked[0].id === state.myId && state.solvedCount > 0) {
+          window.CouchAccounts.unlockAchievement('wa_winner');
+        }
+      }
 
       if (wonAll && state.solvedCount === TOTAL_WORDS) {
         showToast(`Champion! All 5 words solved in ${state.triesUsed} tries!`);

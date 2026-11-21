@@ -924,8 +924,23 @@
   const isHostStart = !initialRoomParam || explicitHost;
   const initialTvParam = urlParams.get('tv') === '1';
   const initialControllerParam = urlParams.get('controller') === '1';
+  const autostartParam = urlParams.get('autostart') === '1';
 
   let phoneControllerMode = !isHostStart && initialControllerParam;
+  let autostartDone = false;
+  let autostartTimer = null;
+  let handoffMeta = null;
+  if (autostartParam && isHostStart) {
+    try {
+      const raw = sessionStorage.getItem('ca_room_launch');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.gameId === 'astro-purge' && (!initialRoomParam || parsed.roomCode === initialRoomParam) && Date.now() - (parsed.ts || 0) < 30000) {
+          handoffMeta = parsed;
+        }
+      }
+    } catch (e) {}
+  }
 
   function isPhoneControllerActive() {
     return !room.isHost && phoneControllerMode && state.mode === 'playing';
@@ -937,8 +952,40 @@
     return Boolean(room.roomHasTv && ordered.length > 0 && ordered[0].id === room.myId);
   }
 
+  function awardAchievementToAll(achId) {
+    if (!achId) return;
+    if (!room.tvMode && window.CouchAccounts) {
+      window.CouchAccounts.unlockAchievement(achId);
+    }
+    if (room.isHost) {
+      for (const p of state.players) {
+        if (!p.isLocal) room.awardPlayerAchievement(p.id, achId);
+      }
+    }
+  }
+
+  function maybeTriggerAutostart(roster) {
+    if (!autostartParam || !room.isHost || autostartDone || state.mode !== 'title') return;
+    const expected = handoffMeta ? Math.max(1, handoffMeta.expectedCount || 1) : 1;
+    if (roster.length >= expected) {
+      autostartDone = true;
+      clearTimeout(autostartTimer);
+      setTimeout(() => {
+        if (state.mode === 'title' && room.getOrderedPlayers().length > 0) startGame();
+      }, 220);
+    } else if (roster.length > 0 && !autostartTimer) {
+      autostartTimer = setTimeout(() => {
+        if (!autostartDone && state.mode === 'title' && room.getOrderedPlayers().length > 0) {
+          autostartDone = true;
+          startGame();
+        }
+      }, 2200);
+    }
+  }
+
   const room = new RoomSync({
     gameId: 'astro_purge',
+    codePrefix: 'A',
     maxPlayers: 4,
     roomCode: initialRoomParam || '',
     isHost: isHostStart,
@@ -948,6 +995,7 @@
     onRosterChange: (roster) => {
       renderLobbyRoster(roster);
       syncTvAndControllerLobbyUI(roster);
+      maybeTriggerAutostart(roster);
       if (room.isHost && state.mode === 'playing') {
         syncMidGamePlayers(roster);
       }
@@ -1111,7 +1159,11 @@
   room.connect().then(() => {
     lobbyRoomCode.textContent = `ROOM ${room.roomCode}`;
     btnHudInvite.textContent = `Room: ${room.roomCode} · Copy Link`;
+    if (handoffMeta && room.isHost && !room.tvMode && Array.isArray(handoffMeta.localPlayers)) {
+      handoffMeta.localPlayers.forEach((lp) => room.addLocalPlayer(lp.name));
+    }
     syncTvAndControllerLobbyUI();
+    maybeTriggerAutostart(room.getOrderedPlayers());
   });
 
   if (btnToggleTv) {
@@ -1276,6 +1328,13 @@
       gameoverOverlay.classList.add('hidden');
       syncPhoneControllerVisibility();
       updatePhoneControllerHUD();
+      if (window.CouchAccounts) {
+        window.CouchAccounts.recordGamePlayed('astro-purge');
+        window.CouchAccounts.unlockAchievement('ap_first_flight');
+        if (phoneControllerMode || room.roomHasTv) {
+          window.CouchAccounts.unlockAchievement('hub_tv_party');
+        }
+      }
       SFX.levelUp();
     } else if (msg.type === 'SNAP') {
       applySnapshot(msg.s);
@@ -1744,6 +1803,13 @@
     for (let i = 0; i < 4; i++) spawnEnemy('corona');
 
     room.sendSignal({ type: 'GAME_START' });
+    if (!room.tvMode && window.CouchAccounts) {
+      window.CouchAccounts.recordGamePlayed('astro-purge');
+    }
+    awardAchievementToAll('ap_first_flight');
+    if (state.players.length >= 2) {
+      awardAchievementToAll('ap_couch_crew');
+    }
     const wTitle = 'WAVE 1';
     const wSub = waveSubtitleFor(1);
     showWaveBanner(wTitle, wSub);
@@ -1753,6 +1819,19 @@
   }
 
   function returnToLobbyUI() {
+    if (autostartParam) {
+      const url = new URL('../../room.html', window.location.href);
+      url.searchParams.set('game', 'astro-purge');
+      url.searchParams.set('room', room.roomCode);
+      if (room.isHost) url.searchParams.set('host', '1');
+      if (room.isHost && room.tvMode) url.searchParams.set('tv', '1');
+      if (!room.isHost && (phoneControllerMode || room.roomHasTv)) {
+        url.searchParams.set('controller', '1');
+        url.searchParams.set('party', '1');
+      }
+      window.location.href = url.toString();
+      return;
+    }
     clearTouchSteer();
     resetPhonePad();
     state.mode = 'title';
@@ -1868,6 +1947,7 @@
     state.wave += 1;
     state.waveKills = 0;
     state.waveTarget = waveQuotaFor(state.wave);
+    if (state.wave >= 5) awardAchievementToAll('ap_wave_5');
 
     if (state.wave % 10 === 0) {
       triggerBossSequence(state.wave);
@@ -1997,6 +2077,7 @@
     while (state.xp >= state.xpNeeded) {
       state.xp -= state.xpNeeded;
       state.level += 1;
+      if (state.level >= 10) awardAchievementToAll('ap_level_10');
       // Steeper, more rewarding XP curve so gaining levels feels earned
       state.xpNeeded = Math.round(140 + state.level * 85 + Math.pow(state.level, 1.65) * 20);
       SFX.levelUp();
@@ -2575,6 +2656,7 @@
     state.bossRewardDelay = 1.7;
 
     // Advance cleanly past the Boss Wave
+    awardAchievementToAll('ap_boss_slayer');
     state.wave += 1;
     state.waveKills = 0;
     state.waveTarget = waveQuotaFor(state.wave);
@@ -2847,6 +2929,7 @@
             p.shieldFlash = 0.45;
             spawnCartoonBurst(p.x, p.y, p.glow, false);
             spawnFloatText(p.x, p.y - 26, 'REVIVED!', '#5eead4');
+            if (helper && helper.id) room.awardPlayerAchievement(helper.id, 'ap_team_revive');
             SFX.levelUp();
           }
         } else {

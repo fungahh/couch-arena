@@ -5,6 +5,7 @@
 window.GAME_HUB_REGISTRY = [
   {
     id: 'astro-purge',
+    codePrefix: 'A',
     title: 'Astro Purge',
     tagline: 'Cartoon UFO Co-op Adventure',
     description:
@@ -16,6 +17,19 @@ window.GAME_HUB_REGISTRY = [
     accent: '#0d9488',
     ctaBg: '#14b8a6',
     badge: 'NEW!',
+    roomFlair: {
+      icon: '🛸',
+      themeClass: 'flair-astro',
+      eyebrow: 'Space Saucer Squadron · Co-op Launch Pad',
+      bannerBg: 'linear-gradient(135deg, #182644 0%, #0f3a52 58%, #134e4a 100%)',
+      bannerText: '#fff8ec',
+      accent: '#14b8a6',
+      pillBg: '#ccfbf1',
+      pillText: '#0f766e',
+      launchLabel: 'Launch UFO Mission!',
+      controlsTip: 'Steer with Touch/Joystick, WASD, or Gamepad · Tap DASH to zip through space hazards!',
+      supportsLocalAdd: true,
+    },
     statKey: 'astro_purge_best',
     formatStat: (raw) => {
       try {
@@ -101,6 +115,7 @@ window.GAME_HUB_REGISTRY = [
   },
   {
     id: 'wordle-arena',
+    codePrefix: 'W',
     title: 'Wordle Arena',
     tagline: '5-Word Live Race Marathon',
     description:
@@ -112,6 +127,19 @@ window.GAME_HUB_REGISTRY = [
     accent: '#15803d',
     ctaBg: '#22c55e',
     badge: 'CLASSIC',
+    roomFlair: {
+      icon: '🔤',
+      themeClass: 'flair-wordle',
+      eyebrow: '5-Word Crossword Derby · Live Tile Race',
+      bannerBg: 'linear-gradient(135deg, #fef3c7 0%, #dcfce7 55%, #bbf7d0 100%)',
+      bannerText: '#1e1b2e',
+      accent: '#22c55e',
+      pillBg: '#dcfce7',
+      pillText: '#15803d',
+      launchLabel: 'Start 5-Word Race!',
+      controlsTip: 'Guess 5 secret words within 25 total tries · On TV, everyone types privately on their own phone!',
+      supportsLanguage: true,
+    },
     statKey: null,
     artSvg: `
       <svg viewBox="0 0 360 195" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -170,3 +198,32 @@ window.GAME_HUB_REGISTRY = [
     `,
   },
 ];
+
+window.CouchGames = {
+  getAll() {
+    return window.GAME_HUB_REGISTRY || [];
+  },
+  getById(id) {
+    return (window.GAME_HUB_REGISTRY || []).find((g) => g.id === id) || null;
+  },
+  getPrefix(gameOrId) {
+    const g = typeof gameOrId === 'string' ? this.getById(gameOrId) : gameOrId;
+    if (!g) return 'G';
+    return (g.codePrefix || g.title[0] || 'G').toUpperCase();
+  },
+  generateRoomCode(gameOrId) {
+    const prefix = this.getPrefix(gameOrId);
+    const digits = String(Math.floor(100 + Math.random() * 900));
+    return prefix + digits;
+  },
+  getByCode(code) {
+    const clean = String(code || '').trim().toUpperCase();
+    if (!clean) return null;
+    const prefix = clean[0];
+    const match = (window.GAME_HUB_REGISTRY || []).find((g) => this.getPrefix(g) === prefix);
+    return match || null;
+  },
+  isValidGameCode(code) {
+    return /^[A-Z]\d{3}$/.test(String(code || '').trim().toUpperCase());
+  },
+};
