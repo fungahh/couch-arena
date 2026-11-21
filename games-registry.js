@@ -10,7 +10,8 @@ window.GAME_HUB_REGISTRY = [
     description:
       'Pilot twin starships together against waves of space viruses and infected asteroids. Share XP, unlock new weapons, and face a mutant boss every 10 levels.',
     path: 'games/astro-purge/index.html',
-    players: '1–2P Couch Co-op',
+    launchParams: 'host=1',
+    players: '1–4P Room · Co-op',
     input: 'Keyboard + Controllers',
     accent: '#14b8a6',
     accentSoft: 'rgba(20, 184, 166, 0.14)',
@@ -76,7 +77,8 @@ window.GAME_HUB_REGISTRY = [
     description:
       'Race across 5 secret words in English or Swedish with 25 total guesses. Create a room to play live together or practice solo against bots.',
     path: 'games/wordle-arena/index.html',
-    players: 'Solo or Online',
+    launchParams: 'autocreate=1',
+    players: '1–4P Room · Online',
     input: 'Keyboard / Touch',
     accent: '#22c55e',
     accentSoft: 'rgba(34, 197, 94, 0.14)',

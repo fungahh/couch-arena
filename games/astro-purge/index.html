@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Astro Purge — Co-op Space Virus Asteroids</title>
-  <meta name="description" content="Pilot starships together, level up your fleet, unlock new weapons, and defeat space virus bosses every 10 levels." />
+  <title>Astro Purge — 4-Player Space Virus Asteroids</title>
+  <meta name="description" content="Pilot starships together in 4-player game rooms, level up your fleet, unlock new weapons, and defeat space virus bosses every 10 levels." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
@@ -19,6 +19,7 @@
       <div class="hud-top">
         <div class="hud-group">
           <a href="../../index.html" class="hud-pill hud-btn" id="btn-back-hub">← Hub</a>
+          <button type="button" class="hud-pill hud-btn" id="btn-hud-invite" title="Copy Room Invite Link">Room: ------ · Copy Link</button>
           <button type="button" class="hud-pill hud-btn" id="btn-pause" title="Pause (P / Esc / Start)">Pause</button>
           <button type="button" class="hud-pill hud-btn" id="btn-autofire" title="Toggle Auto-Fire (T)">Auto-Fire: ON</button>
           <button type="button" class="hud-pill hud-btn" id="btn-mute" title="Toggle Sound (M)">SFX: ON</button>
@@ -65,51 +66,54 @@
     <p id="boss-warning-sub">LEVEL 10 — ALPHA CORONA-LEVIATHAN INCOMING</p>
   </div>
 
-  <!-- OVERLAY 1: TITLE SCREEN -->
+  <!-- OVERLAY 1: 4-PLAYER GAME ROOM LOBBY -->
   <div id="title-overlay" class="overlay">
-    <div class="modal-panel">
-      <div class="eyebrow">Couch Arcade · Space Co-op</div>
+    <div class="modal-panel wide">
+      <div class="eyebrow">Couch Arcade · 4-Player Game Room</div>
       <h1 class="modal-title">ASTRO PURGE</h1>
       <p class="modal-sub">
-        Defend deep space from mutating viruses and infected asteroids. Level up your ships together, unlock new weapons, and survive a giant Boss every 10 levels.
+        Share the invite link so up to 4 friends can join this room, or add a local couch player on the same screen. Level up together and defeat a Boss every 10 levels.
       </p>
 
-      <div class="mode-grid">
-        <button type="button" class="mode-btn selected" id="mode-2p" data-mode="2">
-          <strong>2 Players · Couch Co-op</strong>
-          <span>Shared XP &amp; upgrades, revive pods, and Plasma Tether link.</span>
-        </button>
-        <button type="button" class="mode-btn" id="mode-1p" data-mode="1">
-          <strong>1 Player · Solo Pilot</strong>
-          <span>Solo run with Wingman Drone upgrades. P2 can drop in anytime!</span>
+      <!-- Room Code, Name & Invite Link Bar -->
+      <div class="room-bar">
+        <div class="room-bar-left">
+          <span class="room-code-badge" id="lobby-room-code">ROOM ------</span>
+          <input type="text" id="lobby-player-name" class="room-name-input" maxlength="18" placeholder="Your name..." />
+          <span class="room-status-pill" id="lobby-room-status">Connecting...</span>
+        </div>
+        <button type="button" class="btn btn-secondary" id="btn-copy-invite" style="padding: 9px 16px; font-size: 0.88rem;">
+          Copy Invite Link
         </button>
       </div>
 
+      <!-- 4-Player Live Roster -->
+      <div class="roster-grid" id="lobby-roster-grid"></div>
+
       <div class="controls-box">
         <div class="ctrl-col p1">
-          <h4>Player 1 · Alpha Ship (Cyan)</h4>
+          <h4>Your Ship Controls (Keyboard or Gamepad)</h4>
           <p>
-            Move: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or Gamepad 1 Stick<br />
-            Fire: Auto / <kbd>Space</kbd> / <kbd>RT</kbd><br />
-            Dash: <kbd>L-Shift</kbd> / <kbd>E</kbd> / <kbd>B</kbd>
+            Move: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or Left Stick · Aim: Auto / Right Stick<br />
+            Fire: Auto / <kbd>Space</kbd> / <kbd>RT</kbd> · Dash: <kbd>L-Shift</kbd> / <kbd>E</kbd> / <kbd>B</kbd>
           </p>
         </div>
         <div class="ctrl-col p2">
-          <h4>Player 2 · Beta Ship (Amber)</h4>
+          <h4>Local Couch Co-op (Optional 2nd Local Player)</h4>
           <p>
             Move: <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> or Gamepad 2 Stick<br />
-            Fire: Auto / <kbd>Enter</kbd> / <kbd>RT</kbd><br />
-            Dash: <kbd>R-Shift</kbd> / <kbd>/</kbd> / <kbd>B</kbd>
+            Fire: Auto / <kbd>Enter</kbd> / <kbd>RT</kbd> · Dash: <kbd>R-Shift</kbd> / <kbd>/</kbd> / <kbd>B</kbd>
           </p>
         </div>
       </div>
 
       <div class="btn-row">
         <button type="button" class="btn btn-primary" id="btn-launch">Launch Mission</button>
+        <button type="button" class="btn btn-secondary" id="btn-add-local">+ Add Local Couch Player</button>
         <a href="../../index.html" class="btn btn-secondary">← Back to Hub</a>
       </div>
       <p class="draft-hint" id="title-pad-hint" style="margin-top: 14px;">
-        Tip: Connect 1 or 2 Bluetooth controllers anytime — press A / Enter to launch.
+        Send the Invite Link to friends on phones/laptops, or connect Bluetooth controllers — press A / Enter to launch.
       </p>
     </div>
   </div>
@@ -119,7 +123,7 @@
     <div class="modal-panel wide">
       <div class="eyebrow" id="draft-eyebrow">Fleet Level Up!</div>
       <h2 class="modal-title" id="draft-title">Choose a Shared Ship Upgrade</h2>
-      <p class="modal-sub" id="draft-sub">Upgrades empower both ships together.</p>
+      <p class="modal-sub" id="draft-sub">Upgrades empower all ships in your room together.</p>
 
       <div class="upgrade-grid" id="upgrade-grid"></div>
 
@@ -137,7 +141,7 @@
       <p class="modal-sub">Catch your breath or pair another controller.</p>
       <div class="btn-row">
         <button type="button" class="btn btn-primary" id="btn-resume">Resume</button>
-        <button type="button" class="btn btn-secondary" id="btn-restart-pause">Restart Run</button>
+        <button type="button" class="btn btn-secondary" id="btn-restart-pause">Return to Room</button>
         <a href="../../index.html" class="btn btn-secondary">Exit to Hub</a>
       </div>
     </div>
@@ -172,6 +176,7 @@
     </div>
   </div>
 
+  <script src="../../shared/room-sync.js"></script>
   <script src="game.js"></script>
 </body>
 </html>

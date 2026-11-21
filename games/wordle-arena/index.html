@@ -895,12 +895,12 @@
       <div id="keyboard" class="keyboard"></div>
     </section>
 
-    <!-- Right Panel: Live Colleague Slots -->
+    <!-- Right Panel: Live Room Players (Up to 4) -->
     <section class="panel">
       <div class="players-header">
-        <h2>Live Colleague Slots (<span id="player-count">1</span>)</h2>
+        <h2>Room Players (<span id="player-count">1</span> / 4)</h2>
         <span style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">
-          New slots open automatically when colleagues join
+          Up to 4 players per room · Share the invite link
         </span>
       </div>
 
@@ -1082,8 +1082,10 @@
     /**********************************************************************
      * 3. INITIALIZATION & URL INVITE PARSING
      **********************************************************************/
+    const MAX_ROOM_PLAYERS = 4;
+
     window.addEventListener('DOMContentLoaded', () => {
-      const savedName = localStorage.getItem('wa_nickname');
+      const savedName = localStorage.getItem('couch_arcade_name') || localStorage.getItem('wa_nickname');
       if (savedName) {
         document.getElementById('nickname-input').value = savedName;
       }
@@ -1091,6 +1093,7 @@
       const params = new URLSearchParams(window.location.search);
       const roomParam = params.get('room');
       const langParam = params.get('lang');
+      const autoCreate = params.get('autocreate');
 
       if (langParam === 'sv' || langParam === 'en') {
         setLanguage(langParam);
@@ -1099,7 +1102,9 @@
       if (roomParam) {
         const cleanCode = roomParam.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
         document.getElementById('join-code-input').value = cleanCode;
-        showToast(`Invite loaded for Room ${cleanCode}! Enter your name and click Join Room.`);
+        showToast(`Invite loaded for Room ${cleanCode}! Click Join Room to enter.`);
+      } else if (autoCreate === '1') {
+        createMultiplayerRoom();
       }
 
       window.addEventListener('keydown', handlePhysicalKey);
@@ -1115,6 +1120,7 @@
       const raw = document.getElementById('nickname-input').value.trim();
       const name = raw || ('Player ' + Math.floor(100 + Math.random() * 900));
       localStorage.setItem('wa_nickname', name);
+      localStorage.setItem('couch_arcade_name', name);
       return name;
     }
 
@@ -1348,6 +1354,9 @@
       if (data.type === 'PLAYER_STATE' && data.player && data.player.id) {
         const p = data.player;
         const isNewPlayer = !state.players[p.id];
+        if (isNewPlayer && Object.keys(state.players).length >= MAX_ROOM_PLAYERS) {
+          return;
+        }
         state.players[p.id] = p;
 
         if (isNewPlayer && p.id !== state.myId) {

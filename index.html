@@ -30,6 +30,10 @@
     </div>
 
     <div class="hub-status-bar">
+      <label class="hub-name-wrap" title="Your display name in game rooms">
+        <span>Name</span>
+        <input type="text" id="hub-player-name" class="hub-name-input" maxlength="18" placeholder="Your name..." />
+      </label>
       <div id="gamepad-status" class="status-chip" role="status" aria-live="polite">
         <span class="dot"></span>
         <span id="gamepad-status-text">No Controllers Connected</span>
@@ -42,7 +46,7 @@
       <div>
         <h1>Pick a Game</h1>
         <p>
-          Our growing living-room arcade. Play right here on keyboard, or pair Bluetooth controllers for couch co-op on the TV.
+          Choose any game to open a private room for up to 4 players and share a direct invite link — or play together on the couch with controllers.
         </p>
       </div>
       <div class="nav-hint">
@@ -55,23 +59,43 @@
 
   <footer class="hub-footer">
     <span>Built together · Add new games in <code>games-registry.js</code></span>
-    <span>HTML5 Gamepad API Enabled</span>
+    <span>4-Player Game Rooms · HTML5 Gamepad API</span>
   </footer>
 
+  <script src="shared/room-sync.js"></script>
   <script src="games-registry.js"></script>
   <script>
     (function () {
       const grid = document.getElementById('games-grid');
       const statusChip = document.getElementById('gamepad-status');
       const statusText = document.getElementById('gamepad-status-text');
+      const nameInput = document.getElementById('hub-player-name');
       const games = window.GAME_HUB_REGISTRY || [];
+
+      if (window.CouchRoom && nameInput) {
+        nameInput.value = window.CouchRoom.getSavedPlayerName();
+        nameInput.addEventListener('input', () => {
+          window.CouchRoom.savePlayerName(nameInput.value);
+        });
+      }
+
+      function buildRoomLaunchUrl(game) {
+        if (game.launchParams) {
+          const sep = game.path.includes('?') ? '&' : '?';
+          if (game.launchParams.includes('host=1') && window.CouchRoom) {
+            return `${game.path}${sep}room=${window.CouchRoom.generateRoomCode()}&${game.launchParams}`;
+          }
+          return `${game.path}${sep}${game.launchParams}`;
+        }
+        return game.path;
+      }
 
       let focusIndex = 0;
       const cards = [];
 
       games.forEach((game, idx) => {
         const card = document.createElement('a');
-        card.href = game.path;
+        card.href = buildRoomLaunchUrl(game);
         card.id = 'game-card-' + game.id;
         card.className = 'game-card';
         card.dataset.index = String(idx);
@@ -102,12 +126,19 @@
             </div>
             ${statHtml}
             <div class="game-cta">
-              <span>Play Now</span>
+              <span>Create Room &amp; Play</span>
               <span aria-hidden="true">→</span>
             </div>
           </div>
         `;
 
+        card.addEventListener('click', (e) => {
+          e.preventDefault();
+          if (window.CouchRoom && nameInput) {
+            window.CouchRoom.savePlayerName(nameInput.value);
+          }
+          window.location.href = buildRoomLaunchUrl(game);
+        });
         card.addEventListener('mouseenter', () => setFocused(idx));
         card.addEventListener('focus', () => setFocused(idx));
         grid.appendChild(card);
@@ -137,6 +168,7 @@
       // Keyboard navigation for TV / Couch
       window.addEventListener('keydown', (e) => {
         if (!cards.length) return;
+        if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
         if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'd' || e.key === 'D') {
           e.preventDefault();
           setFocused(focusIndex + 1);
@@ -150,7 +182,7 @@
             return;
           }
           e.preventDefault();
-          window.location.href = cards[focusIndex].href;
+          window.location.href = buildRoomLaunchUrl(games[focusIndex]);
         }
       });
 
