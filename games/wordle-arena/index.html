@@ -40,6 +40,7 @@
       flex-direction: column;
       line-height: 1.4;
       overflow-x: hidden;
+      touch-action: manipulation;
     }
 
     .hidden {
@@ -213,7 +214,7 @@
       border-radius: 10px;
       padding: 12px 14px;
       color: var(--text-main);
-      font-size: 0.96rem;
+      font-size: 16px;
       font-weight: 600;
       outline: none;
       transition: border-color 0.15s;
@@ -518,6 +519,8 @@
       flex-direction: column;
       gap: 6px;
       user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;
     }
 
     .kb-row {
@@ -541,6 +544,8 @@
       align-items: center;
       justify-content: center;
       transition: background 0.15s, transform 0.05s;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
 
     .key:active {
@@ -1048,11 +1053,22 @@
     /**********************************************************************
      * 2. APPLICATION STATE
      **********************************************************************/
+    function getOrCreatePlayerId() {
+      let id = localStorage.getItem('wa_player_id');
+      if (!id) {
+        id = 'p_' + Math.random().toString(36).substring(2, 10);
+        localStorage.setItem('wa_player_id', id);
+      }
+      return id;
+    }
+
+    const SESSION_KEY = 'wa_active_session_v1';
+
     const state = {
       mode: 'solo',        // 'solo' | 'host' | 'guest'
       language: 'en',      // 'en' | 'sv'
       roomCode: '',
-      myId: 'p_' + Math.random().toString(36).substring(2, 10),
+      myId: getOrCreatePlayerId(),
       myName: 'Player',
       secretWords: [],
       roundId: 1,
@@ -1068,9 +1084,10 @@
       keyColors: {},       // letter -> 'correct'|'present'|'absent'
       isFinished: false,
 
-      // HTTPS Polling + BroadcastChannel State
-      pollTimer: null,
-      heartbeatTimer: null,
+      // SSE + BroadcastChannel State
+      sse: null,
+      reconnectTimer: null,
+      lastPingReplyAt: 0,
       lastMsgId: 'all',
       seenEventIds: new Set(),
       bc: null,
@@ -1078,6 +1095,52 @@
       players: {},
       botTimers: []
     };
+
+    function saveSession() {
+      if (state.mode === 'solo' || !state.roomCode || state.secretWords.length !== TOTAL_WORDS) return;
+      try {
+        localStorage.setItem(SESSION_KEY, JSON.stringify({
+          mode: state.mode,
+          language: state.language,
+          roomCode: state.roomCode,
+          myName: state.myName,
+          secretWords: state.secretWords,
+          roundId: state.roundId,
+          currentWordIdx: state.currentWordIdx,
+          triesUsed: state.triesUsed,
+          solvedCount: state.solvedCount,
+          wordStatuses: state.wordStatuses,
+          wordHistory: state.wordHistory,
+          currentGuesses: state.currentGuesses,
+          keyColors: state.keyColors,
+          isFinished: state.isFinished,
+          savedAt: Date.now()
+        }));
+      } catch (e) {}
+    }
+
+    function loadSession() {
+      try {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        if (!data || !data.roomCode || !Array.isArray(data.secretWords) || data.secretWords.length !== TOTAL_WORDS) {
+          return null;
+        }
+        // Expire sessions older than 6 hours
+        if (Date.now() - (data.savedAt || 0) > 6 * 60 * 60 * 1000) {
+          localStorage.removeItem(SESSION_KEY);
+          return null;
+        }
+        return data;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function clearSession() {
+      try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+    }
 
     /**********************************************************************
      * 3. INITIALIZATION & URL INVITE PARSING
@@ -1099,16 +1162,77 @@
         setLanguage(langParam);
       }
 
-      if (roomParam) {
-        const cleanCode = roomParam.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
-        document.getElementById('join-code-input').value = cleanCode;
-        showToast(`Invite loaded for Room ${cleanCode}! Click Join Room to enter.`);
+      const cleanParamCode = roomParam
+        ? roomParam.trim().toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)
+        : '';
+
+      // Restore active session on reload if it matches the room in URL (or URL has no room)
+      const saved = loadSession();
+      if (saved && autoCreate !== '1' && (!cleanParamCode || saved.roomCode === cleanParamCode)) {
+        restoreSession(saved);
+      } else if (cleanParamCode) {
+        document.getElementById('join-code-input').value = cleanParamCode;
+        showToast(`Invite loaded for Room ${cleanParamCode}! Click Join Room to enter.`);
       } else if (autoCreate === '1') {
         createMultiplayerRoom();
       }
 
       window.addEventListener('keydown', handlePhysicalKey);
+
+      // Reconnect SSE cleanly when waking phone / switching back to Safari tab
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && state.mode !== 'solo' && state.roomCode) {
+          if (!state.sse || state.sse.readyState === EventSource.CLOSED) {
+            openSseStream(state.roomCode);
+          }
+        }
+      });
     });
+
+    function restoreSession(saved) {
+      state.mode = saved.mode;
+      state.language = saved.language || 'en';
+      state.roomCode = saved.roomCode;
+      state.myName = saved.myName || getNickname();
+      state.secretWords = saved.secretWords;
+      state.roundId = saved.roundId || 1;
+      state.players = {};
+
+      setLanguage(state.language);
+      document.getElementById('nickname-input').value = state.myName;
+
+      const newUrl = `${window.location.pathname}?room=${state.roomCode}&lang=${state.language}`;
+      window.history.replaceState({}, '', newUrl);
+
+      initChannelSync(state.roomCode);
+
+      document.getElementById('lobby-view').classList.add('hidden');
+      document.getElementById('arena-view').classList.remove('hidden');
+      document.getElementById('header-controls').classList.remove('hidden');
+      document.getElementById('lang-pill').textContent = state.language === 'sv' ? 'SV (ÅÄÖ)' : 'EN';
+      document.getElementById('room-code-display').textContent = state.roomCode;
+      document.getElementById('invite-pill').classList.remove('hidden');
+      document.getElementById('play-again-btn').classList.toggle('hidden', state.mode === 'guest');
+
+      // Restore personal progress without resetting
+      state.currentWordIdx = saved.currentWordIdx || 0;
+      state.triesUsed = saved.triesUsed || 0;
+      state.solvedCount = saved.solvedCount || 0;
+      state.wordStatuses = saved.wordStatuses || ['active', 'pending', 'pending', 'pending', 'pending'];
+      state.wordHistory = saved.wordHistory || [];
+      state.currentGuesses = saved.currentGuesses || [];
+      state.currentInput = '';
+      state.keyColors = saved.keyColors || {};
+      state.isFinished = Boolean(saved.isFinished);
+
+      renderStepper();
+      renderBoard();
+      renderKeyboard();
+      updateStatsStrip();
+      broadcastMyProgress();
+      renderPlayersGrid();
+      showToast(`Reconnected to Room ${state.roomCode}!`);
+    }
 
     function setLanguage(lang) {
       state.language = lang;
@@ -1152,7 +1276,7 @@
     }
 
     /**********************************************************************
-     * 4. FIREWALL-SAFE HTTPS POLLING (NTFY.SH) + BROADCAST CHANNEL SYNC
+     * 4. REAL-TIME HTTPS SSE (NTFY.SH) + BROADCAST CHANNEL SYNC
      **********************************************************************/
     function getTopicName(roomCode) {
       return `wordle_arena_v1_${roomCode}`;
@@ -1166,13 +1290,13 @@
     }
 
     function stopNetworkSync() {
-      if (state.pollTimer) {
-        clearInterval(state.pollTimer);
-        state.pollTimer = null;
+      if (state.reconnectTimer) {
+        clearTimeout(state.reconnectTimer);
+        state.reconnectTimer = null;
       }
-      if (state.heartbeatTimer) {
-        clearInterval(state.heartbeatTimer);
-        state.heartbeatTimer = null;
+      if (state.sse) {
+        try { state.sse.close(); } catch (e) {}
+        state.sse = null;
       }
       if (state.bc) {
         try { state.bc.close(); } catch (e) {}
@@ -1194,26 +1318,65 @@
         };
       }
 
-      // 2. HTTPS GET polling on port 443 via ntfy.sh
-      setHttpsStatus('warn', 'Syncing...');
-      pollNtfyMessages();
-      state.pollTimer = setInterval(pollNtfyMessages, 1500);
+      // 2. Single persistent HTTPS Server-Sent Events stream (avoids polling rate limits!)
+      openSseStream(roomCode);
+    }
 
-      // 3. Periodic state broadcast so late joiners always get room/player state
-      state.heartbeatTimer = setInterval(() => {
-        if (state.mode === 'host') {
-          publishEvent({
-            type: 'ROOM_INIT',
-            roomCode: state.roomCode,
-            hostId: state.myId,
-            language: state.language,
-            secretWords: state.secretWords,
-            roundId: state.roundId,
-            ts: Date.now()
-          });
-        }
-        broadcastMyProgress();
-      }, 6000);
+    function openSseStream(roomCode) {
+      if (state.mode === 'solo' || !roomCode) return;
+      if (state.sse) {
+        try { state.sse.close(); } catch (e) {}
+        state.sse = null;
+      }
+
+      setHttpsStatus('warn', 'Connecting...');
+      const topic = getTopicName(roomCode);
+      const since = state.lastMsgId || 'all';
+      const url = `${NTFY_BASE}/${topic}/sse?since=${encodeURIComponent(since)}`;
+
+      try {
+        const es = new EventSource(url);
+        state.sse = es;
+
+        es.onopen = () => {
+          state.consecutiveErrors = 0;
+          setHttpsStatus('ok', 'Live Sync: Ready');
+        };
+
+        es.onmessage = (ev) => {
+          state.consecutiveErrors = 0;
+          setHttpsStatus('ok', 'Live Sync: Ready');
+          if (!ev.data) return;
+          try {
+            const envelope = JSON.parse(ev.data);
+            if (envelope.id) state.lastMsgId = envelope.id;
+            if (envelope.event === 'message' && envelope.message) {
+              const payload = JSON.parse(envelope.message);
+              processIncomingEvent(payload);
+            }
+          } catch (parseErr) {}
+        };
+
+        es.onerror = () => {
+          state.consecutiveErrors += 1;
+          if (state.consecutiveErrors >= 3) {
+            setHttpsStatus('err', 'Offline / Retry');
+          } else {
+            setHttpsStatus('warn', 'Reconnecting...');
+          }
+          if (es.readyState === EventSource.CLOSED) {
+            const delay = Math.min(12000, 2000 * state.consecutiveErrors);
+            clearTimeout(state.reconnectTimer);
+            state.reconnectTimer = setTimeout(() => {
+              if (state.mode !== 'solo' && state.roomCode === roomCode) {
+                openSseStream(roomCode);
+              }
+            }, delay);
+          }
+        };
+      } catch (err) {
+        handleSyncError();
+      }
     }
 
     async function publishEvent(payloadObj) {
@@ -1231,7 +1394,6 @@
 
       if (state.mode === 'solo' || !state.roomCode) return;
 
-      // Standard HTTPS POST on port 443 with no custom CORS-triggering headers
       const url = `${NTFY_BASE}/${getTopicName(state.roomCode)}`;
       try {
         const res = await fetch(url, {
@@ -1240,49 +1402,11 @@
         });
         if (res.ok) {
           state.consecutiveErrors = 0;
-          setHttpsStatus('ok', 'HTTPS Sync: Ready');
+          setHttpsStatus('ok', 'Live Sync: Ready');
         } else {
           handleSyncError();
         }
       } catch (err) {
-        handleSyncError();
-      }
-    }
-
-    async function pollNtfyMessages() {
-      if (state.mode === 'solo' || !state.roomCode) return;
-      const topic = getTopicName(state.roomCode);
-      const url = `${NTFY_BASE}/${topic}/json?poll=1&since=${encodeURIComponent(state.lastMsgId)}`;
-
-      try {
-        const res = await fetch(url, { method: 'GET' });
-        if (!res.ok) {
-          handleSyncError();
-          return;
-        }
-
-        const rawText = await res.text();
-        state.consecutiveErrors = 0;
-        setHttpsStatus('ok', 'HTTPS Sync: Ready');
-
-        if (!rawText.trim()) return;
-
-        // ntfy returns newline-delimited JSON objects
-        const lines = rawText.trim().split('\n');
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const envelope = JSON.parse(line);
-            if (envelope.id) {
-              state.lastMsgId = envelope.id;
-            }
-            if (envelope.event === 'message' && envelope.message) {
-              const payload = JSON.parse(envelope.message);
-              processIncomingEvent(payload);
-            }
-          } catch (parseErr) {}
-        }
-      } catch (netErr) {
         handleSyncError();
       }
     }
@@ -1299,9 +1423,9 @@
         showToast('Solo Practice runs offline with no network calls.');
         return;
       }
-      setHttpsStatus('warn', 'Syncing...');
-      showToast('Retrying HTTPS sync for Room ' + state.roomCode + '...');
-      pollNtfyMessages();
+      setHttpsStatus('warn', 'Reconnecting...');
+      showToast('Reconnecting Live Sync for Room ' + state.roomCode + '...');
+      openSseStream(state.roomCode);
       if (state.mode === 'host') {
         publishEvent({
           type: 'ROOM_INIT',
@@ -1326,6 +1450,7 @@
         state.language = data.language || state.language;
         state.secretWords = data.secretWords || [];
         state.roundId = data.roundId || 1;
+        saveSession();
 
         if (state.mode === 'guest' && isNewRound && state.secretWords.length === TOTAL_WORDS) {
           showToast('Host started a new 5-word round!');
@@ -1336,6 +1461,9 @@
       }
 
       if (data.type === 'PLAYER_PING' && data.senderId !== state.myId) {
+        const now = Date.now();
+        if (now - state.lastPingReplyAt < 2000) return;
+        state.lastPingReplyAt = now;
         if (state.mode === 'host') {
           publishEvent({
             type: 'ROOM_INIT',
@@ -1344,7 +1472,7 @@
             language: state.language,
             secretWords: state.secretWords,
             roundId: state.roundId,
-            ts: Date.now()
+            ts: now
           });
         }
         broadcastMyProgress();
@@ -1361,7 +1489,10 @@
 
         if (isNewPlayer && p.id !== state.myId) {
           showToast(`${p.name} joined the room!`);
-          broadcastMyProgress();
+          if (Date.now() - state.lastPingReplyAt > 2000) {
+            state.lastPingReplyAt = Date.now();
+            broadcastMyProgress();
+          }
         }
 
         renderPlayersGrid();
@@ -1387,6 +1518,7 @@
       };
 
       state.players[state.myId] = snapshot;
+      saveSession();
 
       if (state.mode !== 'solo') {
         publishEvent({
@@ -1404,33 +1536,37 @@
       btn.disabled = true;
       btn.textContent = 'Creating Room...';
 
-      state.mode = 'host';
-      state.myName = getNickname();
-      state.roomCode = generateRoomCode();
-      state.secretWords = pickFiveWords(state.language);
-      state.roundId = 1;
-      state.players = {};
+      try {
+        clearSession();
+        state.mode = 'host';
+        state.myName = getNickname();
+        state.roomCode = generateRoomCode();
+        state.secretWords = pickFiveWords(state.language);
+        state.roundId = 1;
+        state.players = {};
 
-      const newUrl = `${window.location.pathname}?room=${state.roomCode}&lang=${state.language}`;
-      window.history.replaceState({}, '', newUrl);
+        const newUrl = `${window.location.pathname}?room=${state.roomCode}&lang=${state.language}`;
+        window.history.replaceState({}, '', newUrl);
 
-      initChannelSync(state.roomCode);
+        initChannelSync(state.roomCode);
 
-      await publishEvent({
-        type: 'ROOM_INIT',
-        roomCode: state.roomCode,
-        hostId: state.myId,
-        language: state.language,
-        secretWords: state.secretWords,
-        roundId: state.roundId,
-        ts: Date.now()
-      });
+        // Fire-and-forget initial publish so slow networks never block room creation
+        publishEvent({
+          type: 'ROOM_INIT',
+          roomCode: state.roomCode,
+          hostId: state.myId,
+          language: state.language,
+          secretWords: state.secretWords,
+          roundId: state.roundId,
+          ts: Date.now()
+        });
 
-      btn.disabled = false;
-      btn.textContent = 'Create Multiplayer Room';
-
-      enterArena();
-      showToast(`Room ${state.roomCode} created! Click "Copy Invite Link" to share.`);
+        enterArena();
+        showToast(`Room ${state.roomCode} created! Click "Copy Invite Link" to share.`);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Create Multiplayer Room';
+      }
     }
 
     async function joinMultiplayerRoom() {
@@ -1444,6 +1580,7 @@
       btn.disabled = true;
       btn.textContent = 'Joining...';
 
+      clearSession();
       state.mode = 'guest';
       state.myName = getNickname();
       state.roomCode = code;
@@ -1452,8 +1589,8 @@
 
       initChannelSync(state.roomCode);
 
-      // Ping the room so the host immediately re-broadcasts ROOM_INIT
-      await publishEvent({
+      // Ping the room so the host immediately re-broadcasts ROOM_INIT if needed
+      publishEvent({
         type: 'PLAYER_PING',
         name: state.myName,
         ts: Date.now()
@@ -1466,10 +1603,12 @@
           joined = true;
           btn.disabled = false;
           btn.textContent = 'Join Room';
+          const newUrl = `${window.location.pathname}?room=${state.roomCode}&lang=${state.language}`;
+          window.history.replaceState({}, '', newUrl);
           enterArena();
           showToast(`Joined Room ${state.roomCode}!`);
         }
-      }, 250);
+      }, 200);
 
       setTimeout(() => {
         clearInterval(checkInterval);
@@ -1477,12 +1616,13 @@
           btn.disabled = false;
           btn.textContent = 'Join Room';
           stopNetworkSync();
-          showToast(`Could not find active Room "${code}". Ask the host to verify the code or check firewall status.`);
+          showToast(`Could not find active Room "${code}". Check the code or ask host to tap Live Sync.`);
         }
-      }, 6500);
+      }, 9000);
     }
 
     function startSoloPractice() {
+      clearSession();
       stopNetworkSync();
       state.mode = 'solo';
       state.myName = getNickname();
@@ -1512,10 +1652,28 @@
 
     function returnToLobby() {
       if (!document.getElementById('lobby-view').classList.contains('hidden')) return;
+      if (state.mode !== 'solo' && !state.isFinished) {
+        if (!window.confirm('Leave this active room and return to the start screen?')) {
+          return;
+        }
+      }
       state.botTimers.forEach(clearInterval);
       state.botTimers = [];
       stopNetworkSync();
+      clearSession();
       closeResultsModal();
+
+      state.roomCode = '';
+      state.secretWords = [];
+      state.players = {};
+      window.history.replaceState({}, '', window.location.pathname);
+
+      const hostBtn = document.getElementById('host-btn');
+      const joinBtn = document.getElementById('join-btn');
+      hostBtn.disabled = false;
+      hostBtn.textContent = 'Create Multiplayer Room';
+      joinBtn.disabled = false;
+      joinBtn.textContent = 'Join Room';
 
       document.getElementById('arena-view').classList.add('hidden');
       document.getElementById('header-controls').classList.add('hidden');

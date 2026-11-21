@@ -3,7 +3,7 @@
  * Supports up to 4 players per game room with direct invite links.
  * Transport:
  *  - BroadcastChannel (instant multi-tab on same device)
- *  - ntfy.sh HTTPS polling (cross-device lobby & signaling, port 443)
+ *  - ntfy.sh HTTPS Server-Sent Events (1 persistent stream — zero polling rate limits!)
  *  - WebRTC DataChannels (low-latency real-time sync for action games)
  */
 (function (global) {
@@ -31,10 +31,23 @@
     return out;
   }
 
+  function getStablePlayerId() {
+    try {
+      let id = localStorage.getItem('couch_arcade_player_id');
+      if (!id) {
+        id = 'p_' + Math.random().toString(36).slice(2, 10);
+        localStorage.setItem('couch_arcade_player_id', id);
+      }
+      return id;
+    } catch (e) {
+      return 'p_' + Math.random().toString(36).slice(2, 10);
+    }
+  }
+
   function getSavedPlayerName() {
     return (
       localStorage.getItem('couch_arcade_name') ||
-      localStorage.getItem('wordle_arena_name') ||
+      localStorage.getItem('wa_nickname') ||
       'Pilot ' + Math.floor(100 + Math.random() * 899)
     );
   }
@@ -43,7 +56,7 @@
     const clean = (name || '').trim().slice(0, 18);
     if (!clean) return;
     localStorage.setItem('couch_arcade_name', clean);
-    localStorage.setItem('wordle_arena_name', clean);
+    localStorage.setItem('wa_nickname', clean);
   }
 
   class RoomSync {
@@ -51,7 +64,7 @@
       this.gameId = opts.gameId;
       this.maxPlayers = opts.maxPlayers || 4;
       this.enableRtc = Boolean(opts.enableRtc);
-      this.myId = 'p_' + Math.random().toString(36).slice(2, 10);
+      this.myId = getStablePlayerId();
       this.myName = opts.playerName || getSavedPlayerName();
       this.roomCode = (opts.roomCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
       this.isHost = Boolean(opts.isHost);
@@ -65,10 +78,20 @@
       this.seenEvents = new Set();
       this.lastMsgId = 'all';
       this.bc = null;
-      this.pollTimer = null;
+      this.sse = null;
+      this.reconnectTimer = null;
       this.heartbeatTimer = null;
+      this.sseErrors = 0;
       this.peers = {}; // peerId -> { pc, dc, open }
       this.destroyed = false;
+
+      this._onVisibility = () => {
+        if (!this.destroyed && document.visibilityState === 'visible' && this.roomCode) {
+          if (!this.sse || this.sse.readyState === EventSource.CLOSED) {
+            this.openSseStream();
+          }
+        }
+      };
     }
 
     get topic() {
@@ -116,7 +139,7 @@
         window.history.replaceState({}, '', url.toString());
       } catch (e) {}
 
-      // Local BroadcastChannel for instant multi-tab sync
+      // 1. Local BroadcastChannel for instant multi-tab sync
       if ('BroadcastChannel' in window) {
         this.bc = new BroadcastChannel(`ca_bc_${this.gameId}_${this.roomCode}`);
         this.bc.onmessage = (ev) => {
@@ -137,17 +160,69 @@
         this.emitRoster();
       }
 
-      this.onStatusChange('warn', 'Connecting...');
-      await this.pollNtfy();
+      // 2. Open single persistent HTTPS SSE stream (no polling spam!)
+      this.openSseStream();
+      document.addEventListener('visibilitychange', this._onVisibility);
 
+      // 3. Announce presence (non-blocking)
       if (this.isHost) {
         this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId });
       } else {
         this.sendSignal({ type: 'JOIN_REQ', name: this.myName });
       }
 
-      this.pollTimer = setInterval(() => this.pollNtfy(), 1200);
-      this.heartbeatTimer = setInterval(() => this.heartbeat(), 3500);
+      // Lightweight presence check every 15s (keeps rate limits safe on shared Wi-Fi)
+      this.heartbeatTimer = setInterval(() => this.heartbeat(), 15000);
+    }
+
+    openSseStream() {
+      if (this.destroyed || !this.roomCode) return;
+      if (this.sse) {
+        try { this.sse.close(); } catch (e) {}
+        this.sse = null;
+      }
+
+      this.onStatusChange('warn', 'Connecting...');
+      const since = this.lastMsgId || 'all';
+      const url = `${NTFY_BASE}/${this.topic}/sse?since=${encodeURIComponent(since)}`;
+
+      try {
+        const es = new EventSource(url);
+        this.sse = es;
+
+        es.onopen = () => {
+          this.sseErrors = 0;
+          const hasRtc = Object.values(this.peers).some((p) => p && p.open);
+          this.onStatusChange('ok', hasRtc ? 'P2P Live' : 'Room Online');
+        };
+
+        es.onmessage = (ev) => {
+          this.sseErrors = 0;
+          const hasRtc = Object.values(this.peers).some((p) => p && p.open);
+          this.onStatusChange('ok', hasRtc ? 'P2P Live' : 'Room Online');
+          if (!ev.data) return;
+          try {
+            const env = JSON.parse(ev.data);
+            if (env.id) this.lastMsgId = env.id;
+            if (env.event === 'message' && env.message) {
+              const payload = JSON.parse(env.message);
+              this.handleSignal(payload, false);
+            }
+          } catch (e) {}
+        };
+
+        es.onerror = () => {
+          this.sseErrors += 1;
+          this.onStatusChange('warn', this.sseErrors >= 3 ? 'Local Only' : 'Reconnecting...');
+          if (es.readyState === EventSource.CLOSED && !this.destroyed) {
+            const delay = Math.min(12000, 2000 * this.sseErrors);
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = setTimeout(() => this.openSseStream(), delay);
+          }
+        };
+      } catch (e) {
+        this.onStatusChange('warn', 'Local Only');
+      }
     }
 
     addLocalPlayer(name) {
@@ -188,21 +263,26 @@
       if (this.destroyed) return;
       const now = Date.now();
       if (this.isHost) {
-        // Keep local players fresh, prune timed-out remote peers (20s)
         let changed = false;
         for (const p of Object.values(this.players)) {
           if (p.isLocal) {
             p.lastSeen = now;
-          } else if (now - p.lastSeen > 20000) {
+          } else if (now - p.lastSeen > 45000) {
             delete this.players[p.id];
             this.closePeer(p.id);
             changed = true;
           }
         }
-        if (changed) this.emitRoster();
-        this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId });
+        if (changed) {
+          this.emitRoster();
+          this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId });
+        }
       } else {
-        this.sendSignal({ type: 'PING', name: this.myName });
+        // Guest only pings over ntfy if not yet in roster or no open RTC channel
+        const hasOpenRtc = Object.values(this.peers).some((p) => p && p.open);
+        if (!this.players[this.myId] || !hasOpenRtc) {
+          this.sendSignal({ type: 'PING', name: this.myName });
+        }
       }
     }
 
@@ -218,16 +298,14 @@
       this.onRosterChange(this.getOrderedPlayers());
     }
 
-    // ---- Low-Latency Realtime Channel (WebRTC -> BroadcastChannel -> ntfy fallback) ----
+    // ---- Low-Latency Realtime Channel (WebRTC -> BroadcastChannel) ----
     sendRealtime(payload, targetId = null) {
       const msg = { ...payload, _rt: true, senderId: this.myId };
 
-      // 1. Same-browser instant BroadcastChannel
       if (this.bc) {
         try { this.bc.postMessage(msg); } catch (e) {}
       }
 
-      // 2. WebRTC DataChannel(s)
       let sentViaRtc = false;
       const raw = JSON.stringify(msg);
       if (targetId && this.peers[targetId] && this.peers[targetId].open) {
@@ -249,7 +327,7 @@
       return sentViaRtc;
     }
 
-    // Reliable signaling / game event (always goes over BC + ntfy + open RTC)
+    // Reliable signaling / game event (BC + open RTC + ntfy POST)
     async sendSignal(payload) {
       const enriched = {
         ...payload,
@@ -263,7 +341,6 @@
         try { this.bc.postMessage(enriched); } catch (e) {}
       }
 
-      // Also push over open WebRTC channels for instant delivery
       const raw = JSON.stringify(enriched);
       for (const pid of Object.keys(this.peers)) {
         const peer = this.peers[pid];
@@ -278,44 +355,21 @@
           body: raw,
         });
         if (res.ok) {
-          this.onStatusChange('ok', 'Room Online');
+          const hasRtc = Object.values(this.peers).some((p) => p && p.open);
+          this.onStatusChange('ok', hasRtc ? 'P2P Live' : 'Room Online');
         }
       } catch (e) {
-        this.onStatusChange('warn', 'Local Only');
-      }
-    }
-
-    async pollNtfy() {
-      if (this.destroyed) return;
-      const url = `${NTFY_BASE}/${this.topic}/json?poll=1&since=${encodeURIComponent(this.lastMsgId)}`;
-      try {
-        const res = await fetch(url, { method: 'GET' });
-        if (!res.ok) return;
-        const text = await res.text();
-        this.onStatusChange('ok', 'Room Online');
-        if (!text.trim()) return;
-        const lines = text.trim().split('\n');
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const env = JSON.parse(line);
-            if (env.id) this.lastMsgId = env.id;
-            if (env.event === 'message' && env.message) {
-              const payload = JSON.parse(env.message);
-              this.handleSignal(payload, false);
-            }
-          } catch (e) {}
-        }
-      } catch (e) {
-        this.onStatusChange('warn', 'Local Only');
+        // Keep current SSE/local status without getting stuck
       }
     }
 
     handleSignal(data, fromFastTransport) {
       if (!data || data.senderId === this.myId) return;
 
-      // Realtime packets skip deduplication set for speed
       if (data._rt) {
+        if (this.isHost && this.players[data.senderId]) {
+          this.players[data.senderId].lastSeen = Date.now();
+        }
         this.onMessage(data);
         return;
       }
@@ -329,7 +383,6 @@
         }
       }
 
-      // Target-filtered WebRTC signaling
       if (data.targetId && data.targetId !== this.myId) return;
 
       if (data.type === 'JOIN_REQ' && this.isHost) {
@@ -375,9 +428,12 @@
           if (data.name && this.players[sender].name !== data.name) {
             this.players[sender].name = data.name.slice(0, 18);
             this.emitRoster();
+            this.sendSignal({ type: 'ROSTER', players: this.players, hostId: this.myId });
+          }
+          if (this.enableRtc && !fromFastTransport && (!this.peers[sender] || !this.peers[sender].open)) {
+            this.initiateRtcOffer(sender);
           }
         } else {
-          // Treat unknown ping as join request
           this.handleSignal({ ...data, type: 'JOIN_REQ' }, fromFastTransport);
         }
         return;
@@ -410,7 +466,6 @@
         return;
       }
 
-      // Game-specific message
       this.onMessage(data);
     }
 
@@ -507,8 +562,12 @@
 
     destroy() {
       this.destroyed = true;
-      if (this.pollTimer) clearInterval(this.pollTimer);
+      document.removeEventListener('visibilitychange', this._onVisibility);
+      if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
       if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+      if (this.sse) {
+        try { this.sse.close(); } catch (e) {}
+      }
       if (this.bc) {
         try { this.bc.close(); } catch (e) {}
       }
