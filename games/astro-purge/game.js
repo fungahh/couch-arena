@@ -82,6 +82,7 @@
 
   const bossBarWrap = document.getElementById('boss-bar-wrap');
   const bossNameEl = document.getElementById('boss-name');
+  const bossPhaseBadgeEl = document.getElementById('boss-phase-badge');
   const bossHpText = document.getElementById('boss-hp-text');
   const bossHpFill = document.getElementById('boss-hp-fill');
   const bossCastWrap = document.getElementById('boss-cast-wrap');
@@ -1952,7 +1953,8 @@
       if (!isPhoneControllerActive()) showWaveBanner(msg.title, msg.sub);
     } else if (msg.type === 'BOSS_WARN') {
       if (!isPhoneControllerActive()) {
-        bossWarningTitle.textContent = '⚠ RAID BOSS ENCOUNTER!';
+        if (waveBannerEl) waveBannerEl.classList.add('hidden');
+        bossWarningTitle.textContent = msg.title || '⚠ RAID BOSS ENCOUNTER!';
         bossWarningSub.textContent = msg.sub;
         bossWarningEl.classList.remove('hidden');
         setTimeout(() => bossWarningEl.classList.add('hidden'), 2600);
@@ -2288,12 +2290,7 @@
     }));
 
     if (s.b) {
-      const phTag = s.b.ph >= 3 ? ' [FINAL PHASE!]' : s.b.ph === 2 ? ' [PHASE 2]' : ' [PHASE 1]';
-      bossNameEl.textContent = `WAVE ${state.wave} · ${s.b.n}${phTag}`;
-      bossBarWrap.classList.remove('hidden');
-      const pct = clamp((s.b.h / s.b.m) * 100, 0, 100);
-      bossHpFill.style.width = pct.toFixed(1) + '%';
-      bossHpText.textContent = `${s.b.h} / ${s.b.m}`;
+      renderBossBarUI(state.wave, s.b.n, s.b.h, s.b.m, s.b.ph);
       renderBossCastUI(state.bossCast);
     } else {
       bossBarWrap.classList.add('hidden');
@@ -2683,16 +2680,34 @@
     const pl = getPlanetForWave(bossWave);
     const prof = pl.boss;
     const isFinal = bossWave >= MAX_WAVES;
+    const warnTitle = isFinal ? '👑 FINAL GALACTIC BOSS!' : `⚠ ${pl.icon} ${pl.name} RAID BOSS!`;
     const sub = isFinal
       ? `WAVE ${bossWave} FINAL RAID BOSS — ${prof.name} (${prof.intro})`
       : `PLANET ${pl.sector} (${pl.name}) BOSS — ${prof.name} (${prof.intro})`;
 
-    bossWarningTitle.textContent = isFinal ? '👑 FINAL GALACTIC BOSS!' : `⚠ ${pl.icon} ${pl.name} RAID BOSS!`;
+    if (waveBannerEl) waveBannerEl.classList.add('hidden');
+    bossWarningTitle.textContent = warnTitle;
     bossWarningSub.textContent = sub;
     bossWarningEl.classList.remove('hidden');
-    room.sendSignal({ type: 'BOSS_WARN', sub });
+    room.sendSignal({ type: 'BOSS_WARN', title: warnTitle, sub });
     SFX.bossWarn();
     renderHud();
+  }
+
+  function renderBossBarUI(waveNum, name, hp, maxHp, phase) {
+    const safeMax = Math.max(1, Math.round(maxHp || 1));
+    const safeHp = clamp(Math.ceil(hp || 0), 0, safeMax);
+    const pct = clamp((Math.max(0, hp || 0) / safeMax) * 100, 0, 100);
+    bossHpFill.style.width = pct.toFixed(1) + '%';
+    bossHpText.textContent = `${safeHp.toLocaleString()} / ${safeMax.toLocaleString()} (${Math.ceil(pct)}%)`;
+    bossNameEl.textContent = `WAVE ${waveNum} · ${name}`;
+    if (bossPhaseBadgeEl) {
+      const ph = phase || 1;
+      bossPhaseBadgeEl.textContent = ph >= 3 ? 'FINAL PHASE!' : ph === 2 ? 'PHASE 2' : 'PHASE 1';
+      bossPhaseBadgeEl.classList.toggle('phase-2', ph === 2);
+      bossPhaseBadgeEl.classList.toggle('phase-3', ph >= 3);
+    }
+    bossBarWrap.classList.remove('hidden');
   }
 
   function spawnBoss(bossWave) {
@@ -2743,8 +2758,6 @@
     };
 
     state.enemies.push(boss);
-    bossNameEl.textContent = `WAVE ${bossWave} · ${name} [PHASE 1]`;
-    bossBarWrap.classList.remove('hidden');
     updateBossBar(boss);
   }
 
@@ -2754,11 +2767,7 @@
       renderBossCastUI(null);
       return;
     }
-    const pct = clamp((boss.hp / boss.maxHp) * 100, 0, 100);
-    bossHpFill.style.width = pct.toFixed(1) + '%';
-    bossHpText.textContent = `${Math.ceil(boss.hp).toLocaleString()} / ${boss.maxHp.toLocaleString()}`;
-    const phTag = boss.phase >= 3 ? ' [FINAL PHASE!]' : boss.phase === 2 ? ' [PHASE 2]' : ' [PHASE 1]';
-    bossNameEl.textContent = `WAVE ${state.wave} · ${boss.name}${phTag}`;
+    renderBossBarUI(state.wave, boss.name, boss.hp, boss.maxHp, boss.phase);
     renderBossCastUI(state.bossCast);
   }
 

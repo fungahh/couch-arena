@@ -54,6 +54,38 @@
             <div class="xp-fill" id="hud-xp-fill"></div>
           </div>
           <div class="next-boss-hint" id="hud-boss-hint">Planet 1 · 10 left · Boss @ Wave 10</div>
+
+          <!-- Boss Health Bar (Health Bar ABOVE Boss Name + Clear HP Readout + Phase Notches + Cast Bar!) -->
+          <div id="boss-bar-wrap" class="hidden">
+            <div class="boss-hp-track">
+              <div class="boss-hp-fill" id="boss-hp-fill"></div>
+              <div class="boss-phase-tick" style="left: 33.33%" title="Phase 3 Threshold"></div>
+              <div class="boss-phase-tick" style="left: 66.66%" title="Phase 2 Threshold"></div>
+              <span class="boss-hp-overlay" id="boss-hp-text">24,000 / 24,000 (100%)</span>
+            </div>
+            <div class="boss-header">
+              <span id="boss-name">WAVE 10 · BARON CORONA-CHOMP</span>
+              <span id="boss-phase-badge" class="boss-phase-badge">PHASE 1</span>
+            </div>
+            <div id="boss-cast-wrap" class="boss-cast-wrap hidden">
+              <div class="boss-cast-label" id="boss-cast-label">CASTING ABILITY...</div>
+              <div class="boss-cast-track">
+                <div class="boss-cast-fill" id="boss-cast-fill"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- WAVE ANNOUNCEMENT PILL (Compact top-edge ticker, out of combat FOV!) -->
+          <div id="wave-banner" class="hidden" role="status" aria-live="polite">
+            <h2 id="wave-banner-title">WAVE 1</h2>
+            <p id="wave-banner-sub">INCOMING SPACE VIRUSES!</p>
+          </div>
+
+          <!-- BOSS WARNING PILL (Compact top-edge alert, out of combat FOV!) -->
+          <div id="boss-warning" class="hidden" role="alert">
+            <h2 id="boss-warning-title">⚠ GIANT SPACE VIRUS BOSS!</h2>
+            <p id="boss-warning-sub">WAVE 10 — BARON CORONA-CHOMP INCOMING</p>
+          </div>
         </div>
 
         <div class="hud-group right">
@@ -64,43 +96,12 @@
           <div id="damage-meter" aria-label="Team Damage Meter" title="Tap to expand or minimize"></div>
         </div>
       </div>
-
-      <!-- Boss Health Bar (WoW Raid Phase Notches + Ability Cast Bar!) -->
-      <div id="boss-bar-wrap" class="hidden">
-        <div class="boss-header">
-          <span id="boss-name">BARON CORONA-CHOMP</span>
-          <span id="boss-hp-text">100%</span>
-        </div>
-        <div class="boss-hp-track">
-          <div class="boss-hp-fill" id="boss-hp-fill"></div>
-          <div class="boss-phase-tick" style="left: 33.33%" title="Phase 3 Threshold"></div>
-          <div class="boss-phase-tick" style="left: 66.66%" title="Phase 2 Threshold"></div>
-        </div>
-        <div id="boss-cast-wrap" class="boss-cast-wrap hidden">
-          <div class="boss-cast-label" id="boss-cast-label">CASTING ABILITY...</div>
-          <div class="boss-cast-track">
-            <div class="boss-cast-fill" id="boss-cast-fill"></div>
-          </div>
-        </div>
-      </div>
     </div>
 
     <div class="hud-bottom">
       <div class="player-cards" id="player-hud-cards"></div>
       <div class="weapons-tray" id="weapons-tray"></div>
     </div>
-  </div>
-
-  <!-- WAVE ANNOUNCEMENT BANNER -->
-  <div id="wave-banner" class="hidden" role="status" aria-live="polite">
-    <h2 id="wave-banner-title">WAVE 1</h2>
-    <p id="wave-banner-sub">INCOMING SPACE VIRUSES!</p>
-  </div>
-
-  <!-- BOSS WARNING BANNER -->
-  <div id="boss-warning" class="hidden" role="alert">
-    <h2 id="boss-warning-title">⚠ GIANT SPACE VIRUS BOSS!</h2>
-    <p id="boss-warning-sub">WAVE 10 — BARON CORONA-CHOMP INCOMING</p>
   </div>
 
   <!-- OVERLAY 1: 4-PLAYER GAME ROOM LOBBY -->

@@ -245,19 +245,22 @@ body {
   border-color: var(--border-hi);
 }
 
-/* Center Level & XP Bar */
+/* Center Level & XP Bar + Top-Edge Boss Bar & Non-Intrusive Announcements */
 .hud-center {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  min-width: min(360px, 46vw);
+  gap: 5px;
+  width: min(500px, 48vw);
+  min-width: min(360px, 44vw);
 }
 
 .level-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
   font-family: "Fredoka", "Space Grotesk", system-ui, sans-serif;
 }
 
@@ -315,71 +318,67 @@ body {
   color: #fb7185;
 }
 
-/* Wave Announcement Banner */
+/* Wave Announcement Pill — Tucked neatly at top-edge under HUD, out of combat FOV! */
 #wave-banner {
-  position: fixed;
-  top: 22%;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 24;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  width: fit-content;
+  max-width: min(620px, 90vw);
+  margin-top: 2px;
   pointer-events: none;
-  background: rgba(14, 23, 42, 0.94);
-  border: 3px solid #fbbf24;
-  border-radius: 18px;
-  padding: 12px 28px;
+  background: rgba(11, 18, 34, 0.82);
+  border: 1.5px solid rgba(251, 191, 36, 0.85);
+  border-radius: 999px;
+  padding: 5px 16px;
   text-align: center;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
-  animation: wavePop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  animation: wavePop 0.28s cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
 #wave-banner h2 {
   font-family: "Fredoka", "Space Grotesk", system-ui, sans-serif;
-  font-size: clamp(1.35rem, 3.2vw, 2.1rem);
+  font-size: clamp(0.84rem, 1.35vw, 1rem);
   color: #fef08a;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
 #wave-banner p {
-  font-size: 0.88rem;
+  font-size: clamp(0.74rem, 1.05vw, 0.84rem);
   font-weight: 700;
   color: #bae6fd;
-  margin-top: 2px;
+  margin: 0;
+  line-height: 1.15;
 }
 
 @keyframes wavePop {
-  from { transform: translateX(-50%) scale(0.72); opacity: 0; }
-  to { transform: translateX(-50%) scale(1); opacity: 1; }
+  from { transform: translateY(-6px) scale(0.94); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
 }
 
-/* Boss Bar */
+/* Boss Bar — Health Bar ABOVE Boss Name with clear HP readout inside the bar! */
 #boss-bar-wrap {
-  width: min(560px, 84vw);
-  margin: 6px auto 0;
-  background: rgba(20, 10, 18, 0.9);
-  border: 1px solid rgba(244, 63, 94, 0.45);
+  width: 100%;
+  margin: 2px auto 0;
+  background: rgba(20, 10, 18, 0.88);
+  border: 1.5px solid rgba(244, 63, 94, 0.55);
   border-radius: 12px;
-  padding: 10px 14px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
-}
-
-.boss-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 6px;
-  font-family: "Space Grotesk", system-ui, sans-serif;
-  font-size: 0.88rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  color: #fda4af;
+  padding: 7px 11px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.52);
 }
 
 .boss-hp-track {
   position: relative;
   width: 100%;
-  height: 12px;
-  background: rgba(0, 0, 0, 0.65);
-  border: 1.5px solid rgba(248, 250, 252, 0.25);
+  height: 22px;
+  background: rgba(8, 6, 14, 0.84);
+  border: 1.5px solid rgba(248, 250, 252, 0.32);
   border-radius: 999px;
   overflow: hidden;
 }
@@ -387,8 +386,25 @@ body {
 .boss-hp-fill {
   height: 100%;
   width: 100%;
-  background: linear-gradient(90deg, #e11d48, #fb7185);
+  background: linear-gradient(90deg, #be123c, #e11d48 45%, #fb7185);
   transition: width 0.08s linear;
+}
+
+.boss-hp-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.98), 0 0 2px #000;
+  pointer-events: none;
+  z-index: 2;
 }
 
 .boss-phase-tick {
@@ -399,18 +415,58 @@ body {
   background: rgba(254, 240, 138, 0.85);
   box-shadow: 0 0 4px rgba(0, 0, 0, 0.9);
   pointer-events: none;
+  z-index: 1;
+}
+
+.boss-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  margin-bottom: 0;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 0.84rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fda4af;
+}
+
+.boss-phase-badge {
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.16);
+  border: 1px solid rgba(251, 191, 36, 0.55);
+  color: #fde68a;
+  white-space: nowrap;
+}
+
+.boss-phase-badge.phase-2 {
+  background: rgba(249, 115, 22, 0.24);
+  border-color: rgba(251, 146, 60, 0.75);
+  color: #fed7aa;
+}
+
+.boss-phase-badge.phase-3 {
+  background: rgba(244, 63, 94, 0.3);
+  border-color: rgba(253, 224, 71, 0.9);
+  color: #fef08a;
+  box-shadow: 0 0 8px rgba(244, 63, 94, 0.5);
 }
 
 /* WoW Raid Boss Ability Cast / Telegraph Bar */
 .boss-cast-wrap {
-  margin-top: 7px;
-  padding-top: 6px;
+  margin-top: 6px;
+  padding-top: 5px;
   border-top: 1px dashed rgba(251, 191, 36, 0.3);
 }
 
 .boss-cast-label {
   font-family: "Fredoka", "Space Grotesk", system-ui, sans-serif;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -443,39 +499,47 @@ body {
   background: linear-gradient(90deg, #0ea5e9, #5eead4, #fef08a);
 }
 
-/* Boss Warning Banner */
+/* Boss Warning Pill — Sleek top-edge alert right below HUD, out of combat FOV! */
 #boss-warning {
-  position: fixed;
-  top: 26%;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  width: fit-content;
+  max-width: min(680px, 92vw);
+  margin-top: 2px;
   pointer-events: none;
-  background: rgba(28, 10, 16, 0.94);
-  border: 1px solid rgba(244, 63, 94, 0.6);
-  border-radius: 14px;
-  padding: 16px 32px;
+  background: rgba(34, 10, 18, 0.88);
+  border: 1.5px solid rgba(244, 63, 94, 0.85);
+  border-radius: 999px;
+  padding: 5px 16px;
   text-align: center;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
-  animation: pulseWarn 0.7s ease-in-out infinite alternate;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 8px 24px rgba(244, 63, 94, 0.3);
+  animation: pulseWarn 0.65s ease-in-out infinite alternate;
 }
 
 #boss-warning h2 {
   font-family: "Space Grotesk", system-ui, sans-serif;
-  font-size: clamp(1.2rem, 2.8vw, 1.8rem);
+  font-size: clamp(0.86rem, 1.4vw, 1.04rem);
   color: #fb7185;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
 #boss-warning p {
-  font-size: 0.9rem;
+  font-size: clamp(0.74rem, 1.05vw, 0.84rem);
+  font-weight: 700;
   color: #fecdd3;
-  margin-top: 4px;
+  margin: 0;
+  line-height: 1.15;
 }
 
 @keyframes pulseWarn {
-  from { transform: translateX(-50%) scale(0.98); }
-  to { transform: translateX(-50%) scale(1.03); }
+  from { transform: scale(0.99); }
+  to { transform: scale(1.02); }
 }
 
 /* Bottom HUD: Ship Status + Active Weapons */
@@ -1113,6 +1177,7 @@ body.clean-hud #damage-meter:active {
   .hud-group.right { grid-area: right; align-items: flex-end; }
   .hud-center {
     grid-area: center;
+    width: 100%;
     min-width: 100%;
     gap: 3px;
   }
@@ -1130,9 +1195,22 @@ body.clean-hud #damage-meter:active {
 
   #boss-bar-wrap {
     width: 100%;
-    padding: 6px 10px;
-    margin-top: 4px;
+    padding: 6px 9px;
+    margin-top: 3px;
   }
+  .boss-hp-track { height: 19px; }
+  .boss-hp-overlay { font-size: 0.71rem; }
+  .boss-header { font-size: 0.76rem; margin-top: 4px; }
+  .boss-phase-badge { font-size: 0.64rem; padding: 1px 6px; }
+  #wave-banner,
+  #boss-warning {
+    padding: 4px 12px;
+    gap: 3px 8px;
+  }
+  #wave-banner h2,
+  #boss-warning h2 { font-size: 0.82rem; }
+  #wave-banner p,
+  #boss-warning p { font-size: 0.72rem; }
 
   .hud-bottom {
     gap: 6px;
@@ -1206,6 +1284,7 @@ body.clean-hud #damage-meter:active {
   .hud-group.left { grid-area: auto; gap: 5px; }
   .hud-center {
     grid-area: auto;
+    width: min(390px, 46vw);
     min-width: min(260px, 36vw);
     gap: 3px;
   }
@@ -1232,15 +1311,27 @@ body.clean-hud #damage-meter:active {
   .dmg-bar-track { height: 4px; }
 
   #boss-bar-wrap {
-    width: min(440px, 68vw);
-    padding: 5px 10px;
-    margin-top: 3px;
+    width: 100%;
+    padding: 5px 8px;
+    margin-top: 2px;
   }
-  .boss-header { font-size: 0.76rem; margin-bottom: 4px; }
-  .boss-hp-track { height: 8px; }
+  .boss-hp-track { height: 16px; }
+  .boss-hp-overlay { font-size: 0.66rem; }
+  .boss-header { font-size: 0.72rem; margin-top: 3px; margin-bottom: 0; }
+  .boss-phase-badge { font-size: 0.62rem; padding: 1px 6px; }
   .boss-cast-wrap { margin-top: 4px; padding-top: 4px; }
   .boss-cast-label { font-size: 0.66rem; margin-bottom: 2px; }
   .boss-cast-track { height: 5px; }
+
+  #wave-banner,
+  #boss-warning {
+    padding: 3px 10px;
+    gap: 2px 7px;
+  }
+  #wave-banner h2,
+  #boss-warning h2 { font-size: 0.76rem; }
+  #wave-banner p,
+  #boss-warning p { font-size: 0.68rem; }
 
   .hud-bottom {
     padding-right: 78px;
