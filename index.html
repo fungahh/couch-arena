@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Couch Arcade — Our Cartoon Game Hub</title>
-  <meta name="description" content="A joyful retro-cartoon collection of 4-player couch & online games built for phones, laptops, and TV controllers." />
+  <meta name="description" content="A joyful retro-cartoon collection of 5-player couch & online games built for phones, laptops, and TV controllers." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet" />
@@ -38,7 +38,7 @@
       </div>
       <div class="hub-brand-text">
         <span class="hub-brand-name">Couch Arcade</span>
-        <span class="hub-brand-sub">4-Player Cartoon Game Hub · TV &amp; Touch Ready</span>
+        <span class="hub-brand-sub">5-Player Cartoon Game Hub · TV &amp; Touch Ready</span>
       </div>
     </div>
 
@@ -352,7 +352,7 @@
             phoneCaptainPicker.classList.add('hidden');
           },
           onFull: () => {
-            phoneHubStatus.textContent = 'TV Party Full (4/4)';
+            phoneHubStatus.textContent = 'TV Party Full (5/5)';
             phoneHubStatus.style.color = '#be123c';
           },
         });
@@ -477,7 +477,7 @@
 
       function renderTvHubPlayers(players) {
         tvHubPlayers.innerHTML = '';
-        for (let i = 0; i < 4; i++) {
+        for (let i = 0; i < 5; i++) {
           const p = players[i];
           const chip = document.createElement('div');
           if (p) {
@@ -602,7 +602,7 @@
               <span class="open-room-code">${escapeHtml(r.code)}</span>
             </div>
             <div class="open-room-meta">
-              ${escapeHtml(r.hostAvatar || '🛸')} Host: <strong>${escapeHtml(r.hostName || 'Host')}</strong> · ${r.playerCount || 0}/${r.maxPlayers || 4} Players${r.tvMode ? ' · 📺 TV' : ''}
+              ${escapeHtml(r.hostAvatar || '🛸')} Host: <strong>${escapeHtml(r.hostName || 'Host')}</strong> · ${r.playerCount || 0}/${r.maxPlayers || 5} Players${r.tvMode ? ' · 📺 TV' : ''}
             </div>
             <button type="button" class="open-room-join-btn">🚪 Request to Join</button>
           `;

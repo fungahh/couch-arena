@@ -893,8 +893,8 @@
     }
 
     body.tv-mode .players-grid {
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 14px;
     }
 
     body.tv-mode .mini-row {
@@ -1123,9 +1123,9 @@
       </div>
 
       <div class="players-header">
-        <h2>Room Players (<span id="player-count">1</span> / 4)</h2>
+        <h2>Room Players (<span id="player-count">1</span> / 5)</h2>
         <span id="players-sub-hint" style="font-size: 0.76rem; color: var(--text-muted); font-weight: 600;">
-          Up to 4 players per room · Share the invite link
+          Up to 5 players per room · Share the invite link
         </span>
       </div>
 
@@ -1423,7 +1423,7 @@
     /**********************************************************************
      * 3. INITIALIZATION & URL INVITE PARSING
      **********************************************************************/
-    const MAX_ROOM_PLAYERS = 4;
+    const MAX_ROOM_PLAYERS = 5;
 
     window.addEventListener('DOMContentLoaded', () => {
       const acc = window.CouchAccounts && window.CouchAccounts.getActiveAccount ? window.CouchAccounts.getActiveAccount() : null;
@@ -2555,12 +2555,12 @@
         empty.style.color = 'var(--text-muted)';
         empty.innerHTML = state.tvMode
           ? `
-            <div style="font-size:1.2rem; font-weight:800; color:#fef08a; margin-bottom:8px;">📱 Waiting for Phone Players (0 / 4)</div>
-            <div style="font-size:0.94rem;">Point your phone cameras at the <strong>QR Code</strong> above — up to 4 players can race side-by-side on the TV!</div>
+            <div style="font-size:1.2rem; font-weight:800; color:#fef08a; margin-bottom:8px;">📱 Waiting for Phone Players (0 / 5)</div>
+            <div style="font-size:0.94rem;">Point your phone cameras at the <strong>QR Code</strong> above — up to 5 players can race side-by-side on the TV!</div>
           `
           : `
             <div style="font-weight:700; color:var(--text-main); margin-bottom:6px;">Waiting for other players...</div>
-            <div style="font-size:0.84rem;">Click <strong>Copy Invite Link</strong> in the top bar so up to 3 friends can join your room.</div>
+            <div style="font-size:0.84rem;">Click <strong>Copy Invite Link</strong> in the top bar so up to 4 friends can join your room.</div>
           `;
         grid.appendChild(empty);
         return;

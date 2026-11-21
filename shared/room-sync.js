@@ -1,5 +1,5 @@
 /**
- * Couch Arcade — Shared 4-Player Room & Real-Time Hybrid Sync Engine
+ * Couch Arcade — Shared 5-Player Room & Real-Time Hybrid Sync Engine
  * Dual-transport: PeerJS WebRTC P2P (sub-30ms) + WSS MQTT Relay (100% NAT/5G/iOS proof) + BroadcastChannel.
  * - First-letter + 3-digit game room codes (e.g. A482, W719) + legacy 6-char support
  * - Guaranteed QR / TV Mode joins with HOST_HELLO handshake & JOIN_REQ retry loop
@@ -19,10 +19,11 @@
   ];
 
   const PLAYER_COLORS = [
-    { name: 'Alpha', hex: '#14b8a6', glow: '#5eead4' }, // P1 Cyan
-    { name: 'Beta', hex: '#f59e0b', glow: '#fde68a' },  // P2 Amber
-    { name: 'Gamma', hex: '#f43f5e', glow: '#fda4af' }, // P3 Rose
-    { name: 'Delta', hex: '#22c55e', glow: '#86efac' }, // P4 Emerald
+    { name: 'Alpha', hex: '#14b8a6', glow: '#5eead4' },   // P1 Cyan
+    { name: 'Beta', hex: '#f59e0b', glow: '#fde68a' },    // P2 Amber
+    { name: 'Gamma', hex: '#f43f5e', glow: '#fda4af' },   // P3 Rose
+    { name: 'Delta', hex: '#22c55e', glow: '#86efac' },   // P4 Emerald
+    { name: 'Epsilon', hex: '#a855f7', glow: '#d8b4fe' }, // P5 Violet
   ];
 
   function generateRoomCode(prefix) {
@@ -102,7 +103,7 @@
     constructor(opts) {
       this.gameId = String(opts.gameId || 'game').replace(/[^a-z0-9_-]/gi, '');
       this.codePrefix = opts.codePrefix || '';
-      this.maxPlayers = opts.maxPlayers || 4;
+      this.maxPlayers = opts.maxPlayers || 5;
       this.myId = getStablePlayerId();
 
       const prof = getSavedProfileMeta();

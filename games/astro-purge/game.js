@@ -872,12 +872,13 @@
   function createPlayerFromRoster(rp, localIndex) {
     const pal = PLAYER_COLORS[rp.slot % PLAYER_COLORS.length];
     const offsets = [
-      [0.42, 0.52],
-      [0.58, 0.52],
+      [0.36, 0.50],
+      [0.50, 0.44],
+      [0.64, 0.50],
       [0.42, 0.64],
       [0.58, 0.64],
     ];
-    const off = offsets[rp.slot % 4];
+    const off = offsets[rp.slot % offsets.length];
     return {
       id: rp.id,
       slot: rp.slot,
@@ -990,7 +991,7 @@
   const room = new RoomSync({
     gameId: 'astro_purge',
     codePrefix: 'A',
-    maxPlayers: 4,
+    maxPlayers: 5,
     roomCode: initialRoomParam || '',
     isHost: isHostStart,
     tvMode: isHostStart && initialTvParam,
@@ -1018,8 +1019,8 @@
     },
     onRoomFull: () => {
       document.documentElement.classList.remove('autostart-boot');
-      lobbyRoomStatus.textContent = 'Room Full (4/4)';
-      titlePadHint.textContent = 'This room already has 4 players. Return to the Hub to create a new room.';
+      lobbyRoomStatus.textContent = 'Room Full (5/5)';
+      titlePadHint.textContent = 'This room already has 5 players. Return to the Hub to create a new room.';
       btnLaunch.disabled = true;
     },
     onKicked: () => {
@@ -1078,19 +1079,19 @@
         btnLaunch.disabled = roster.length === 0;
         btnLaunch.textContent =
           roster.length === 0
-            ? 'Waiting for Phone Controllers (0/4)...'
-            : `▶ Launch Mission (${roster.length}/4 Ready)`;
+            ? 'Waiting for Phone Controllers (0/5)...'
+            : `▶ Launch Mission (${roster.length}/5 Ready)`;
         titlePadHint.textContent = 'Cast/mirror this screen to your TV! Phone 1 (Captain) can also press Launch right from the couch.';
       } else {
         btnLaunch.disabled = roster.length === 0;
-        btnLaunch.textContent = `Launch Mission (${roster.length}/4)`;
+        btnLaunch.textContent = `Launch Mission (${roster.length}/5)`;
         titlePadHint.textContent = 'Send the Invite Link to friends on iPhones/laptops, or switch to TV Screen Mode so phones act as controllers!';
       }
     } else {
       const captain = isCouchCaptain();
       if (captain) {
         btnLaunch.disabled = false;
-        btnLaunch.textContent = `▶ Launch Mission on TV (${roster.length}/4)`;
+        btnLaunch.textContent = `▶ Launch Mission on TV (${roster.length}/5)`;
         titlePadHint.textContent = phoneControllerMode
           ? '🎮 You are the Couch Captain! Tap Launch Mission when everyone has scanned in.'
           : 'You are the Couch Captain! Tap Launch Mission when everyone is ready.';
@@ -1233,7 +1234,7 @@
     }
     const added = room.addLocalPlayer('Local P2');
     if (!added) {
-      btnAddLocal.textContent = 'Room Full (4/4)';
+      btnAddLocal.textContent = 'Room Full (5/5)';
       setTimeout(() => (btnAddLocal.textContent = '+ Add Local Player'), 1400);
     }
   });
@@ -1243,9 +1244,9 @@
     const bySlot = {};
     roster.forEach((p) => { bySlot[p.slot] = p; });
 
-    for (let s = 0; s < 4; s++) {
+    for (let s = 0; s < 5; s++) {
       const p = bySlot[s];
-      const pal = PLAYER_COLORS[s];
+      const pal = PLAYER_COLORS[s % PLAYER_COLORS.length];
       const card = document.createElement('div');
       if (p) {
         card.className = 'slot-card';

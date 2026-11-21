@@ -106,7 +106,7 @@
   const room = new RoomSync({
     gameId: `lobby_${gameId}`,
     codePrefix: window.CouchGames.getPrefix(game),
-    maxPlayers: 4,
+    maxPlayers: 5,
     roomCode,
     isHost: isHostStart,
     tvMode: initialTvMode,
@@ -159,8 +159,8 @@
     },
     onRoomFull: () => {
       showGate(
-        '🎟️ Room Full (4 / 4)',
-        'This room already has 4 players! Head back to the Main Menu to open a new room.',
+        '🎟️ Room Full (5 / 5)',
+        'This room already has 5 players! Head back to the Main Menu to open a new room.',
         true
       );
     },
@@ -201,7 +201,7 @@
       hostName: room.tvMode ? 'TV Screen' : (hostPlayer ? hostPlayer.name : (prof && prof.username) || room.myName),
       hostAvatar: room.tvMode ? '📺' : (hostPlayer ? hostPlayer.avatar : (prof && prof.avatar) || '🛸'),
       playerCount: roster.length,
-      maxPlayers: 4,
+      maxPlayers: 5,
       tvMode: room.tvMode,
       lang: selectedLang,
       createdAt: Date.now(),
@@ -324,7 +324,7 @@
     if (!room.isHost || room.tvMode) return;
     const added = room.addLocalPlayer();
     if (!added) {
-      btnAddLocal.textContent = 'Room Full (4/4)';
+      btnAddLocal.textContent = 'Room Full (5/5)';
       setTimeout(() => (btnAddLocal.textContent = '+ Add Local Player (Same Screen)'), 1400);
     }
   });
@@ -409,16 +409,16 @@
     });
   }
 
-  // ---- Render 4-Player Retro-Cartoon Roster ----
+  // ---- Render 5-Player Retro-Cartoon Roster ----
   function renderRoster(roster) {
-    rosterHeading.textContent = `Room Roster (${roster.length} / 4)`;
+    rosterHeading.textContent = `Room Roster (${roster.length} / 5)`;
     rosterGrid.innerHTML = '';
     const bySlot = {};
     roster.forEach((p) => { bySlot[p.slot] = p; });
 
-    for (let s = 0; s < 4; s++) {
+    for (let s = 0; s < 5; s++) {
       const p = bySlot[s];
-      const pal = PLAYER_COLORS[s];
+      const pal = PLAYER_COLORS[s % PLAYER_COLORS.length];
       const card = document.createElement('div');
 
       if (p) {
@@ -487,14 +487,14 @@
       btnLaunchGame.disabled = roster.length === 0;
       btnLaunchGame.textContent =
         roster.length === 0
-          ? 'Waiting for Players to Join (0/4)...'
-          : `🚀 ${baseLabel} (${roster.length}/4)`;
+          ? 'Waiting for Players to Join (0/5)...'
+          : `🚀 ${baseLabel} (${roster.length}/5)`;
       rosterHint.textContent = isTvHost
         ? 'TV is a pure display · Phone 1 (★ Captain) can also launch from the couch!'
         : 'Players joining from the Main Menu will knock for your approval!';
     } else if (captain) {
       btnLaunchGame.disabled = false;
-      btnLaunchGame.textContent = `🚀 ${baseLabel} on TV (${roster.length}/4)`;
+      btnLaunchGame.textContent = `🚀 ${baseLabel} on TV (${roster.length}/5)`;
       rosterHint.textContent = '★ You are the Couch Captain! Tap Launch when everyone is ready.';
     } else {
       btnLaunchGame.disabled = true;

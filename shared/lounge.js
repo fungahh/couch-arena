@@ -354,7 +354,7 @@
         if (!this.players[pid]) {
           const used = new Set(Object.values(this.players).map((p) => p.slot));
           let slot = -1;
-          for (let i = 0; i < 4; i++) {
+          for (let i = 0; i < 5; i++) {
             if (!used.has(i)) { slot = i; break; }
           }
           if (slot === -1) {
