@@ -80,6 +80,9 @@
   const SFX = {
     ctx: null,
     muted: false,
+    xpCombo: 0,
+    lastXpAt: 0,
+    lastShootAt: 0,
     ensure() {
       if (this.muted) return null;
       if (!this.ctx) {
@@ -91,7 +94,7 @@
       }
       return this.ctx;
     },
-    tone(freq, endFreq, dur, type = 'triangle', vol = 0.08) {
+    tone(freq, endFreq, dur, type = 'triangle', vol = 0.1) {
       const c = this.ensure();
       if (!c) return;
       const now = c.currentTime;
@@ -107,31 +110,95 @@
       osc.start(now);
       osc.stop(now + dur);
     },
-    shoot() { this.tone(620, 220, 0.06, 'triangle', 0.045); },
-    rail() { this.tone(980, 140, 0.16, 'sawtooth', 0.07); },
-    missile() { this.tone(360, 580, 0.1, 'sine', 0.04); },
-    zap() { this.tone(860, 420, 0.08, 'square', 0.04); },
-    nova() { this.tone(240, 60, 0.28, 'sine', 0.1); },
-    hit() { this.tone(180, 70, 0.05, 'square', 0.035); },
-    pop() { this.tone(260, 65, 0.12, 'sawtooth', 0.06); },
-    xp() { this.tone(720, 1080, 0.07, 'sine', 0.035); },
-    dash() { this.tone(320, 680, 0.12, 'triangle', 0.06); },
-    hurt() { this.tone(160, 55, 0.2, 'sawtooth', 0.09); },
+    noise(dur = 0.12, vol = 0.08, filterFreq = 900) {
+      const c = this.ensure();
+      if (!c) return;
+      const len = Math.max(1, Math.floor(c.sampleRate * dur));
+      const buf = c.createBuffer(1, len, c.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+      const src = c.createBufferSource();
+      src.buffer = buf;
+      const filter = c.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(filterFreq, c.currentTime);
+      const gain = c.createGain();
+      gain.gain.setValueAtTime(vol, c.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur);
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(c.destination);
+      src.start();
+    },
+    shoot() {
+      const now = performance.now();
+      if (now - this.lastShootAt < 55) return;
+      this.lastShootAt = now;
+      this.tone(740, 210, 0.065, 'triangle', 0.055);
+    },
+    rail() {
+      this.tone(1120, 150, 0.2, 'sawtooth', 0.085);
+      this.noise(0.12, 0.05, 1800);
+    },
+    missile() {
+      this.tone(320, 680, 0.11, 'sine', 0.055);
+      this.noise(0.08, 0.035, 1400);
+    },
+    zap() { this.tone(940, 420, 0.085, 'square', 0.055); },
+    nova() {
+      this.tone(260, 52, 0.34, 'sine', 0.13);
+      this.noise(0.24, 0.08, 700);
+    },
+    hit() { this.tone(210, 80, 0.045, 'square', 0.04); },
+    pop() {
+      this.tone(240, 58, 0.14, 'sawtooth', 0.075);
+      this.noise(0.11, 0.065, 950);
+    },
+    xp() {
+      const now = performance.now();
+      if (now - this.lastXpAt < 450) {
+        this.xpCombo = Math.min(8, this.xpCombo + 1);
+      } else {
+        this.xpCombo = 0;
+      }
+      this.lastXpAt = now;
+      const scale = [523.25, 587.33, 659.25, 783.99, 880, 1046.5, 1174.66, 1318.5, 1567.98];
+      const f = scale[this.xpCombo % scale.length];
+      this.tone(f, f * 1.32, 0.09, 'sine', 0.075);
+    },
+    heal() {
+      this.tone(523.25, 659.25, 0.12, 'sine', 0.09);
+      setTimeout(() => this.tone(659.25, 1046.5, 0.18, 'sine', 0.09), 70);
+    },
+    dash() {
+      this.tone(280, 740, 0.13, 'triangle', 0.08);
+      this.noise(0.1, 0.045, 2200);
+    },
+    hurt() {
+      this.tone(165, 50, 0.22, 'sawtooth', 0.11);
+      this.noise(0.14, 0.07, 600);
+    },
     levelUp() {
-      this.tone(440, 440, 0.12, 'triangle', 0.08);
-      setTimeout(() => this.tone(554, 554, 0.12, 'triangle', 0.08), 80);
-      setTimeout(() => this.tone(659, 880, 0.22, 'triangle', 0.09), 160);
+      this.tone(440, 440, 0.12, 'triangle', 0.1);
+      setTimeout(() => this.tone(554.37, 554.37, 0.12, 'triangle', 0.1), 85);
+      setTimeout(() => this.tone(659.25, 880, 0.26, 'triangle', 0.11), 170);
     },
     bossWarn() {
-      this.tone(180, 260, 0.25, 'sawtooth', 0.09);
-      setTimeout(() => this.tone(180, 260, 0.25, 'sawtooth', 0.09), 300);
+      this.tone(180, 260, 0.25, 'sawtooth', 0.11);
+      setTimeout(() => this.tone(180, 260, 0.25, 'sawtooth', 0.11), 300);
     },
     bossDead() {
-      this.tone(220, 440, 0.2, 'triangle', 0.1);
-      setTimeout(() => this.tone(330, 660, 0.25, 'triangle', 0.1), 140);
-      setTimeout(() => this.tone(440, 880, 0.4, 'triangle', 0.11), 280);
+      this.noise(0.38, 0.12, 800);
+      this.tone(220, 440, 0.22, 'triangle', 0.12);
+      setTimeout(() => this.tone(330, 660, 0.26, 'triangle', 0.12), 140);
+      setTimeout(() => this.tone(440, 880, 0.45, 'triangle', 0.13), 280);
     },
   };
+
+  // Unlock Web Audio on first tap/click/key (required on iOS Safari)
+  ['touchstart', 'pointerdown', 'keydown'].forEach((evt) => {
+    window.addEventListener(evt, () => SFX.ensure(), { passive: true, once: true });
+  });
 
   // ---- Upgrade Catalog ----
   const UPGRADES = [
@@ -863,6 +930,12 @@
 
   function applySnapshot(s) {
     if (!s) return;
+    if (s.xp > state.xp) SFX.xp();
+    if (s.kl > state.kills) SFX.pop();
+    const prevHpSum = state.players.reduce((acc, p) => acc + (p.hp || 0), 0);
+    const nextHpSum = (s.p || []).reduce((acc, arr) => acc + (arr[4] || 0), 0);
+    if (prevHpSum > 0 && nextHpSum < prevHpSum) SFX.hurt();
+
     state.level = s.lv;
     state.score = s.sc;
     state.kills = s.kl;
@@ -1685,18 +1758,18 @@
         ? readLocalInput(p.localIndex, pads)
         : remoteInputs[p.id] || { mx: 0, my: 0, ax: 0, ay: 0, fire: false, dash: false };
 
-      const accel = 980 * speedBoost;
-      const maxSpeed = 305 * speedBoost;
+      const accel = 1140 * speedBoost;
+      const maxSpeed = 395 * speedBoost;
 
       if (inp.dash && p.dashCooldown <= 0) {
         const dx = inp.mx || Math.cos(p.angle);
         const dy = inp.my || Math.sin(p.angle);
         const dm = Math.hypot(dx, dy) || 1;
-        p.vx = (dx / dm) * 690;
-        p.vy = (dy / dm) * 690;
-        p.dashTimer = 0.2;
+        p.vx = (dx / dm) * 780;
+        p.vy = (dy / dm) * 780;
+        p.dashTimer = 0.22;
         p.dashCooldown = dashCdMax;
-        spawnParticles(p.x, p.y, p.glow, 12, 150, 3);
+        spawnParticles(p.x, p.y, p.glow, 14, 170, 3);
         SFX.dash();
       }
 
@@ -1705,7 +1778,8 @@
       if (p.dashTimer <= 0) {
         p.vx += inp.mx * accel * dt;
         p.vy += inp.my * accel * dt;
-        const drag = Math.pow(0.06, dt);
+        // Longer, smoother space-drift braking when releasing controls
+        const drag = Math.pow(0.28, dt);
         p.vx *= drag;
         p.vy *= drag;
         const sp = Math.hypot(p.vx, p.vy);
@@ -1988,10 +2062,24 @@
         if (d < bestD) { bestD = d; nearest = p; }
       }
       if (nearest) {
+        pk.pulling = true;
         const ang = Math.atan2(nearest.y - pk.y, nearest.x - pk.x);
-        pk.vx += Math.cos(ang) * 440 * dt * 4;
-        pk.vy += Math.sin(ang) * 440 * dt * 4;
-        if (bestD < nearest.radius + 14) {
+        pk.vx += Math.cos(ang) * 520 * dt * 4.5;
+        pk.vy += Math.sin(ang) * 520 * dt * 4.5;
+        if (bestD < nearest.radius + 16) {
+          const orbColor = pk.kind === 'xp' ? '#38bdf8' : '#4ade80';
+          // Juicy absorption ring + sparkle burst on the ship
+          state.novas.push({
+            x: nearest.x,
+            y: nearest.y,
+            r: 8,
+            maxR: pk.kind === 'xp' ? 38 : 54,
+            color: orbColor,
+            life: 0.24,
+            maxLife: 0.24,
+          });
+          spawnParticles(nearest.x, nearest.y, orbColor, pk.kind === 'xp' ? 9 : 16, 155, 2.8);
+
           if (pk.kind === 'xp') {
             addTeamXp(pk.value);
             SFX.xp();
@@ -2000,11 +2088,13 @@
               if (!pl.downed) pl.hp = Math.min(pl.maxHp, pl.hp + pk.value);
             });
             spawnFloatText(nearest.x, nearest.y - 20, `+${pk.value} HULL`, '#4ade80');
-            SFX.xp();
+            SFX.heal();
           }
           state.pickups.splice(i, 1);
           continue;
         }
+      } else {
+        pk.pulling = false;
       }
       pk.x = clamp(pk.x + pk.vx * dt, 14, W - 14);
       pk.y = clamp(pk.y + pk.vy * dt, 14, H - 14);
@@ -2163,20 +2253,52 @@
     }
 
     for (const pk of state.pickups) {
+      const pulse = 1 + Math.sin(state.time * 8 + pk.x * 0.05) * 0.16;
+      const col = pk.kind === 'xp' ? '#38bdf8' : '#22c55e';
+      const glowCol = pk.kind === 'xp' ? 'rgba(56, 189, 248, 0.28)' : 'rgba(34, 197, 94, 0.3)';
+
+      // Comet streak when zipping into a ship
+      if (pk.pulling && (Math.abs(pk.vx || 0) > 40 || Math.abs(pk.vy || 0) > 40)) {
+        ctx.strokeStyle = col;
+        ctx.globalAlpha = 0.55;
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(pk.x, pk.y);
+        ctx.lineTo(pk.x - pk.vx * 0.055, pk.y - pk.vy * 0.055);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
+      // Soft pulsing glow halo
+      ctx.fillStyle = glowCol;
+      ctx.beginPath();
+      ctx.arc(pk.x, pk.y, (pk.pulling ? 12 : 9) * pulse, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.save();
+      ctx.translate(pk.x, pk.y);
+      ctx.scale(pulse * (pk.pulling ? 1.18 : 1), pulse * (pk.pulling ? 1.18 : 1));
       if (pk.kind === 'xp') {
+        ctx.rotate(state.time * 3 + pk.y * 0.02);
         ctx.fillStyle = '#38bdf8';
         ctx.beginPath();
-        ctx.moveTo(pk.x, pk.y - 6);
-        ctx.lineTo(pk.x + 5, pk.y);
-        ctx.lineTo(pk.x, pk.y + 6);
-        ctx.lineTo(pk.x - 5, pk.y);
+        ctx.moveTo(0, -6.5);
+        ctx.lineTo(5.5, 0);
+        ctx.lineTo(0, 6.5);
+        ctx.lineTo(-5.5, 0);
         ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#e0f2fe';
+        ctx.beginPath();
+        ctx.arc(0, 0, 2, 0, Math.PI * 2);
         ctx.fill();
       } else {
         ctx.fillStyle = '#22c55e';
-        ctx.fillRect(pk.x - 6, pk.y - 2, 12, 4);
-        ctx.fillRect(pk.x - 2, pk.y - 6, 4, 12);
+        ctx.fillRect(-6, -2.2, 12, 4.4);
+        ctx.fillRect(-2.2, -6, 4.4, 12);
       }
+      ctx.restore();
     }
 
     for (const b of state.beams) {
